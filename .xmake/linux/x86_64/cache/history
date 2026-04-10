@@ -17,6 +17,9 @@
         "xmake build string_pool_test",
         "xmake run string_pool_test",
         "xmake build source_location_test",
-        "xmake run source_location_test"
+        "xmake run source_location_test",
+        "xmake build diagnostic_test",
+        "xmake run diagnostic_test",
+        "xmake build mora_lib"
     }
 }
