@@ -386,6 +386,7 @@ Evaluate/Emit  -> static: evaluate against ESP data -> .spatch
 - **All errors reported**: Collect and report all errors, don't stop at the first
 - **Incremental**: If only one `.mora` file changed, re-check and re-evaluate only that file and its dependents
 - **C++ throughout**: Shared codebase between compiler and runtime, arena allocators for AST nodes, interned string table for EditorID comparisons
+- **Build system**: xmake for fast, modern C++ builds with minimal configuration
 
 ## Conflict Resolution
 

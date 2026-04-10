@@ -6,7 +6,7 @@
 
 **Architecture:** Hand-written recursive descent parser producing a lossless CST that lowers to a typed AST. Single-pass type inference over Datalog-style rules. Diagnostics collected throughout and rendered with ANSI colors. Arena allocator for AST nodes, interned string table for identifiers.
 
-**Tech Stack:** C++20, CMake, Google Test, no external dependencies beyond the C++ standard library.
+**Tech Stack:** C++20, xmake, Google Test, no external dependencies beyond the C++ standard library.
 
 ---
 
@@ -14,7 +14,7 @@
 
 ```
 mora/
-├── CMakeLists.txt                    # top-level build config
+├── xmake.lua                         # top-level build config
 ├── include/
 │   └── mora/
 │       ├── core/
@@ -62,7 +62,6 @@ mora/
 │   │   └── progress.cpp
 │   └── main.cpp                      # CLI entry point
 └── tests/
-    ├── CMakeLists.txt
     ├── arena_test.cpp
     ├── string_pool_test.cpp
     ├── lexer_test.cpp
@@ -77,50 +76,48 @@ mora/
 ### Task 1: Project Scaffolding
 
 **Files:**
-- Create: `CMakeLists.txt`
-- Create: `tests/CMakeLists.txt`
+- Create: `xmake.lua`
 - Create: `src/main.cpp`
 
-- [ ] **Step 1: Create top-level CMakeLists.txt**
+- [ ] **Step 1: Create xmake.lua**
 
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(mora VERSION 0.1.0 LANGUAGES CXX)
+```lua
+set_project("mora")
+set_version("0.1.0")
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set_languages("c++20")
+set_warnings("all", "error")
 
-# All source files will be added as the project grows
-add_executable(mora src/main.cpp)
-target_include_directories(mora PRIVATE include)
+-- Static library with all compiler sources (tests and exe both link this)
+target("mora_lib")
+    set_kind("static")
+    add_includedirs("include", {public = true})
+    add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
+              "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
+              "src/cli/*.cpp")
 
-# Testing
-enable_testing()
-add_subdirectory(tests)
+-- Main executable
+target("mora")
+    set_kind("binary")
+    add_files("src/main.cpp")
+    add_deps("mora_lib")
+
+-- Tests
+add_requires("gtest")
+
+for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
+    local name = path.basename(testfile)
+    target(name)
+        set_kind("binary")
+        set_default(false)
+        add_files(testfile)
+        add_deps("mora_lib")
+        add_packages("gtest")
+        add_tests(name)
+end
 ```
 
-- [ ] **Step 2: Create tests/CMakeLists.txt with Google Test**
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
-)
-FetchContent_MakeAvailable(googletest)
-
-# Helper function — each task will add tests via this
-function(mora_add_test name)
-    add_executable(${name} ${ARGN})
-    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include)
-    target_link_libraries(${name} PRIVATE mora_lib GTest::gtest_main)
-    add_test(NAME ${name} COMMAND ${name})
-endfunction()
-```
-
-- [ ] **Step 3: Create minimal main.cpp**
+- [ ] **Step 2: Create minimal main.cpp**
 
 ```cpp
 #include <cstdio>
@@ -131,7 +128,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-- [ ] **Step 4: Create directory structure**
+- [ ] **Step 3: Create directory structure**
 
 Run:
 ```bash
@@ -140,39 +137,27 @@ mkdir -p src/{core,lexer,ast,parser,sema,diag,cli}
 mkdir -p tests
 ```
 
-- [ ] **Step 5: Build and verify**
+Create placeholder files so xmake globs don't fail on empty directories:
+
+```bash
+touch src/core/.gitkeep src/lexer/.gitkeep src/ast/.gitkeep
+touch src/parser/.gitkeep src/sema/.gitkeep src/diag/.gitkeep src/cli/.gitkeep
+```
+
+- [ ] **Step 4: Build and verify**
 
 Run:
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-./build/mora
+xmake build mora
+xmake run mora
 ```
 Expected: prints `mora v0.1.0`
-
-- [ ] **Step 6: Add a mora_lib static library target**
-
-Update `CMakeLists.txt` to create a static library from all source files (excluding main.cpp) that both the `mora` executable and tests can link against. Start with an empty placeholder source:
-
-```cmake
-# In top-level CMakeLists.txt, before add_executable(mora ...)
-add_library(mora_lib STATIC src/core/placeholder.cpp)
-target_include_directories(mora_lib PUBLIC include)
-
-# Link mora executable against the lib
-target_link_libraries(mora PRIVATE mora_lib)
-```
-
-Create `src/core/placeholder.cpp`:
-```cpp
-// placeholder — will be replaced as source files are added
-```
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: project scaffolding with CMake and Google Test"
+git commit -m "feat: project scaffolding with xmake and Google Test"
 ```
 
 ---
@@ -243,14 +228,11 @@ TEST(ArenaTest, ResetFreesAll) {
 }
 ```
 
-Register the test in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(arena_test arena_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R arena_test -V`
+Run: `xmake build arena_test && xmake run arena_test`
 Expected: FAIL — `mora/core/arena.h` not found
 
 - [ ] **Step 3: Implement Arena**
@@ -353,17 +335,11 @@ size_t Arena::bytes_allocated() const {
 } // namespace mora
 ```
 
-Add `src/core/arena.cpp` to `mora_lib` sources in `CMakeLists.txt`:
-```cmake
-add_library(mora_lib STATIC
-    src/core/arena.cpp
-)
-```
-Remove `src/core/placeholder.cpp` from the source list.
+The glob `src/core/*.cpp` in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R arena_test -V`
+Run: `xmake build arena_test && xmake run arena_test`
 Expected: All 4 tests PASS
 
 - [ ] **Step 5: Commit**
@@ -432,14 +408,11 @@ TEST(StringPoolTest, ManyStrings) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(string_pool_test string_pool_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R string_pool_test -V`
+Run: `xmake build string_pool_test && xmake run string_pool_test`
 Expected: FAIL — header not found
 
 - [ ] **Step 3: Implement StringPool**
@@ -512,11 +485,11 @@ std::string_view StringPool::get(StringId id) const {
 } // namespace mora
 ```
 
-Add `src/core/string_pool.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R string_pool_test -V`
+Run: `xmake build string_pool_test && xmake run string_pool_test`
 Expected: All 5 tests PASS
 
 - [ ] **Step 5: Commit**
@@ -563,14 +536,11 @@ TEST(SourceLocationTest, MergeSpans) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(source_location_test source_location_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R source_location_test -V`
+Run: `xmake build source_location_test && xmake run source_location_test`
 Expected: FAIL
 
 - [ ] **Step 3: Implement SourceSpan**
@@ -629,11 +599,11 @@ SourceSpan merge_spans(const SourceSpan& a, const SourceSpan& b) {
 } // namespace mora
 ```
 
-Add `src/core/source_location.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R source_location_test -V`
+Run: `xmake build source_location_test && xmake run source_location_test`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -734,14 +704,11 @@ TEST(DiagnosticRendererTest, RenderErrorPlainText) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(diagnostic_test diagnostic_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R diagnostic_test -V`
+Run: `xmake build diagnostic_test && xmake run diagnostic_test`
 Expected: FAIL
 
 - [ ] **Step 3: Implement Terminal utilities**
@@ -810,7 +777,7 @@ bool color_enabled() {
 } // namespace mora
 ```
 
-Add `src/cli/terminal.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Implement Diagnostic and DiagBag**
 
@@ -1046,11 +1013,11 @@ std::string DiagRenderer::render_all(const DiagBag& bag) const {
 } // namespace mora
 ```
 
-Add all new `.cpp` files to `mora_lib` sources.
+The globs in `xmake.lua` auto-discover all new `.cpp` files.
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R diagnostic_test -V`
+Run: `xmake build diagnostic_test && xmake run diagnostic_test`
 Expected: All 5 tests PASS
 
 - [ ] **Step 7: Commit**
@@ -1210,11 +1177,11 @@ const char* token_kind_name(TokenKind kind) {
 } // namespace mora
 ```
 
-Add `src/lexer/token.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 2: Build to verify it compiles**
 
-Run: `cmake --build build`
+Run: `xmake build mora_lib`
 Expected: compiles without errors
 
 - [ ] **Step 3: Commit**
@@ -1424,14 +1391,11 @@ TEST_F(LexerTest, SymbolWithPlugin) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(lexer_test lexer_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R lexer_test -V`
+Run: `xmake build lexer_test && xmake run lexer_test`
 Expected: FAIL — `mora/lexer/lexer.h` not found
 
 - [ ] **Step 3: Implement Lexer**
@@ -1864,11 +1828,11 @@ Token Lexer::next() {
 } // namespace mora
 ```
 
-Add `src/lexer/lexer.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R lexer_test -V`
+Run: `xmake build lexer_test && xmake run lexer_test`
 Expected: All tests PASS
 
 - [ ] **Step 5: Commit**
@@ -2009,7 +1973,7 @@ std::string MoraType::to_string() const {
 } // namespace mora
 ```
 
-Add `src/ast/types.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 2: Define AST nodes**
 
@@ -2181,7 +2145,7 @@ struct Module {
 
 - [ ] **Step 3: Build to verify it compiles**
 
-Run: `cmake --build build`
+Run: `xmake build mora_lib`
 Expected: compiles without errors
 
 - [ ] **Step 4: Commit**
@@ -2366,14 +2330,11 @@ TEST_F(ParserTest, ErrorRecovery) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(parser_test parser_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R parser_test -V`
+Run: `xmake build parser_test && xmake run parser_test`
 Expected: FAIL
 
 - [ ] **Step 3: Implement Parser**
@@ -2938,11 +2899,11 @@ Expr Parser::parse_primary() {
 } // namespace mora
 ```
 
-Add `src/parser/parser.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R parser_test -V`
+Run: `xmake build parser_test && xmake run parser_test`
 Expected: All tests PASS (some may need debugging — the indentation/newline interaction is the trickiest part)
 
 - [ ] **Step 5: Commit**
@@ -3039,14 +3000,11 @@ TEST_F(NameResolverTest, DuplicateRuleError) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(name_resolver_test name_resolver_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R name_resolver_test -V`
+Run: `xmake build name_resolver_test && xmake run name_resolver_test`
 Expected: FAIL
 
 - [ ] **Step 3: Implement NameResolver**
@@ -3225,11 +3183,11 @@ const FactSignature* NameResolver::lookup_fact(StringId name) const {
 } // namespace mora
 ```
 
-Add `src/sema/name_resolver.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R name_resolver_test -V`
+Run: `xmake build name_resolver_test && xmake run name_resolver_test`
 Expected: All tests PASS
 
 - [ ] **Step 5: Commit**
@@ -3384,14 +3342,11 @@ TEST_F(TypeCheckerTest, RuleComposition) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(type_checker_test type_checker_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build && ctest --test-dir build -R type_checker_test -V`
+Run: `xmake build type_checker_test && xmake run type_checker_test`
 Expected: FAIL
 
 - [ ] **Step 3: Implement TypeChecker**
@@ -3634,11 +3589,11 @@ void TypeChecker::check_unused_variables(const Rule& rule) {
 } // namespace mora
 ```
 
-Add `src/sema/type_checker.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build && ctest --test-dir build -R type_checker_test -V`
+Run: `xmake build type_checker_test && xmake run type_checker_test`
 Expected: All tests PASS
 
 - [ ] **Step 5: Commit**
@@ -3769,11 +3724,11 @@ void Progress::print_summary(size_t frozen_rules, size_t frozen_patches,
 } // namespace mora
 ```
 
-Add `src/cli/progress.cpp` to `mora_lib` sources.
+The glob in `xmake.lua` auto-discovers this file.
 
 - [ ] **Step 2: Build to verify it compiles**
 
-Run: `cmake --build build`
+Run: `xmake build mora_lib`
 Expected: compiles
 
 - [ ] **Step 3: Commit**
@@ -3991,7 +3946,7 @@ bandit_weapons(NPC):
 
 Run:
 ```bash
-cmake --build build && ./build/mora check test_data/
+xmake run mora check test_data/
 ```
 Expected: Shows parsing/resolving/type checking progress, reports success with rule count.
 
@@ -4010,7 +3965,7 @@ also_wrong(NPC):
 
 Run:
 ```bash
-./build/mora check test_data/errors.mora
+xmake run mora check test_data/errors.mora
 ```
 Expected: Shows error diagnostics with file locations, underlines, and colored output.
 
@@ -4129,14 +4084,11 @@ TEST_F(IntegrationTest, DiagnosticsRender) {
 }
 ```
 
-Register in `tests/CMakeLists.txt`:
-```cmake
-mora_add_test(integration_test integration_test.cpp)
-```
+The test is auto-discovered by the glob in `xmake.lua` — no registration needed.
 
 - [ ] **Step 2: Run all tests**
 
-Run: `cmake --build build && ctest --test-dir build -V`
+Run: `xmake build integration_test && xmake run integration_test`
 Expected: All tests PASS
 
 - [ ] **Step 3: Commit**
@@ -4148,70 +4100,33 @@ git commit -m "feat: integration tests for full check pipeline"
 
 ---
 
-### Task 15: Final CMakeLists.txt Cleanup
+### Task 15: Final Build Verification
 
 **Files:**
-- Modify: `CMakeLists.txt`
+- Verify: `xmake.lua`
 
-- [ ] **Step 1: Update CMakeLists.txt with all source files**
-
-Ensure the `mora_lib` target includes all source files:
-
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(mora VERSION 0.1.0 LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-add_library(mora_lib STATIC
-    src/core/arena.cpp
-    src/core/string_pool.cpp
-    src/core/source_location.cpp
-    src/lexer/token.cpp
-    src/lexer/lexer.cpp
-    src/ast/types.cpp
-    src/parser/parser.cpp
-    src/sema/name_resolver.cpp
-    src/sema/type_checker.cpp
-    src/diag/diagnostic.cpp
-    src/diag/renderer.cpp
-    src/cli/terminal.cpp
-    src/cli/progress.cpp
-)
-target_include_directories(mora_lib PUBLIC include)
-
-add_executable(mora src/main.cpp)
-target_link_libraries(mora PRIVATE mora_lib)
-
-enable_testing()
-add_subdirectory(tests)
-```
-
-- [ ] **Step 2: Full build and test run**
+- [ ] **Step 1: Full build and test run**
 
 Run:
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build -V
+xmake build
+xmake test
 ```
 Expected: Everything builds and all tests pass.
 
-- [ ] **Step 3: Run mora check on test data**
+- [ ] **Step 2: Run mora check on test data**
 
 Run:
 ```bash
-./build/mora check test_data/
+xmake run mora check test_data/
 ```
 Expected: Clean output with progress display, no errors.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add -A
-git commit -m "chore: clean up CMakeLists.txt with final source file list"
+git commit -m "chore: final build verification"
 ```
 
 ---
