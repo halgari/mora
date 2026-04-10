@@ -1,0 +1,2 @@
+// placeholder
+namespace mora {}

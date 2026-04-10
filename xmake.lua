@@ -12,7 +12,7 @@ target("mora_lib")
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
-              "src/cli/*.cpp")
+              "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp")
 target_end()
 
 -- Main executable
