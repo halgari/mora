@@ -5,6 +5,7 @@ set_languages("c++20")
 set_warnings("all", "error")
 
 add_requires("gtest")
+add_requires("zlib")
 
 -- Static library with all compiler sources (tests and exe both link this)
 target("mora_lib")
@@ -12,7 +13,9 @@ target("mora_lib")
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
-              "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp")
+              "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
+              "src/data/*.cpp", "src/esp/*.cpp")
+    add_packages("zlib")
 target_end()
 
 -- Main executable
