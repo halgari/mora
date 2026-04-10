@@ -63,24 +63,31 @@ std::string DiagRenderer::render(const Diagnostic& diag) const {
 
     out << "  " << colored_header << "\n";
 
+    // Compute gutter width from line number
+    std::string line_num = std::to_string(diag.span.start_line);
+    size_t gutter_width = line_num.size() + 2; // "  " prefix before line number
+    std::string gutter(gutter_width, ' ');      // blank gutter for non-numbered lines
+
     // Location line: ┌─ file:line:col
     if (!diag.span.file.empty()) {
         std::string loc = diag.span.file + ":"
                         + std::to_string(diag.span.start_line) + ":"
                         + std::to_string(diag.span.start_col);
-        out << "    " << TermStyle::dim("\u250C\u2500", color_)
+        out << gutter << TermStyle::dim("\u250C\u2500", color_)
             << " " << TermStyle::cyan(loc, color_) << "\n";
-        out << "    " << TermStyle::dim("\u2502", color_) << "\n";
+        out << gutter << TermStyle::dim("\u2502", color_) << "\n";
     }
 
     // Source line with line number
     if (!diag.source_line.empty()) {
-        std::string line_num = std::to_string(diag.span.start_line);
-        out << "  " << TermStyle::dim(line_num, color_)
+        // Right-align line number in the gutter
+        std::string padded_num(gutter_width - line_num.size(), ' ');
+        padded_num += line_num;
+        out << TermStyle::dim(padded_num, color_)
             << TermStyle::dim("\u2502", color_)
-            << diag.source_line << "\n";
+            << " " << diag.source_line << "\n";
 
-        // Underline
+        // Underline (offset by 1 for the space after │)
         std::string ul = make_underline(diag.span.start_col, diag.span.end_col);
         if (!ul.empty()) {
             std::string colored_ul;
@@ -91,15 +98,15 @@ std::string DiagRenderer::render(const Diagnostic& diag) const {
             } else {
                 colored_ul = TermStyle::cyan(ul, color_);
             }
-            out << "    " << TermStyle::dim("\u2502", color_)
-                << colored_ul << "\n";
+            out << gutter << TermStyle::dim("\u2502", color_)
+                << " " << colored_ul << "\n";
         }
-        out << "    " << TermStyle::dim("\u2502", color_) << "\n";
+        out << gutter << TermStyle::dim("\u2502", color_) << "\n";
     }
 
     // Notes
     for (const auto& note : diag.notes) {
-        out << "    " << TermStyle::dim("=", color_) << " " << note << "\n";
+        out << gutter << TermStyle::dim("=", color_) << " " << note << "\n";
     }
 
     return out.str();

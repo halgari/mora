@@ -50,6 +50,8 @@
         "xmake run mora check test_data/example.mora",
         "xmake run mora check test_data/errors.mora",
         "xmake build",
+        "xmake test",
+        "xmake build mora",
         "xmake test"
     }
 }
