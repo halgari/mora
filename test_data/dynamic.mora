@@ -1,0 +1,6 @@
+namespace test.dynamic
+
+dynamic_rule(NPC):
+    npc(NPC)
+    current_location(NPC, Loc)
+    => add_item(NPC, :RegionalGoods)
