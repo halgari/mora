@@ -13,24 +13,37 @@ const std::vector<Tuple> FactDB::empty_;
 FactDB::FactDB(StringPool& pool) : pool_(pool) {}
 
 void FactDB::add_fact(StringId relation, Tuple values) {
-    relations_[relation.index].push_back(std::move(values));
+    auto it = relations_.find(relation.index);
+    if (it == relations_.end()) {
+        size_t arity = values.size();
+        auto [ins, ok] = relations_.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(relation.index),
+            std::forward_as_tuple(arity, std::vector<size_t>{0})
+        );
+        ins->second.add(std::move(values));
+    } else {
+        it->second.add(std::move(values));
+    }
+}
+
+void FactDB::configure_relation(StringId name, size_t arity, std::vector<size_t> indexes) {
+    relations_.emplace(
+        std::piecewise_construct,
+        std::forward_as_tuple(name.index),
+        std::forward_as_tuple(arity, std::move(indexes))
+    );
 }
 
 std::vector<Tuple> FactDB::query(StringId relation, const Tuple& pattern) const {
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return {};
 
+    std::vector<const Tuple*> ptrs = it->second.query(pattern);
     std::vector<Tuple> results;
-    for (const Tuple& tuple : it->second) {
-        if (tuple.size() != pattern.size()) continue;
-        bool match = true;
-        for (size_t i = 0; i < pattern.size(); ++i) {
-            if (!pattern[i].matches(tuple[i])) {
-                match = false;
-                break;
-            }
-        }
-        if (match) results.push_back(tuple);
+    results.reserve(ptrs.size());
+    for (const Tuple* tp : ptrs) {
+        results.push_back(*tp);
     }
     return results;
 }
@@ -38,19 +51,7 @@ std::vector<Tuple> FactDB::query(StringId relation, const Tuple& pattern) const 
 bool FactDB::has_fact(StringId relation, const Tuple& values) const {
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return false;
-
-    for (const Tuple& tuple : it->second) {
-        if (tuple.size() != values.size()) continue;
-        bool match = true;
-        for (size_t i = 0; i < values.size(); ++i) {
-            if (!values[i].matches(tuple[i])) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return true;
-    }
-    return false;
+    return it->second.contains(values);
 }
 
 size_t FactDB::fact_count(StringId relation) const {
@@ -61,8 +62,8 @@ size_t FactDB::fact_count(StringId relation) const {
 
 size_t FactDB::fact_count() const {
     size_t total = 0;
-    for (const auto& [key, tuples] : relations_) {
-        total += tuples.size();
+    for (const auto& [key, rel] : relations_) {
+        total += rel.size();
     }
     return total;
 }
@@ -70,7 +71,7 @@ size_t FactDB::fact_count() const {
 const std::vector<Tuple>& FactDB::get_relation(StringId relation) const {
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return empty_;
-    return it->second;
+    return it->second.all();
 }
 
 } // namespace mora

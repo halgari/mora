@@ -1,9 +1,5 @@
 {
     cmdlines = {
-        "xmake run lexer_test",
-        "xmake build",
-        "xmake build mora_lib",
-        "xmake build parser_test",
         "xmake build parser_test",
         "xmake run parser_test",
         "xmake build",
@@ -63,6 +59,10 @@
         "xmake build backend_integration_test",
         "xmake run backend_integration_test",
         "xmake test",
+        "xmake build",
+        "xmake test",
+        "xmake build indexed_relation_test",
+        "xmake run indexed_relation_test",
         "xmake build",
         "xmake test"
     }
