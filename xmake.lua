@@ -31,6 +31,7 @@ for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
         add_files(testfile)
         add_deps("mora_lib")
         add_packages("gtest")
+        add_syslinks("gtest_main")
         add_tests(name)
     target_end()
 end
