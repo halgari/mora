@@ -82,12 +82,16 @@ struct FactDecl       { StringId name; std::vector<MoraType> param_types; Source
 // ── Module (one .mora file) ──
 struct Module {
     std::string filename;
+    std::string source; // original source text (for diagnostic line display)
     std::optional<NamespaceDecl> ns;
     std::vector<RequiresDecl> requires_decls;
     std::vector<UseDecl> use_decls;
     std::vector<ImportIniDecl> import_decls;
     std::vector<FactDecl> fact_decls;
     std::vector<Rule> rules;
+
+    // Extract a source line (1-indexed) for diagnostic display
+    std::string get_line(uint32_t line) const;
 };
 
 } // namespace mora

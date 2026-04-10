@@ -24,9 +24,12 @@ private:
     MoraType lookup_variable(StringId name) const;
     void check_unused_variables(const Rule& rule);
 
+    std::string source_line(const SourceSpan& span) const;
+
     StringPool& pool_;
     DiagBag& diags_;
     const NameResolver& resolver_;
+    const Module* current_mod_ = nullptr;
 
     // Per-rule state (reset for each rule)
     std::unordered_map<uint32_t, MoraType> var_types_;

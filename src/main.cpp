@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
             mora::Parser parser(lexer, pool, diags);
             auto mod = parser.parse_module();
             mod.filename = file.string();
+            mod.source = source;
             modules.push_back(std::move(mod));
         }
         auto parse_end = std::chrono::steady_clock::now();

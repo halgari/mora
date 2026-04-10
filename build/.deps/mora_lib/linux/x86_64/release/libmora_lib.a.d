@@ -1,5 +1,6 @@
 {
     files = {
+        "build/.objs/mora_lib/linux/x86_64/release/src/ast/ast.cpp.o",
         "build/.objs/mora_lib/linux/x86_64/release/src/ast/types.cpp.o",
         "build/.objs/mora_lib/linux/x86_64/release/src/cli/progress.cpp.o",
         "build/.objs/mora_lib/linux/x86_64/release/src/cli/terminal.cpp.o",

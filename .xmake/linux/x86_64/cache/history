@@ -39,6 +39,17 @@
         "xmake build type_checker_test",
         "xmake run type_checker_test",
         "xmake build",
-        "xmake build mora_lib"
+        "xmake build mora_lib",
+        "xmake build mora",
+        "xmake build mora",
+        "xmake run mora check test_data/",
+        "xmake build integration_test",
+        "xmake run integration_test",
+        "xmake build",
+        "xmake test",
+        "xmake run mora check test_data/example.mora",
+        "xmake run mora check test_data/errors.mora",
+        "xmake build",
+        "xmake test"
     }
 }

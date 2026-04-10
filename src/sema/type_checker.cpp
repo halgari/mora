@@ -16,9 +16,16 @@ TypeChecker::TypeChecker(StringPool& pool, DiagBag& diags,
 // ---------------------------------------------------------------------------
 
 void TypeChecker::check(Module& mod) {
+    current_mod_ = &mod;
     for (Rule& rule : mod.rules) {
         check_rule(rule);
     }
+    current_mod_ = nullptr;
+}
+
+std::string TypeChecker::source_line(const SourceSpan& span) const {
+    if (current_mod_) return current_mod_->get_line(span.start_line);
+    return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +94,7 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
                          std::to_string(sig->param_types.size()) +
                          " arguments, got " +
                          std::to_string(pattern.args.size()),
-                     pattern.span, "");
+                     pattern.span, source_line(pattern.span));
         return;
     }
 
@@ -111,7 +118,7 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
                                      std::string(pool_.get(var->name)) +
                                      "': bound as " + existing.to_string() +
                                      " but used as " + expected.to_string(),
-                                 arg.span, "");
+                                 arg.span, source_line(arg.span));
                 }
             }
         } else if (std::get_if<DiscardExpr>(&arg.data)) {
@@ -126,7 +133,7 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
                              std::string("type mismatch: expected ") +
                                  expected.to_string() + " but got " +
                                  actual.to_string(),
-                             arg.span, "");
+                             arg.span, source_line(arg.span));
             }
         }
     }
@@ -148,7 +155,7 @@ void TypeChecker::check_effect(const Effect& effect) {
                          std::to_string(sig->param_types.size()) +
                          " arguments, got " +
                          std::to_string(effect.args.size()),
-                     effect.span, "");
+                     effect.span, source_line(effect.span));
         return;
     }
 
@@ -261,7 +268,7 @@ void TypeChecker::check_unused_variables(const Rule& rule) {
         diags_.warning("W007",
                        std::string("unused variable '") +
                            std::string(name) + "'",
-                       span, "");
+                       span, source_line(span));
     }
 }
 

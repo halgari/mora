@@ -100,6 +100,8 @@ const FactSignature* NameResolver::lookup_fact(StringId name) const {
 }
 
 void NameResolver::resolve(Module& mod) {
+    current_mod_ = &mod;
+
     // Pass 1: register every rule head as a derived fact, detect duplicates.
     for (const Rule& rule : mod.rules) {
         register_rule_as_fact(rule);
@@ -109,6 +111,13 @@ void NameResolver::resolve(Module& mod) {
     for (Rule& rule : mod.rules) {
         resolve_rule(rule);
     }
+
+    current_mod_ = nullptr;
+}
+
+std::string NameResolver::source_line(const SourceSpan& span) const {
+    if (current_mod_) return current_mod_->get_line(span.start_line);
+    return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +131,7 @@ void NameResolver::register_rule_as_fact(const Rule& rule) {
         diags_.error("E012",
                      std::string("duplicate rule definition: '") +
                          std::string(pool_.get(rule.name)) + "'",
-                     rule.span, "");
+                     rule.span, source_line(rule.span));
         return;
     }
 
@@ -141,19 +150,19 @@ void NameResolver::check_fact_exists(const FactPattern& pattern) {
         diags_.error("E011",
                      std::string("unknown fact or rule: '") +
                          std::string(pool_.get(pattern.name)) + "'",
-                     pattern.span, "");
+                     pattern.span, source_line(pattern.span));
     }
 }
 
 // Overload that takes name + span directly (avoids copying Expr args).
 static void check_action_name(StringId action, const SourceSpan& span,
                                const NameResolver& resolver, DiagBag& diags,
-                               StringPool& pool) {
+                               StringPool& pool, const std::string& src_line) {
     if (resolver.lookup_fact(action) == nullptr) {
         diags.error("E011",
                     std::string("unknown fact or rule: '") +
                         std::string(pool.get(action)) + "'",
-                    span, "");
+                    span, src_line);
     }
 }
 
@@ -163,10 +172,10 @@ void NameResolver::resolve_rule(Rule& rule) {
     }
     // Also check any top-level effects listed separately on the rule.
     for (const Effect& eff : rule.effects) {
-        check_action_name(eff.action, eff.span, *this, diags_, pool_);
+        check_action_name(eff.action, eff.span, *this, diags_, pool_, source_line(eff.span));
     }
     for (const ConditionalEffect& ce : rule.conditional_effects) {
-        check_action_name(ce.effect.action, ce.effect.span, *this, diags_, pool_);
+        check_action_name(ce.effect.action, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
     }
 }
 
@@ -176,10 +185,10 @@ void NameResolver::resolve_clause(Clause& clause) {
         if constexpr (std::is_same_v<NodeT, FactPattern>) {
             check_fact_exists(node);
         } else if constexpr (std::is_same_v<NodeT, Effect>) {
-            check_action_name(node.action, node.span, *this, diags_, pool_);
+            check_action_name(node.action, node.span, *this, diags_, pool_, source_line(node.span));
         } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
             check_action_name(node.effect.action, node.effect.span,
-                              *this, diags_, pool_);
+                              *this, diags_, pool_, source_line(node.effect.span));
         }
         // GuardClause — no fact reference to validate here
     }, clause.data);

@@ -23,9 +23,11 @@ private:
     void resolve_rule(Rule& rule);
     void resolve_clause(Clause& clause);
     void check_fact_exists(const FactPattern& pattern);
+    std::string source_line(const SourceSpan& span) const;
 
     StringPool& pool_;
     DiagBag& diags_;
+    const Module* current_mod_ = nullptr;
     std::unordered_map<uint32_t, FactSignature> facts_;
     std::unordered_map<uint32_t, bool> rules_;
 };

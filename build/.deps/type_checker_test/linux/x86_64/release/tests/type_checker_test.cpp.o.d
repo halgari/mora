@@ -1,5 +1,4 @@
 {
-    depfiles_format = "gcc",
     values = {
         "/usr/bin/g++",
         {
@@ -15,5 +14,6 @@
 ",
     files = {
         "tests/type_checker_test.cpp"
-    }
+    },
+    depfiles_format = "gcc"
 }
