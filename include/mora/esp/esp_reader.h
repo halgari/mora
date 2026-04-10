@@ -7,12 +7,18 @@
 #include "mora/diag/diagnostic.h"
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace mora {
 
 class EspReader {
 public:
     EspReader(StringPool& pool, DiagBag& diags, const SchemaRegistry& schema);
+
+    // Restrict which relations to extract (lazy loading).
+    // If not called, extracts ALL registered relations.
+    // Pass the set of relation names that rules actually reference.
+    void set_needed_relations(const std::unordered_set<uint32_t>& relation_name_indexes);
 
     // Read a single plugin file, populate facts into db
     void read_plugin(const std::filesystem::path& path, FactDB& db);
@@ -45,9 +51,14 @@ private:
     StringPool& pool_;
     DiagBag& diags_;
     const SchemaRegistry& schema_;
+    bool is_relation_needed(StringId name) const;
+
     std::unordered_map<std::string, uint32_t> editor_ids_;
+    std::unordered_set<uint32_t> needed_relations_; // empty = all needed
+    bool filter_active_ = false;
     size_t records_processed_ = 0;
     size_t facts_generated_ = 0;
+    size_t relations_skipped_ = 0;
     uint32_t current_load_index_ = 0;
 };
 

@@ -9,13 +9,40 @@ namespace mora {
 EspReader::EspReader(StringPool& pool, DiagBag& diags, const SchemaRegistry& schema)
     : pool_(pool), diags_(diags), schema_(schema) {}
 
+void EspReader::set_needed_relations(const std::unordered_set<uint32_t>& relation_name_indexes) {
+    needed_relations_ = relation_name_indexes;
+    filter_active_ = !needed_relations_.empty();
+}
+
+bool EspReader::is_relation_needed(StringId name) const {
+    if (!filter_active_) return true;
+    return needed_relations_.count(name.index) > 0;
+}
+
 void EspReader::read_plugin(const std::filesystem::path& path, FactDB& db) {
     MmapFile file(path.string());
     std::string filename = path.filename().string();
     PluginInfo info = build_plugin_index(file, filename);
 
     for (auto& [type, records] : info.by_type) {
-        auto schemas = schema_.schemas_for_record(type);
+        auto all_schemas = schema_.schemas_for_record(type);
+        if (all_schemas.empty()) continue;
+
+        // Filter to only needed schemas (lazy loading)
+        std::vector<const RelationSchema*> schemas;
+        for (auto* s : all_schemas) {
+            if (is_relation_needed(s->name)) {
+                schemas.push_back(s);
+            }
+        }
+        // Always include editor_id for symbol resolution
+        auto edid_name = pool_.intern("editor_id");
+        for (auto* s : all_schemas) {
+            if (s->name == edid_name && !is_relation_needed(s->name)) {
+                schemas.push_back(s);
+                break;
+            }
+        }
         if (schemas.empty()) continue;
 
         for (auto& loc : records) {

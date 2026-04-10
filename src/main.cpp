@@ -145,6 +145,30 @@ static std::string format_value(const mora::Value& v) {
     }
 }
 
+// Collect all relation names referenced by rules (for lazy ESP loading)
+static std::unordered_set<uint32_t> collect_used_relations(
+    const std::vector<mora::Module>& modules) {
+    std::unordered_set<uint32_t> used;
+    for (auto& mod : modules) {
+        for (auto& rule : mod.rules) {
+            // Body clauses
+            for (auto& clause : rule.body) {
+                if (auto* fact = std::get_if<mora::FactPattern>(&clause.data)) {
+                    used.insert(fact->name.index);
+                }
+            }
+            // Effects (actions map to relations too)
+            for (auto& eff : rule.effects) {
+                used.insert(eff.action.index);
+            }
+            for (auto& ce : rule.conditional_effects) {
+                used.insert(ce.effect.action.index);
+            }
+        }
+    }
+    return used;
+}
+
 static void print_usage() {
     std::printf("Usage: mora <command> [options] [path]\n\n");
     std::printf("Commands:\n");
@@ -316,6 +340,11 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
         mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
         mora::EspReader esp_reader(cr.pool, cr.diags, schema);
+
+        // Lazy loading: only extract facts that rules actually reference
+        auto needed = collect_used_relations(cr.modules);
+        esp_reader.set_needed_relations(needed);
+
         esp_reader.read_load_order(lo.plugins, db);
 
         // Wire up symbol resolution to the evaluator
@@ -324,8 +353,9 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         }
 
         progress.finish_phase(
-            "Loaded " + std::to_string(lo.plugins.size()) + " plugins (" +
-            std::to_string(db.fact_count()) + " facts)", "done");
+            std::to_string(lo.plugins.size()) + " plugins, " +
+            std::to_string(needed.size()) + " relations → " +
+            std::to_string(db.fact_count()) + " facts", "done");
     }
     mora::PatchSet all_patches;
 
