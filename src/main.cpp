@@ -15,6 +15,9 @@
 #include "mora/emit/patch_reader.h"
 #include "mora/emit/rt_writer.h"
 #include "mora/emit/lock_file.h"
+#include "mora/esp/load_order.h"
+#include "mora/esp/esp_reader.h"
+#include "mora/data/schema_registry.h"
 
 #include <chrono>
 #include <cstdio>
@@ -123,10 +126,11 @@ static void print_usage() {
     std::printf("  inspect   Display .mora.patch file contents\n");
     std::printf("  info      Show project status overview\n");
     std::printf("\nOptions:\n");
-    std::printf("  --no-color    Disable colored output\n");
-    std::printf("  --output DIR  Output directory (compile, default: MoraCache/)\n");
-    std::printf("  --conflicts   Show only conflict info (inspect)\n");
-    std::printf("  -v            Verbose output\n");
+    std::printf("  --no-color        Disable colored output\n");
+    std::printf("  --output DIR      Output directory (compile, default: MoraCache/)\n");
+    std::printf("  --data-dir DIR    Skyrim Data/ directory for ESP loading (compile, info)\n");
+    std::printf("  --conflicts       Show only conflict info (inspect)\n");
+    std::printf("  -v                Verbose output\n");
 }
 
 // ── Shared: parse + resolve + type-check pipeline ──────────────────────────
@@ -229,6 +233,7 @@ static int cmd_check(const std::string& target_path, mora::Progress& progress, b
 }
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
+                        const std::string& data_dir,
                         mora::Progress& progress, bool use_color) {
     auto start = std::chrono::steady_clock::now();
     progress.print_header("0.1.0");
@@ -273,6 +278,28 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     progress.start_phase("Evaluating");
     mora::FactDB db(cr.pool);
     mora::Evaluator evaluator(cr.pool, cr.diags, db);
+
+    // If --data-dir provided, load ESP data before evaluation
+    if (!data_dir.empty()) {
+        progress.start_phase("Loading ESPs");
+
+        mora::SchemaRegistry schema(cr.pool);
+        schema.register_defaults();
+        schema.configure_fact_db(db);
+
+        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+        mora::EspReader esp_reader(cr.pool, cr.diags, schema);
+        esp_reader.read_load_order(lo.plugins, db);
+
+        // Wire up symbol resolution to the evaluator
+        for (auto& [edid, formid] : esp_reader.editor_id_map()) {
+            evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
+        }
+
+        progress.finish_phase(
+            "Loaded " + std::to_string(lo.plugins.size()) + " plugins (" +
+            std::to_string(db.fact_count()) + " facts)", "done");
+    }
     mora::PatchSet all_patches;
 
     for (auto& mod : cr.modules) {
@@ -417,7 +444,7 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts) {
     return 0;
 }
 
-static int cmd_info(const std::string& target_path) {
+static int cmd_info(const std::string& target_path, const std::string& data_dir) {
     std::printf("  mora v0.1.0\n\n");
 
     // Find and count .mora files/rules
@@ -429,9 +456,10 @@ static int cmd_info(const std::string& target_path) {
     auto files = find_mora_files(base);
     size_t rule_count = 0;
 
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
     if (!files.empty()) {
-        mora::StringPool pool;
-        mora::DiagBag diags;
         for (auto& file : files) {
             auto source = read_file(file);
             if (source.empty()) continue;
@@ -460,6 +488,23 @@ static int cmd_info(const std::string& target_path) {
         }
     }
 
+    // If --data-dir provided, show plugin count and fact count
+    if (!data_dir.empty()) {
+        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+        std::printf("  Data dir:      %s\n", data_dir.c_str());
+        std::printf("  Plugins found: %zu\n", lo.plugins.size());
+
+        if (!lo.plugins.empty()) {
+            mora::FactDB db(pool);
+            mora::SchemaRegistry schema(pool);
+            schema.register_defaults();
+            schema.configure_fact_db(db);
+            mora::EspReader esp_reader(pool, diags, schema);
+            esp_reader.read_load_order(lo.plugins, db);
+            std::printf("  Facts loaded:  %zu\n", db.fact_count());
+        }
+    }
+
     return 0;
 }
 
@@ -474,6 +519,7 @@ int main(int argc, char* argv[]) {
     bool show_conflicts = false;
     std::string target_path = ".";
     std::string output_dir = "MoraCache";
+    std::string data_dir;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -481,6 +527,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "-v") verbose = true;
         else if (arg == "--conflicts") show_conflicts = true;
         else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
+        else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }
         else target_path = arg;
     }
 
@@ -493,7 +540,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "compile") {
-        return cmd_compile(target_path, output_dir, progress, use_color);
+        return cmd_compile(target_path, output_dir, data_dir, progress, use_color);
     }
 
     if (command == "inspect") {
@@ -501,7 +548,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "info") {
-        return cmd_info(target_path);
+        return cmd_info(target_path, data_dir);
     }
 
     print_usage();
