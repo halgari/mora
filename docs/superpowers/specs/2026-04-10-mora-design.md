@@ -528,6 +528,167 @@ MoraCache/
 +-- mora.log      # diagnostics report
 ```
 
+## CLI Design
+
+### Modern CLI Experience
+
+The `mora` CLI should feel polished and professional — on par with tools like Cargo, Zig, or pnpm. First impressions matter for adoption in the modding community.
+
+### Commands
+
+```
+mora compile              # compile all .mora files, produce .spatch + .mora.rt
+mora compile --watch      # recompile on file changes
+mora check                # type check and lint only, no output files
+mora inspect              # human-readable dump of .spatch contents
+mora inspect --conflicts  # show only conflict resolution details
+mora dump                 # dump .mora.rt bytecode (for debugging)
+mora import               # run INI importers, show what was translated
+mora info                 # show load order, mod count, rule count, cache status
+```
+
+### Progress Display
+
+Compilation shows a live progress display with spinners and phase indicators:
+
+```
+$ mora compile
+
+  mora v0.1.0
+
+  Parsing ·········································· 247 files   0.3s
+  Resolving ········································ 1,204 rules  0.1s
+  Type checking ···································· 1,204 rules  0.2s
+  Loading ESPs ····································· 512 plugins  1.8s
+  Evaluating static rules ·························· 987 rules    0.4s
+  Emitting ·········································             0.1s
+
+  ✓ Compiled successfully in 2.9s
+
+  Summary:
+    987 rules frozen → mora.spatch (2.3 MB, 14,832 patches)
+    217 rules dynamic → mora.rt (47 runtime rules)
+     12 conflicts resolved (see mora.log)
+      0 errors, 3 warnings
+```
+
+### Error Display
+
+Errors use color, context, and suggestions. ANSI colors with automatic detection for terminal capability (falls back to plain text in non-TTY or dumb terminals).
+
+```
+$ mora compile
+
+  mora v0.1.0
+
+  Parsing ·········································· 247 files   0.3s
+
+  error[E012]: type mismatch
+    ┌─ weapons.mora:14:21
+    │
+  14│     has_faction(NPC, :IronSword)
+    │                      ──────────
+    │                      expected FactionID, found WeaponID
+    │
+    = :IronSword is Skyrim.esm|0x00012EB7 (weapon)
+    = did you mean :BanditFaction?
+
+  error[E031]: unresolved reference
+    ┌─ weapons.mora:22:22
+    │
+  22│     => add_item(NPC, :SilvrSword)
+    │                       ──────────
+    │                       not found in load order
+    │
+    = similar: :SilverSword, :SilverGreatsword
+
+  warning[W003]: rule matches 0 records
+    ┌─ npcs.mora:8:1
+    │
+   8│ ┌ bandit_gear(NPC):
+   9│ │     npc(NPC)
+  10│ │     has_faction(NPC, :BanditFaction)
+  11│ │     has_keyword(NPC, :ActorTypeGhost)
+    │ └─── no NPCs have both BanditFaction and ActorTypeGhost
+    │
+    = hint: did you mean 'not has_keyword'?
+
+  ✗ Failed with 2 errors, 1 warning
+```
+
+### Color Scheme
+
+- **Red**: errors, failed status
+- **Yellow**: warnings
+- **Cyan**: file paths, rule names
+- **Green**: success, counts
+- **Bold white**: emphasis, section headers
+- **Dim**: hints, secondary information
+
+### Inspect Command
+
+Human-readable dump of the frozen patches, useful for debugging:
+
+```
+$ mora inspect
+
+  mora.spatch v1 — 14,832 patches (2.3 MB)
+  load order hash: a4f2c91b
+  source hash: 7e3d01ff
+
+  BanditMelee01 (Skyrim.esm|0x0003B547)
+    damage:   12 → 15          (set by my_mod.patches)
+    keywords: + :VampireBane   (added by sacrosanct.vampires)
+
+  IronSword (Skyrim.esm|0x00012EB7)
+    damage:   7 → 9            (set by requiem.weapons)
+    name:     "Iron Sword" → "Rusty Iron Sword"  (set by immersion.names)
+
+  ... (14,830 more)
+
+$ mora inspect --conflicts
+
+  Conflicts resolved by load order (last write wins):
+
+  BanditMelee01.damage:
+    12 (Skyrim.esm) → 18 (Requiem) → 15 (MyMod)
+    ── MyMod wins (load position 247 > 89)
+
+  IronSword.damage:
+    7 (Skyrim.esm) → 9 (Requiem) → 9 (WeaponBalance)
+    ── same value, no real conflict
+
+  12 conflicts across 8 records
+```
+
+### Info Command
+
+Quick status overview:
+
+```
+$ mora info
+
+  mora v0.1.0
+
+  Load order:    512 plugins (498 ESM/ESP, 14 ESL)
+  Mora rules:    1,204 across 247 files (23 mods)
+  Imported INIs: 89 SPID, 34 KID, 12 SkyPatcher
+
+  Cache status:  ✓ up to date
+    mora.spatch: 2.3 MB (14,832 patches)
+    mora.rt:     47 runtime rules
+    last built:  2 minutes ago
+```
+
+### Implementation Notes
+
+- Use a terminal abstraction library for cross-platform color support (Windows 10+ supports ANSI, older Windows needs Console API calls)
+- Detect `NO_COLOR` env var and `--no-color` flag to disable colors
+- Detect non-TTY output (piped to file) and disable spinners/progress bars, use plain text
+- JSON output mode (`--format json`) for tooling integration (mod managers, CI)
+- Verbose mode (`-v`, `-vv`) for debugging the compiler itself
+- Exit codes: 0 = success, 1 = errors, 2 = warnings only (with `--deny-warnings`)
+
 ## Evolution Path
 
 ### Phase 1 (This Spec): Two-Phase Interpreter
