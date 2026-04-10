@@ -1,0 +1,19 @@
+namespace test.example
+
+requires mod("Skyrim.esm")
+
+bandit(NPC):
+    npc(NPC)
+    has_faction(NPC, :BanditFaction)
+
+vampire_bane(Weapon):
+    weapon(Weapon)
+    has_keyword(Weapon, :WeapMaterialSilver)
+    not has_keyword(Weapon, :WeapTypeGreatsword)
+    => add_keyword(Weapon, :VampireBane)
+
+bandit_weapons(NPC):
+    bandit(NPC)
+    level(NPC, Level)
+    Level >= 20 => add_item(NPC, :SilverSword)
+    Level < 20 => add_item(NPC, :IronSword)

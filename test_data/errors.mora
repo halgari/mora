@@ -1,0 +1,7 @@
+namespace test.errors
+
+wrong(NPC):
+    npc(NPC, :Extra)
+
+also_wrong(NPC):
+    nonexistent_fact(NPC)
