@@ -1,0 +1,22 @@
+{
+    cmdlines = {
+        "xmake lua /usr/share/xmake/modules/private/utils/statistics.lua",
+        "xmake build mora",
+        "xmake require --yes gtest",
+        "xmake require --yes gtest",
+        "xmake require --yes",
+        "xmake build mora",
+        "xmake run mora",
+        "xmake build arena_test",
+        "xmake require --info gtest",
+        "xmake require --list",
+        "xmake build arena_test",
+        "xmake run arena_test",
+        "xmake build string_pool_test",
+        "xmake run string_pool_test",
+        "xmake build string_pool_test",
+        "xmake run string_pool_test",
+        "xmake build source_location_test",
+        "xmake run source_location_test"
+    }
+}
