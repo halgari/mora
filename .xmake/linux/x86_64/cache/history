@@ -1,7 +1,5 @@
 {
     cmdlines = {
-        "xmake build mora",
-        "xmake test",
         "xmake build fact_db_test",
         "xmake run fact_db_test",
         "xmake build phase_classifier_test",
@@ -63,6 +61,8 @@
         "xmake build mora",
         "xmake test",
         "xmake build mora",
+        "xmake build mora",
+        "xmake test",
         "xmake build mora",
         "xmake test"
     }

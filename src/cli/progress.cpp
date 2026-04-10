@@ -1,4 +1,5 @@
 #include "mora/cli/progress.h"
+#include "mora/cli/splash.h"
 #include <cstdio>
 #include <chrono>
 #include <sstream>
@@ -10,10 +11,14 @@ Progress::Progress(bool use_color, bool is_tty)
     : color_(use_color), is_tty_(is_tty), phase_start_(std::chrono::steady_clock::now()) {}
 
 void Progress::print_header(const std::string& version) {
-    std::printf("\n");
-    std::string name = TermStyle::bold(TermStyle::cyan("mora", color_), color_);
-    std::string ver = TermStyle::dim("v" + version, color_);
-    std::printf("  %s %s\n\n", name.c_str(), ver.c_str());
+    // ASCII art banner
+    std::string banner(MORA_BANNER);
+    std::printf("%s\n", TermStyle::cyan(banner, color_).c_str());
+
+    // Version + random splash tagline
+    std::string ver = TermStyle::dim("   v" + version, color_);
+    std::string splash = TermStyle::dim(std::string("   ") + random_splash(), color_);
+    std::printf("%s\n%s\n\n", ver.c_str(), splash.c_str());
 }
 
 void Progress::start_phase(const std::string& name) {
