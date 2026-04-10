@@ -140,7 +140,7 @@ requiem.combat.damage_mult(NPC, Mult)    # fully qualified inline
 
 Rules are classified as **static** (freezable) or **dynamic** (runtime) automatically based on what they write to:
 
-- A rule whose `=>` actions modify base records → **static** (frozen into `.spatch`)
+- A rule whose `=>` actions modify base records → **static** (frozen into `.mora.patch`)
 - A rule whose `=>` actions modify instances, or whose body reads instance facts → **dynamic** (compiled to bytecode)
 
 The same rule can apply to both base records (at freeze time) and instances (at runtime). The compiler evaluates it against all known base records during the freeze step, and the runtime evaluates it for instances the freezer couldn't see (dynamically spawned NPCs, etc.).
@@ -296,14 +296,14 @@ warning[W003]: rule 'bandit_gear' matches 0 records (npcs.mora:8)
    | 3. Type check all rules
    | 4. Evaluate static rules against ESP data
    | 5. Emit:
-   |    a. .spatch  (frozen base record patches)
+   |    a. .mora.patch  (frozen base record patches)
    |    b. .mora.rt (residual runtime rules)
    |    c. diagnostics report
    +------+--------+
           |
      +----+----+
      |         |
-  .spatch   .mora.rt
+  .mora.patch   .mora.rt
      |         |
      +----+----+
           |
@@ -311,7 +311,7 @@ warning[W003]: rule 'bandit_gear' matches 0 records (npcs.mora:8)
    | Mora Runtime   |  (single SKSE plugin)
    |                |
    | At DataLoaded:
-   |   1. Load .spatch, apply field-level
+   |   1. Load .mora.patch, apply field-level
    |      diffs to base records in memory
    |   2. Load .mora.rt residual rules
    |   3. Run residual rules against base
@@ -329,12 +329,12 @@ warning[W003]: rule 'bandit_gear' matches 0 records (npcs.mora:8)
 - Reads `.mora` files, imports SPID/KID/SkyPatcher INIs
 - Reads ESPs/ESMs/ESLs via its own parser library (no game dependency)
 - Full compiler pipeline: lex, parse, name resolve, type check, lint, phase classify, evaluate/emit
-- Outputs `.spatch` + `.mora.rt` + diagnostics
+- Outputs `.mora.patch` + `.mora.rt` + diagnostics
 - Triggered by mod manager when load order changes, or manually
 
 **2. Mora Runtime (C++ SKSE DLL)**
 - Single SKSE plugin replacing dozens of distributors
-- Loads `.spatch` — fast sequential apply, no scanning
+- Loads `.mora.patch` — fast sequential apply, no scanning
 - Loads `.mora.rt` residual rules into a lightweight bytecode VM
 - Registers for SKSE events to trigger dynamic rule evaluation
 - Deterministic ID generation via `hash(rule, target, inputs)`
@@ -376,7 +376,7 @@ Lint/Warn      -> unused vars, empty matches, suspicious patterns
 Phase Classify -> tag each rule as static or dynamic
     |
     v
-Evaluate/Emit  -> static: evaluate against ESP data -> .spatch
+Evaluate/Emit  -> static: evaluate against ESP data -> .mora.patch
                 -> dynamic: compile to bytecode -> .mora.rt
 ```
 
@@ -416,7 +416,7 @@ Frozen 14,832 patches. 47 rules deferred to runtime.
 
 ## Binary Formats
 
-### .spatch (Frozen Patches)
+### .mora.patch (Frozen Patches)
 
 Optimized for sequential read and bulk apply. The runtime loads it, walks it front to back, and writes values into game memory.
 
@@ -523,7 +523,7 @@ Compiler output:
 
 ```
 MoraCache/
-+-- mora.spatch   # frozen binary patches
++-- mora.patch   # frozen binary patches
 +-- mora.rt       # residual runtime rules (bytecode)
 +-- mora.lock     # staleness detection hashes
 +-- mora.log      # diagnostics report
@@ -538,10 +538,10 @@ The `mora` CLI should feel polished and professional — on par with tools like 
 ### Commands
 
 ```
-mora compile              # compile all .mora files, produce .spatch + .mora.rt
+mora compile              # compile all .mora files, produce .mora.patch + .mora.rt
 mora compile --watch      # recompile on file changes
 mora check                # type check and lint only, no output files
-mora inspect              # human-readable dump of .spatch contents
+mora inspect              # human-readable dump of .mora.patch contents
 mora inspect --conflicts  # show only conflict resolution details
 mora dump                 # dump .mora.rt bytecode (for debugging)
 mora import               # run INI importers, show what was translated
@@ -567,7 +567,7 @@ $ mora compile
   ✓ Compiled successfully in 2.9s
 
   Summary:
-    987 rules frozen → mora.spatch (2.3 MB, 14,832 patches)
+    987 rules frozen → mora.patch (2.3 MB, 14,832 patches)
     217 rules dynamic → mora.rt (47 runtime rules)
      12 conflicts resolved (see mora.log)
       0 errors, 3 warnings
@@ -633,7 +633,7 @@ Human-readable dump of the frozen patches, useful for debugging:
 ```
 $ mora inspect
 
-  mora.spatch v1 — 14,832 patches (2.3 MB)
+  mora.patch v1 — 14,832 patches (2.3 MB)
   load order hash: a4f2c91b
   source hash: 7e3d01ff
 
@@ -676,7 +676,7 @@ $ mora info
   Imported INIs: 89 SPID, 34 KID, 12 SkyPatcher
 
   Cache status:  ✓ up to date
-    mora.spatch: 2.3 MB (14,832 patches)
+    mora.patch: 2.3 MB (14,832 patches)
     mora.rt:     47 runtime rules
     last built:  2 minutes ago
 ```

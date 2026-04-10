@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Mora compiler backend so that `mora compile` evaluates static rules against an in-memory fact database, produces `.spatch` and `.mora.rt` binary files with field-level conflict resolution, and supports `mora inspect` and `mora info` commands.
+**Goal:** Build the Mora compiler backend so that `mora compile` evaluates static rules against an in-memory fact database, produces `.mora.patch` and `.mora.rt` binary files with field-level conflict resolution, and supports `mora inspect` and `mora info` commands.
 
-**Architecture:** A FactDB holds game data as typed tuples. The PhaseClassifier tags each rule as static or dynamic. The Evaluator runs static rules against the FactDB, producing PatchSet entries. The SpatchWriter serializes the conflict-resolved PatchSet to binary. The RtWriter serializes dynamic rules to bytecode. Since we don't have a real ESP parser yet (Plan 3), the FactDB is populated from test data.
+**Architecture:** A FactDB holds game data as typed tuples. The PhaseClassifier tags each rule as static or dynamic. The Evaluator runs static rules against the FactDB, producing PatchSet entries. The PatchWriter serializes the conflict-resolved PatchSet to binary. The RtWriter serializes dynamic rules to bytecode. Since we don't have a real ESP parser yet (Plan 3), the FactDB is populated from test data.
 
 **Tech Stack:** C++20, xmake, Google Test. No new dependencies.
 
@@ -20,8 +20,8 @@ include/mora/
 │   ├── evaluator.h          # evaluate static rules against FactDB
 │   └── patch_set.h          # collected patches with conflict resolution
 ├── emit/
-│   ├── spatch_writer.h      # write .spatch binary format
-│   ├── spatch_reader.h      # read .spatch for inspect command
+│   ├── patch_writer.h      # write .mora.patch binary format
+│   ├── patch_reader.h      # read .mora.patch for inspect command
 │   ├── rt_writer.h          # write .mora.rt bytecode format
 │   └── lock_file.h          # .mora.lock staleness detection
 src/
@@ -31,8 +31,8 @@ src/
 │   ├── evaluator.cpp
 │   └── patch_set.cpp
 ├── emit/
-│   ├── spatch_writer.cpp
-│   ├── spatch_reader.cpp
+│   ├── patch_writer.cpp
+│   ├── patch_reader.cpp
 │   ├── rt_writer.cpp
 │   └── lock_file.cpp
 tests/
@@ -40,7 +40,7 @@ tests/
 ├── phase_classifier_test.cpp
 ├── evaluator_test.cpp
 ├── patch_set_test.cpp
-├── spatch_roundtrip_test.cpp
+├── patch_roundtrip_test.cpp
 └── rt_writer_test.cpp
 ```
 
@@ -1160,44 +1160,44 @@ git commit -m "feat: rule evaluator for static Datalog evaluation against fact d
 
 ---
 
-### Task 5: .spatch Binary Writer
+### Task 5: .mora.patch Binary Writer
 
 **Files:**
-- Create: `include/mora/emit/spatch_writer.h`
-- Create: `src/emit/spatch_writer.cpp`
-- Create: `include/mora/emit/spatch_reader.h`
-- Create: `src/emit/spatch_reader.cpp`
-- Create: `tests/spatch_roundtrip_test.cpp`
+- Create: `include/mora/emit/patch_writer.h`
+- Create: `src/emit/patch_writer.cpp`
+- Create: `include/mora/emit/patch_reader.h`
+- Create: `src/emit/patch_reader.cpp`
+- Create: `tests/patch_roundtrip_test.cpp`
 
-Write and read the `.spatch` binary format. We test via roundtrip: write patches, read them back, verify they match.
+Write and read the `.mora.patch` binary format. We test via roundtrip: write patches, read them back, verify they match.
 
 - [ ] **Step 1: Write the failing test**
 
 ```cpp
-// tests/spatch_roundtrip_test.cpp
+// tests/patch_roundtrip_test.cpp
 #include <gtest/gtest.h>
-#include "mora/emit/spatch_writer.h"
-#include "mora/emit/spatch_reader.h"
+#include "mora/emit/patch_writer.h"
+#include "mora/emit/patch_reader.h"
 #include "mora/eval/patch_set.h"
 #include "mora/core/string_pool.h"
 #include <sstream>
 
-class SpatchRoundtripTest : public ::testing::Test {
+class PatchRoundtripTest : public ::testing::Test {
 protected:
     mora::StringPool pool;
 };
 
-TEST_F(SpatchRoundtripTest, EmptyPatchSet) {
+TEST_F(PatchRoundtripTest, EmptyPatchSet) {
     mora::ResolvedPatchSet resolved;
     std::ostringstream out;
-    mora::SpatchWriter writer(pool);
+    mora::PatchWriter writer(pool);
     writer.write(out, resolved, 0x12345678, 0xABCDEF01);
 
     std::string data = out.str();
     EXPECT_GE(data.size(), 4u); // at least magic bytes
 
     std::istringstream in(data);
-    mora::SpatchReader reader(pool);
+    mora::PatchReader reader(pool);
     auto result = reader.read(in);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->load_order_hash, 0x12345678u);
@@ -1205,18 +1205,18 @@ TEST_F(SpatchRoundtripTest, EmptyPatchSet) {
     EXPECT_EQ(result->patches.size(), 0u);
 }
 
-TEST_F(SpatchRoundtripTest, SinglePatch) {
+TEST_F(PatchRoundtripTest, SinglePatch) {
     mora::PatchSet ps;
     ps.add_patch(0x100, mora::FieldId::Damage, mora::FieldOp::Set,
                  mora::Value::make_int(25), pool.intern("my_mod"), 0);
     auto resolved = ps.resolve();
 
     std::ostringstream out;
-    mora::SpatchWriter writer(pool);
+    mora::PatchWriter writer(pool);
     writer.write(out, resolved, 0, 0);
 
     std::istringstream in(out.str());
-    mora::SpatchReader reader(pool);
+    mora::PatchReader reader(pool);
     auto result = reader.read(in);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->patches.size(), 1u);
@@ -1226,7 +1226,7 @@ TEST_F(SpatchRoundtripTest, SinglePatch) {
     EXPECT_EQ(result->patches[0].fields[0].value.as_int(), 25);
 }
 
-TEST_F(SpatchRoundtripTest, MultiplePatches) {
+TEST_F(PatchRoundtripTest, MultiplePatches) {
     mora::PatchSet ps;
     ps.add_patch(0x100, mora::FieldId::Damage, mora::FieldOp::Set,
                  mora::Value::make_int(25), pool.intern("mod"), 0);
@@ -1237,35 +1237,35 @@ TEST_F(SpatchRoundtripTest, MultiplePatches) {
     auto resolved = ps.resolve();
 
     std::ostringstream out;
-    mora::SpatchWriter writer(pool);
+    mora::PatchWriter writer(pool);
     writer.write(out, resolved, 0, 0);
 
     std::istringstream in(out.str());
-    mora::SpatchReader reader(pool);
+    mora::PatchReader reader(pool);
     auto result = reader.read(in);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->patches.size(), 2u); // 2 FormIDs
 }
 
-TEST_F(SpatchRoundtripTest, MagicBytesValidation) {
+TEST_F(PatchRoundtripTest, MagicBytesValidation) {
     std::istringstream in("XXXX"); // wrong magic
-    mora::SpatchReader reader(pool);
+    mora::PatchReader reader(pool);
     auto result = reader.read(in);
     EXPECT_FALSE(result.has_value());
 }
 
-TEST_F(SpatchRoundtripTest, FloatValue) {
+TEST_F(PatchRoundtripTest, FloatValue) {
     mora::PatchSet ps;
     ps.add_patch(0x100, mora::FieldId::Weight, mora::FieldOp::Set,
                  mora::Value::make_float(3.14), pool.intern("mod"), 0);
     auto resolved = ps.resolve();
 
     std::ostringstream out;
-    mora::SpatchWriter writer(pool);
+    mora::PatchWriter writer(pool);
     writer.write(out, resolved, 0, 0);
 
     std::istringstream in(out.str());
-    mora::SpatchReader reader(pool);
+    mora::PatchReader reader(pool);
     auto result = reader.read(in);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->patches.size(), 1u);
@@ -1275,13 +1275,13 @@ TEST_F(SpatchRoundtripTest, FloatValue) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `xmake build spatch_roundtrip_test && xmake run spatch_roundtrip_test`
+Run: `xmake build patch_roundtrip_test && xmake run patch_roundtrip_test`
 Expected: FAIL
 
-- [ ] **Step 3: Implement SpatchWriter and SpatchReader**
+- [ ] **Step 3: Implement PatchWriter and PatchReader**
 
 ```cpp
-// include/mora/emit/spatch_writer.h
+// include/mora/emit/patch_writer.h
 #pragma once
 
 #include "mora/eval/patch_set.h"
@@ -1290,9 +1290,9 @@ Expected: FAIL
 
 namespace mora {
 
-class SpatchWriter {
+class PatchWriter {
 public:
-    explicit SpatchWriter(StringPool& pool) : pool_(pool) {}
+    explicit PatchWriter(StringPool& pool) : pool_(pool) {}
 
     void write(std::ostream& out, const ResolvedPatchSet& patches,
                uint64_t load_order_hash, uint64_t source_hash);
@@ -1313,7 +1313,7 @@ private:
 ```
 
 ```cpp
-// include/mora/emit/spatch_reader.h
+// include/mora/emit/patch_reader.h
 #pragma once
 
 #include "mora/eval/patch_set.h"
@@ -1324,18 +1324,18 @@ private:
 
 namespace mora {
 
-struct SpatchFile {
+struct PatchFile {
     uint16_t version;
     uint64_t load_order_hash;
     uint64_t source_hash;
     std::vector<ResolvedPatch> patches;
 };
 
-class SpatchReader {
+class PatchReader {
 public:
-    explicit SpatchReader(StringPool& pool) : pool_(pool) {}
+    explicit PatchReader(StringPool& pool) : pool_(pool) {}
 
-    std::optional<SpatchFile> read(std::istream& in);
+    std::optional<PatchFile> read(std::istream& in);
 
 private:
     bool read_u8(std::istream& in, uint8_t& v);
@@ -1361,14 +1361,14 @@ Note: the spec mentions a string table, but for Phase 1 we inline strings direct
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `xmake build spatch_roundtrip_test && xmake run spatch_roundtrip_test`
+Run: `xmake build patch_roundtrip_test && xmake run patch_roundtrip_test`
 Expected: All 5 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: .spatch binary writer and reader with roundtrip tests"
+git commit -m "feat: .mora.patch binary writer and reader with roundtrip tests"
 ```
 
 ---
@@ -1632,7 +1632,7 @@ git commit -m "feat: lock file for stale cache detection"
 **Files:**
 - Modify: `src/main.cpp`
 
-Wire up the full compile pipeline: parse → resolve → type check → classify → evaluate → write .spatch + .mora.rt + .mora.lock. Add progress display for new phases.
+Wire up the full compile pipeline: parse → resolve → type check → classify → evaluate → write .mora.patch + .mora.rt + .mora.lock. Add progress display for new phases.
 
 - [ ] **Step 1: Implement the compile command**
 
@@ -1641,7 +1641,7 @@ Add a `run_compile` function in main.cpp that extends the existing `check` pipel
 After type checking (which already works), add these phases:
 1. **Phase classification**: Run PhaseClassifier on all modules, report static vs dynamic counts
 2. **Evaluation**: Create a FactDB (empty for now — Plan 3 populates it from ESPs), run Evaluator on static rules
-3. **Emit**: Write .spatch via SpatchWriter, .mora.rt via RtWriter, .mora.lock via LockFile
+3. **Emit**: Write .mora.patch via PatchWriter, .mora.rt via RtWriter, .mora.lock via LockFile
 4. **Summary**: Show frozen count, dynamic count, conflicts, file sizes
 
 The compile command should:
@@ -1678,13 +1678,13 @@ Expected output (something like):
   ✓ Compiled successfully in 0ms
 
   Summary:
-    3 rules frozen → mora.spatch (X bytes, 0 patches)
+    3 rules frozen → mora.patch (X bytes, 0 patches)
     2 rules dynamic → mora.rt
     0 conflicts resolved
     0 errors, 0 warnings
 ```
 
-Verify that MoraCache/ directory was created with .spatch, .mora.rt, and .mora.lock files.
+Verify that MoraCache/ directory was created with .mora.patch, .mora.rt, and .mora.lock files.
 
 - [ ] **Step 3: Commit**
 
@@ -1700,20 +1700,20 @@ git commit -m "feat: mora compile command with full pipeline"
 **Files:**
 - Modify: `src/main.cpp`
 
-Implement the inspect command that reads a .spatch file and displays its contents in human-readable format.
+Implement the inspect command that reads a .mora.patch file and displays its contents in human-readable format.
 
 - [ ] **Step 1: Implement inspect command**
 
 The inspect command:
-1. Find and read the .spatch file (default location: `MoraCache/mora.spatch` in current dir, or path argument)
-2. Use SpatchReader to parse it
+1. Find and read the .mora.patch file (default location: `MoraCache/mora.patch` in current dir, or path argument)
+2. Use PatchReader to parse it
 3. Display header info (version, hashes, patch count, file size)
 4. For each patch: show FormID, field changes with values
-5. With `--conflicts` flag: show only the conflict report (requires storing conflicts in the .spatch — for Phase 1, read from mora.log if available, or display "no conflict data available")
+5. With `--conflicts` flag: show only the conflict report (requires storing conflicts in the .mora.patch — for Phase 1, read from mora.log if available, or display "no conflict data available")
 
 Output format matching the spec:
 ```
-  mora.spatch v1 — 0 patches (X bytes)
+  mora.patch v1 — 0 patches (X bytes)
   load order hash: 00000000
   source hash: 00000000
 
@@ -1726,16 +1726,16 @@ Run:
 ```bash
 xmake build mora
 xmake run mora compile test_data/
-xmake run mora inspect MoraCache/mora.spatch
+xmake run mora inspect MoraCache/mora.patch
 ```
 
-Expected: Shows the spatch header and (empty) patch list.
+Expected: Shows the patch file header and (empty) patch list.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: mora inspect command for human-readable spatch dump"
+git commit -m "feat: mora inspect command for human-readable patch file dump"
 ```
 
 ---
@@ -1762,7 +1762,7 @@ Output format:
 
   Mora rules:    5 across 2 files
   Cache status:  ✓ up to date
-    mora.spatch: X bytes
+    mora.patch: X bytes
     mora.rt:     X bytes
 ```
 
@@ -1800,7 +1800,7 @@ git commit -m "feat: mora info command showing project status"
 **Files:**
 - Create: `tests/backend_integration_test.cpp`
 
-End-to-end test of the full backend pipeline: parse → resolve → type check → classify → evaluate → write .spatch → read .spatch → verify.
+End-to-end test of the full backend pipeline: parse → resolve → type check → classify → evaluate → write .mora.patch → read .mora.patch → verify.
 
 - [ ] **Step 1: Write the integration test**
 
@@ -1814,8 +1814,8 @@ End-to-end test of the full backend pipeline: parse → resolve → type check �
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
-#include "mora/emit/spatch_writer.h"
-#include "mora/emit/spatch_reader.h"
+#include "mora/emit/patch_writer.h"
+#include "mora/emit/patch_reader.h"
 #include <sstream>
 
 class BackendIntegrationTest : public ::testing::Test {
@@ -1865,17 +1865,17 @@ TEST_F(BackendIntegrationTest, FullPipeline) {
     // Should have patches for both NPCs
     EXPECT_EQ(resolved.patch_count(), 2u);
 
-    // Write .spatch
+    // Write .mora.patch
     std::ostringstream out;
-    mora::SpatchWriter writer(pool);
+    mora::PatchWriter writer(pool);
     writer.write(out, resolved, 0, 0);
 
     // Read it back
     std::istringstream in(out.str());
-    mora::SpatchReader reader(pool);
-    auto spatch = reader.read(in);
-    ASSERT_TRUE(spatch.has_value());
-    EXPECT_EQ(spatch->patches.size(), 2u);
+    mora::PatchReader reader(pool);
+    auto patch_file = reader.read(in);
+    ASSERT_TRUE(patch_file.has_value());
+    EXPECT_EQ(patch_file->patches.size(), 2u);
 }
 
 TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
@@ -2022,7 +2022,7 @@ This plan delivers:
 - **PhaseClassifier**: Static vs dynamic rule classification (4 tests)
 - **PatchSet**: Field-level patches with conflict resolution (7 tests)
 - **Evaluator**: Datalog-style static rule evaluation including derived rules, negation, guards, and conditional effects (5 tests)
-- **SpatchWriter/Reader**: Binary .spatch format with roundtrip testing (5 tests)
+- **PatchWriter/Reader**: Binary .mora.patch format with roundtrip testing (5 tests)
 - **RtWriter**: .mora.rt bytecode serialization (3 tests)
 - **LockFile**: Stale cache detection
 - **CLI**: `mora compile`, `mora inspect`, `mora info` commands
