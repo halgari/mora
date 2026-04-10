@@ -31,6 +31,33 @@
 
 namespace fs = std::filesystem;
 
+static std::string detect_skyrim_data_dir() {
+    // Check common Steam library locations for Skyrim SE
+    std::vector<fs::path> candidates;
+
+    // Linux: standard Steam path
+    if (const char* home = std::getenv("HOME")) {
+        candidates.push_back(fs::path(home) / ".local/share/Steam/steamapps/common/Skyrim Special Edition/Data");
+        candidates.push_back(fs::path(home) / ".steam/steam/steamapps/common/Skyrim Special Edition/Data");
+    }
+
+    // Linux: flatpak Steam
+    if (const char* home = std::getenv("HOME")) {
+        candidates.push_back(fs::path(home) / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data");
+    }
+
+    // Windows: common paths
+    candidates.push_back("C:/Program Files (x86)/Steam/steamapps/common/Skyrim Special Edition/Data");
+    candidates.push_back("C:/Program Files/Steam/steamapps/common/Skyrim Special Edition/Data");
+
+    for (auto& path : candidates) {
+        if (fs::exists(path / "Skyrim.esm")) {
+            return path.string();
+        }
+    }
+    return "";
+}
+
 static std::string read_file(const fs::path& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -529,6 +556,11 @@ int main(int argc, char* argv[]) {
         else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
         else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }
         else target_path = arg;
+    }
+
+    // Auto-detect Skyrim Data directory if not specified
+    if (data_dir.empty() && (command == "compile" || command == "info")) {
+        data_dir = detect_skyrim_data_dir();
     }
 
     bool use_color = !force_no_color && mora::color_enabled();
