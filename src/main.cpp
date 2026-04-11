@@ -18,7 +18,11 @@
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
+#include "mora/import/spid_parser.h"
+#include "mora/import/kid_parser.h"
+#include "mora/import/mora_printer.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -176,6 +180,7 @@ static void print_usage() {
     std::printf("  compile   Compile .mora files to patch/runtime output\n");
     std::printf("  inspect   Display .mora.patch file contents\n");
     std::printf("  info      Show project status overview\n");
+    std::printf("  import    Scan for SPID/KID INI files and display as Mora rules\n");
     std::printf("\nOptions:\n");
     std::printf("  --no-color        Disable colored output\n");
     std::printf("  --output DIR      Output directory (compile, default: MoraCache/)\n");
@@ -565,6 +570,208 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     return 0;
 }
 
+static std::vector<fs::path> find_files_by_suffix(const std::string& dir, const std::string& suffix) {
+    std::vector<fs::path> files;
+    fs::path base(dir);
+    if (!fs::exists(base)) return files;
+    for (auto& entry : fs::recursive_directory_iterator(base)) {
+        if (!entry.is_regular_file()) continue;
+        std::string fname = entry.path().filename().string();
+        if (fname.size() >= suffix.size() &&
+            fname.compare(fname.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            files.push_back(entry.path());
+        }
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+static void print_file_header(const std::string& filename, size_t rule_count, bool use_color) {
+    std::string title = " " + filename + " (" + std::to_string(rule_count) + " rules) ";
+    size_t total_width = 54;
+    size_t fill = (total_width > title.size() + 4) ? total_width - title.size() - 4 : 0;
+    std::string fill_str;
+    for (size_t i = 0; i < fill; ++i) fill_str += "\u2500";
+    std::string header = "  " + mora::TermStyle::cyan("\u2500\u2500" + title + fill_str, use_color);
+    std::printf("%s\n\n", header.c_str());
+}
+
+static int cmd_import(const std::string& target_path, bool use_color) {
+    mora::Progress progress(use_color, mora::stdout_is_tty());
+    progress.print_header("0.1.0");
+
+    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
+    auto kid_files  = find_files_by_suffix(target_path, "_KID.ini");
+
+    if (spid_files.empty() && kid_files.empty()) {
+        std::printf("  No INI files found in %s\n", target_path.c_str());
+        return 1;
+    }
+
+    std::printf("  Scanning for INI files...\n\n");
+
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    mora::MoraPrinter printer(pool);
+
+    size_t total_spid_rules = 0;
+    size_t total_kid_rules  = 0;
+
+    // Process SPID files
+    for (auto& path : spid_files) {
+        mora::SpidParser parser(pool, diags);
+        auto rules = parser.parse_file(path.string());
+
+        std::string fname = path.filename().string();
+        print_file_header(fname, rules.size(), use_color);
+
+        for (auto& rule : rules) {
+            // Source comment
+            std::string src_file = rule.span.file.empty() ? fname : rule.span.file;
+            // Strip directory from src_file for display
+            {
+                auto pos = src_file.rfind('/');
+                if (pos != std::string::npos) src_file = src_file.substr(pos + 1);
+            }
+            uint32_t line_num = rule.span.start_line;
+            std::string comment = "Imported from " + src_file + ":" + std::to_string(line_num);
+            std::printf("  %s\n", mora::TermStyle::dim(printer.print_comment(comment), use_color).c_str());
+
+            // Rule text with coloring
+            std::string rule_text = printer.print_rule(rule);
+            // Print rule name line in bold, rest normally, symbols in cyan
+            std::istringstream ss(rule_text);
+            std::string line;
+            bool first_line = true;
+            while (std::getline(ss, line)) {
+                if (first_line) {
+                    // Bold rule name
+                    std::printf("  %s\n", mora::TermStyle::bold(line, use_color).c_str());
+                    first_line = false;
+                } else if (!line.empty()) {
+                    // Colorize :Symbol tokens in cyan
+                    if (use_color) {
+                        std::string colored;
+                        size_t i = 0;
+                        while (i < line.size()) {
+                            if (line[i] == ':' && i + 1 < line.size() &&
+                                (std::isalpha((unsigned char)line[i+1]) || line[i+1] == '_')) {
+                                // find end of symbol
+                                size_t j = i + 1;
+                                while (j < line.size() &&
+                                       (std::isalnum((unsigned char)line[j]) || line[j] == '_')) {
+                                    ++j;
+                                }
+                                colored += mora::TermStyle::cyan(line.substr(i, j - i), true);
+                                i = j;
+                            } else {
+                                colored += line[i++];
+                            }
+                        }
+                        std::printf("  %s\n", colored.c_str());
+                    } else {
+                        std::printf("  %s\n", line.c_str());
+                    }
+                } else {
+                    std::printf("\n");
+                }
+            }
+            std::printf("\n");
+        }
+
+        total_spid_rules += rules.size();
+    }
+
+    // Process KID files
+    for (auto& path : kid_files) {
+        mora::KidParser parser(pool, diags);
+        auto rules = parser.parse_file(path.string());
+
+        std::string fname = path.filename().string();
+        print_file_header(fname, rules.size(), use_color);
+
+        for (auto& rule : rules) {
+            std::string src_file = rule.span.file.empty() ? fname : rule.span.file;
+            {
+                auto pos = src_file.rfind('/');
+                if (pos != std::string::npos) src_file = src_file.substr(pos + 1);
+            }
+            uint32_t line_num = rule.span.start_line;
+            std::string comment = "Imported from " + src_file + ":" + std::to_string(line_num);
+            std::printf("  %s\n", mora::TermStyle::dim(printer.print_comment(comment), use_color).c_str());
+
+            std::string rule_text = printer.print_rule(rule);
+            std::istringstream ss(rule_text);
+            std::string line;
+            bool first_line = true;
+            while (std::getline(ss, line)) {
+                if (first_line) {
+                    std::printf("  %s\n", mora::TermStyle::bold(line, use_color).c_str());
+                    first_line = false;
+                } else if (!line.empty()) {
+                    if (use_color) {
+                        std::string colored;
+                        size_t i = 0;
+                        while (i < line.size()) {
+                            if (line[i] == ':' && i + 1 < line.size() &&
+                                (std::isalpha((unsigned char)line[i+1]) || line[i+1] == '_')) {
+                                size_t j = i + 1;
+                                while (j < line.size() &&
+                                       (std::isalnum((unsigned char)line[j]) || line[j] == '_')) {
+                                    ++j;
+                                }
+                                colored += mora::TermStyle::cyan(line.substr(i, j - i), true);
+                                i = j;
+                            } else {
+                                colored += line[i++];
+                            }
+                        }
+                        std::printf("  %s\n", colored.c_str());
+                    } else {
+                        std::printf("  %s\n", line.c_str());
+                    }
+                } else {
+                    std::printf("\n");
+                }
+            }
+            std::printf("\n");
+        }
+
+        total_kid_rules += rules.size();
+    }
+
+    // Summary
+    size_t total_rules = total_spid_rules + total_kid_rules;
+    size_t total_files = spid_files.size() + kid_files.size();
+
+    std::string summary_header = "\u2500\u2500 Summary " + std::string(43, '\0');
+    std::string fill_str;
+    for (size_t i = 0; i < 43; ++i) fill_str += "\u2500";
+    std::printf("  %s\n", mora::TermStyle::cyan("\u2500\u2500 Summary " + fill_str, use_color).c_str());
+
+    std::printf("  %s INI files \u2192 %s Mora rules\n",
+        mora::TermStyle::green(std::to_string(total_files), use_color).c_str(),
+        mora::TermStyle::green(std::to_string(total_rules), use_color).c_str());
+
+    if (!spid_files.empty()) {
+        std::printf("    SPID: %s file%s, %s rule%s\n",
+            mora::TermStyle::green(std::to_string(spid_files.size()), use_color).c_str(),
+            spid_files.size() == 1 ? "" : "s",
+            mora::TermStyle::green(std::to_string(total_spid_rules), use_color).c_str(),
+            total_spid_rules == 1 ? "" : "s");
+    }
+    if (!kid_files.empty()) {
+        std::printf("    KID:  %s file%s, %s rule%s\n",
+            mora::TermStyle::green(std::to_string(kid_files.size()), use_color).c_str(),
+            kid_files.size() == 1 ? "" : "s",
+            mora::TermStyle::green(std::to_string(total_kid_rules), use_color).c_str(),
+            total_kid_rules == 1 ? "" : "s");
+    }
+    std::printf("\n");
+
+    return 0;
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
@@ -611,6 +818,10 @@ int main(int argc, char* argv[]) {
 
     if (command == "info") {
         return cmd_info(target_path, data_dir);
+    }
+
+    if (command == "import") {
+        return cmd_import(target_path, use_color);
     }
 
     print_usage();
