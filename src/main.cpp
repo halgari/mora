@@ -16,6 +16,7 @@
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
+#include "mora/import/skypatcher_parser.h"
 #include "mora/import/spid_parser.h"
 #include "mora/import/kid_parser.h"
 #include "mora/import/mora_printer.h"
@@ -655,7 +656,28 @@ static int cmd_import(const std::string& target_path, const std::string& data_di
     auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
     auto kid_files  = find_files_by_suffix(target_path, "_KID.ini");
 
-    if (spid_files.empty() && kid_files.empty()) {
+    // Look for SkyPatcher directory
+    fs::path skypatcher_dir;
+    for (auto& candidate : {
+        fs::path(target_path) / "SKSE" / "Plugins" / "SkyPatcher",
+        fs::path(target_path) / "SkyPatcher",
+        fs::path(target_path),  // might be the SkyPatcher dir itself
+    }) {
+        if (fs::exists(candidate) && fs::is_directory(candidate)) {
+            // Check if it has subdirectories named after record types
+            for (auto& sub : fs::directory_iterator(candidate)) {
+                auto name = sub.path().filename().string();
+                if (name == "weapon" || name == "armor" || name == "npc" ||
+                    name == "leveledList" || name == "magicEffect") {
+                    skypatcher_dir = candidate;
+                    break;
+                }
+            }
+            if (!skypatcher_dir.empty()) break;
+        }
+    }
+
+    if (spid_files.empty() && kid_files.empty() && skypatcher_dir.empty()) {
         std::printf("  No INI files found in %s\n", target_path.c_str());
         return 1;
     }
@@ -812,9 +834,48 @@ static int cmd_import(const std::string& target_path, const std::string& data_di
         total_kid_rules += rules.size();
     }
 
+    // Process SkyPatcher directories
+    size_t total_skypatcher_rules = 0;
+    size_t skypatcher_file_count = 0;
+    if (!skypatcher_dir.empty()) {
+        mora::SkyPatcherParser sky_parser(pool, diags, resolver_ptr);
+        auto sky_rules = sky_parser.parse_directory(skypatcher_dir.string());
+
+        if (!sky_rules.empty()) {
+            print_file_header("SkyPatcher (" + skypatcher_dir.string() + ")",
+                              sky_rules.size(), use_color);
+
+            for (auto& rule : sky_rules) {
+                std::string rule_text = printer.print_rule(rule);
+                std::istringstream ss(rule_text);
+                std::string line;
+                bool first_line = true;
+                while (std::getline(ss, line)) {
+                    if (first_line) {
+                        std::printf("  %s\n", mora::TermStyle::bold(line, use_color).c_str());
+                        first_line = false;
+                    } else if (!line.empty()) {
+                        std::printf("  %s\n", line.c_str());
+                    } else {
+                        std::printf("\n");
+                    }
+                }
+                std::printf("\n");
+            }
+
+            total_skypatcher_rules = sky_rules.size();
+        }
+
+        // Count files
+        for (auto& entry : fs::recursive_directory_iterator(skypatcher_dir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".ini")
+                skypatcher_file_count++;
+        }
+    }
+
     // Summary
-    size_t total_rules = total_spid_rules + total_kid_rules;
-    size_t total_files = spid_files.size() + kid_files.size();
+    size_t total_rules = total_spid_rules + total_kid_rules + total_skypatcher_rules;
+    size_t total_files = spid_files.size() + kid_files.size() + skypatcher_file_count;
 
     std::string summary_header = "\u2500\u2500 Summary " + std::string(43, '\0');
     std::string fill_str;
@@ -838,6 +899,13 @@ static int cmd_import(const std::string& target_path, const std::string& data_di
             kid_files.size() == 1 ? "" : "s",
             mora::TermStyle::green(std::to_string(total_kid_rules), use_color).c_str(),
             total_kid_rules == 1 ? "" : "s");
+    }
+    if (total_skypatcher_rules > 0) {
+        std::printf("    SkyPatcher: %s file%s, %s rule%s\n",
+            mora::TermStyle::green(std::to_string(skypatcher_file_count), use_color).c_str(),
+            skypatcher_file_count == 1 ? "" : "s",
+            mora::TermStyle::green(std::to_string(total_skypatcher_rules), use_color).c_str(),
+            total_skypatcher_rules == 1 ? "" : "s");
     }
     std::printf("\n");
 

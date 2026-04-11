@@ -1,14 +1,5 @@
 {
     cmdlines = {
-        "xmake build mora",
-        "xmake build mora",
-        "xmake build mora",
-        "xmake test",
-        "xmake build mora",
-        "xmake test",
-        "xmake test",
-        "xmake build",
-        "xmake build",
         "xmake test",
         "xmake build mora",
         "xmake build",
@@ -64,6 +55,15 @@
         "xmake build mora",
         "xmake test",
         "xmake build",
+        "xmake test",
+        "xmake build skypatcher_parser_test",
+        "xmake build skypatcher_parser_test",
+        "xmake build skypatcher_parser_test",
+        "xmake build skypatcher_parser_test",
+        "xmake build skypatcher_parser_test",
+        "xmake run skypatcher_parser_test",
+        "xmake test",
+        "xmake build mora",
         "xmake test"
     }
 }
