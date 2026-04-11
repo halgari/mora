@@ -1,3 +1,9 @@
 build/
 .xmake/
 .xwin-cache/
+*.obj
+*.dll
+*.lib
+*.exe
+*.pdb
+MoraCache/
