@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace mora {
 
@@ -29,27 +28,38 @@ public:
         double link_ms = 0;
     };
 
-    // Full pipeline: patches -> DLL
+    // Full in-process pipeline: patches → DLL on disk
+    // rt_bitcode_path: path to mora_rt.bc (shipped alongside mora binary)
+    //                  if empty, skips LTO merge (standalone IR only)
     BuildResult build(const ResolvedPatchSet& patches,
                       StringPool& pool,
-                      const std::filesystem::path& output_dir);
+                      const std::filesystem::path& output_dir,
+                      const std::filesystem::path& rt_bitcode_path = {});
 
-    // Generate the IR module with patch data
+    // For testing: generate IR module only
     std::unique_ptr<llvm::Module> generate_ir(const ResolvedPatchSet& patches,
                                               StringPool& pool,
                                               llvm::LLVMContext& ctx);
 
-    // Compile a module to a Windows object file (.obj)
+    // For testing: compile module to object in memory, write to file
     bool compile_to_object(llvm::Module& mod,
                            const std::filesystem::path& obj_path,
                            std::string& error);
 
-    // Link object files to DLL using lld-link
-    bool link_dll(const std::vector<std::filesystem::path>& obj_files,
-                  const std::filesystem::path& dll_path,
-                  std::string& error);
-
 private:
+    // Load mora_rt.bc and LTO-merge into the patch module (in-memory)
+    bool lto_merge(llvm::Module& patch_mod,
+                   const std::filesystem::path& rt_bc_path,
+                   std::string& error);
+
+    // Run LLVM optimization passes (in-memory)
+    void optimize(llvm::Module& mod);
+
+    // Link .obj → .dll using LLD library API (in-process)
+    bool link_dll_in_process(const std::filesystem::path& obj_path,
+                              const std::filesystem::path& dll_path,
+                              std::string& error);
+
     const AddressLibrary& addrlib_;
 };
 
