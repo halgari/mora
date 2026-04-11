@@ -59,6 +59,12 @@ void TypeChecker::check_rule(Rule& rule) {
             } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
                 if (node.guard) check_guard(*node.guard);
                 check_effect(node.effect);
+            } else if constexpr (std::is_same_v<NodeT, InClause>) {
+                if (node.variable) check_guard(*node.variable);
+            } else if constexpr (std::is_same_v<NodeT, OrClause>) {
+                for (const auto& branch : node.branches) {
+                    for (const auto& fp : branch) check_fact_pattern(fp);
+                }
             }
         }, clause.data);
     }

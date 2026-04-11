@@ -159,6 +159,10 @@ static std::unordered_set<uint32_t> collect_used_relations(
             for (auto& clause : rule.body) {
                 if (auto* fact = std::get_if<mora::FactPattern>(&clause.data)) {
                     used.insert(fact->name.index);
+                } else if (auto* or_c = std::get_if<mora::OrClause>(&clause.data)) {
+                    for (auto& branch : or_c->branches) {
+                        for (auto& fp : branch) used.insert(fp.name.index);
+                    }
                 }
             }
             // Effects (actions map to relations too)

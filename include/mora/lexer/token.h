@@ -11,7 +11,7 @@ enum class TokenKind {
     Integer, Float, String, Symbol, Variable, Identifier, Discard,
 
     // Keywords
-    KwNamespace, KwRequires, KwMod, KwUse, KwOnly, KwNot, KwImportSpid, KwImportKid,
+    KwNamespace, KwRequires, KwMod, KwUse, KwOnly, KwNot, KwOr, KwIn, KwImportSpid, KwImportKid,
 
     // Punctuation
     Colon, DoubleColon, Comma, Dot, LParen, RParen, LBracket, RBracket,

@@ -83,6 +83,23 @@ std::string MoraPrinter::print_rule(const Rule& rule) const {
                 oss << "    " << print_fact_pattern(c) << "\n";
             } else if constexpr (std::is_same_v<T, GuardClause>) {
                 oss << "    | " << print_expr(*c.expr) << "\n";
+            } else if constexpr (std::is_same_v<T, OrClause>) {
+                oss << "    or\n";
+                for (const auto& branch : c.branches) {
+                    oss << "        ";
+                    for (size_t i = 0; i < branch.size(); ++i) {
+                        if (i > 0) oss << ", ";
+                        oss << print_fact_pattern(branch[i]);
+                    }
+                    oss << "\n";
+                }
+            } else if constexpr (std::is_same_v<T, InClause>) {
+                oss << "    " << print_expr(*c.variable) << " in [";
+                for (size_t i = 0; i < c.values.size(); ++i) {
+                    if (i > 0) oss << ", ";
+                    oss << print_expr(c.values[i]);
+                }
+                oss << "]\n";
             } else if constexpr (std::is_same_v<T, Effect>) {
                 oss << "    " << print_effect(c) << "\n";
             } else if constexpr (std::is_same_v<T, ConditionalEffect>) {

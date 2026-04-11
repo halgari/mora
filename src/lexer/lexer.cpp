@@ -146,6 +146,8 @@ Token Lexer::lex_identifier_or_keyword() {
     if (text == "use") return make_token(TokenKind::KwUse);
     if (text == "only") return make_token(TokenKind::KwOnly);
     if (text == "not") return make_token(TokenKind::KwNot);
+    if (text == "or") return make_token(TokenKind::KwOr);
+    if (text == "in") return make_token(TokenKind::KwIn);
     if (text == "import_spid") return make_token(TokenKind::KwImportSpid);
     if (text == "import_kid") return make_token(TokenKind::KwImportKid);
 

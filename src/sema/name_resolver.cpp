@@ -189,7 +189,12 @@ void NameResolver::resolve_clause(Clause& clause) {
         } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
             check_action_name(node.effect.action, node.effect.span,
                               *this, diags_, pool_, source_line(node.effect.span));
+        } else if constexpr (std::is_same_v<NodeT, OrClause>) {
+            for (auto& branch : node.branches) {
+                for (auto& fp : branch) check_fact_exists(fp);
+            }
         }
+        // InClause and GuardClause don't reference facts by name
         // GuardClause — no fact reference to validate here
     }, clause.data);
 }

@@ -46,6 +46,22 @@ struct FactPattern {
 
 struct GuardClause { std::unique_ptr<Expr> expr; SourceSpan span; };
 
+// or block: disjunction of clause groups (each group is AND'd internally)
+// or:
+//     race_of(NPC, :WolfRace)
+//     race_of(NPC, :HuskyRace)
+struct OrClause {
+    std::vector<std::vector<FactPattern>> branches; // each branch is a set of AND'd facts
+    SourceSpan span;
+};
+
+// Variable in [:A, :B, :C]  — set membership test
+struct InClause {
+    std::unique_ptr<Expr> variable;
+    std::vector<Expr> values;
+    SourceSpan span;
+};
+
 struct Effect {
     StringId action;
     std::vector<Expr> args;
@@ -59,7 +75,7 @@ struct ConditionalEffect {
 };
 
 struct Clause {
-    std::variant<FactPattern, GuardClause, Effect, ConditionalEffect> data;
+    std::variant<FactPattern, GuardClause, OrClause, InClause, Effect, ConditionalEffect> data;
     SourceSpan span;
 };
 

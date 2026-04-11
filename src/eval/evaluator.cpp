@@ -119,6 +119,28 @@ void Evaluator::match_clauses(const Rule& rule, size_t clause_idx,
         } else if constexpr (std::is_same_v<T, ConditionalEffect>) {
             // Conditional effects in body are handled separately; skip
             match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+        } else if constexpr (std::is_same_v<T, InClause>) {
+            // In clause: variable must match one of the listed values
+            Value var_val = resolve_expr(*c.variable, bindings);
+            for (const auto& val_expr : c.values) {
+                Value v = resolve_expr(val_expr, bindings);
+                if (var_val.matches(v)) {
+                    match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+                    return; // first match suffices
+                }
+            }
+        } else if constexpr (std::is_same_v<T, OrClause>) {
+            // Or clause: try each branch, recurse on first match
+            for (const auto& branch : c.branches) {
+                // Each branch is a vector<FactPattern>
+                // For simplicity, handle single-fact branches (most common)
+                if (branch.size() == 1) {
+                    auto matches = match_fact_pattern(branch[0], bindings);
+                    for (auto& new_bindings : matches) {
+                        match_clauses(rule, clause_idx + 1, new_bindings, patches, priority);
+                    }
+                }
+            }
         }
     }, clause.data);
 }

@@ -33,6 +33,10 @@ const char* token_kind_name(TokenKind kind) {
         return "only";
     case TokenKind::KwNot:
         return "not";
+    case TokenKind::KwOr:
+        return "or";
+    case TokenKind::KwIn:
+        return "in";
     case TokenKind::KwImportSpid:
         return "import_spid";
     case TokenKind::KwImportKid:

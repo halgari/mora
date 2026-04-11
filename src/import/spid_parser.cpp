@@ -191,52 +191,6 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
 
     std::vector<Rule> result;
 
-    // ── Handle form filters (field 2) with OR semantics ──
-    // If multiple comma-separated form filters, generate a derived helper rule
-    // with multiple heads (Datalog OR pattern)
-    std::string form_helper_name;
-    if (fields.size() > 2 && !fields[2].empty()) {
-        auto entries = parse_filter_entries(fields[2]);
-
-        // Separate includes from excludes
-        std::vector<const FilterEntry*> includes;
-        std::vector<const FilterEntry*> excludes;
-        for (const auto& entry : entries) {
-            if (entry.mode == FilterEntry::Mode::Exclude) {
-                excludes.push_back(&entry);
-            } else {
-                includes.push_back(&entry);
-            }
-        }
-
-        if (includes.size() > 1) {
-            // Multiple OR entries → generate helper derived rules
-            form_helper_name = target_clean + "_match_L" + std::to_string(line_num);
-
-            for (const auto* entry : includes) {
-                std::string sym = resolve_symbol(entry->ref);
-                std::string fact = form_filter_fact(entry->ref);
-
-                Rule helper;
-                helper.name = pool_.intern(form_helper_name);
-                helper.head_args.push_back(make_var("NPC"));
-                helper.span = span;
-
-                // Body: fact(NPC, :Symbol)
-                std::vector<Expr> args;
-                args.push_back(make_var("NPC"));
-                args.push_back(make_sym(sym));
-                helper.body.push_back(make_fact(fact, std::move(args)));
-
-                result.push_back(std::move(helper));
-            }
-        } else if (includes.size() == 1) {
-            // Single include — will be added directly to main rule body
-            form_helper_name = ""; // signal: handle inline
-        }
-        // Excludes are always added directly to main rule body (AND semantics)
-    }
-
     // ── Build main patch rule ──
     std::string rule_name = type_lower + "_" + target_clean + "_L" + std::to_string(line_num);
 
@@ -257,39 +211,82 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
         add_string_filters(fields[1], rule.body);
     }
 
-    // Form filters (field 2)
-    if (!form_helper_name.empty()) {
-        // Reference the OR helper
-        std::vector<Expr> args;
-        args.push_back(make_var("NPC"));
-        rule.body.push_back(make_fact(form_helper_name, std::move(args)));
-    } else if (fields.size() > 2 && !fields[2].empty()) {
-        // Single include or no includes — add directly
+    // Form filters (field 2) — OR for includes, AND for excludes
+    if (fields.size() > 2 && !fields[2].empty()) {
         auto entries = parse_filter_entries(fields[2]);
-        for (const auto& entry : entries) {
-            std::string sym = resolve_symbol(entry.ref);
-            std::string fact = form_filter_fact(entry.ref);
-            bool negated = (entry.mode == FilterEntry::Mode::Exclude);
 
+        std::vector<const FilterEntry*> includes;
+        std::vector<const FilterEntry*> excludes;
+        for (const auto& entry : entries) {
+            if (entry.mode == FilterEntry::Mode::Exclude)
+                excludes.push_back(&entry);
+            else
+                includes.push_back(&entry);
+        }
+
+        if (includes.size() > 1) {
+            // Multiple includes = OR. Check if all use the same fact type
+            // (common case: all are race_of). If so, use "in" syntax.
+            std::string common_fact = form_filter_fact(includes[0]->ref);
+            bool all_same = true;
+            for (const auto* e : includes) {
+                if (form_filter_fact(e->ref) != common_fact) {
+                    all_same = false;
+                    break;
+                }
+            }
+
+            if (all_same) {
+                // Emit: race_of(NPC, Race) + Race in [:A, :B, :C]
+                std::vector<Expr> fact_args;
+                fact_args.push_back(make_var("NPC"));
+                fact_args.push_back(make_var("Race"));
+                rule.body.push_back(make_fact(common_fact, std::move(fact_args)));
+
+                InClause in_clause;
+                in_clause.variable = std::make_unique<Expr>(make_var("Race"));
+                for (const auto* e : includes) {
+                    in_clause.values.push_back(make_sym(resolve_symbol(e->ref)));
+                }
+                Clause c;
+                c.data = std::move(in_clause);
+                rule.body.push_back(std::move(c));
+            } else {
+                // Mixed fact types — use or block
+                OrClause or_clause;
+                for (const auto* e : includes) {
+                    std::string sym = resolve_symbol(e->ref);
+                    std::string fact = form_filter_fact(e->ref);
+                    FactPattern fp;
+                    fp.name = pool_.intern(fact);
+                    fp.args.push_back(make_var("NPC"));
+                    fp.args.push_back(make_sym(sym));
+                    std::vector<FactPattern> branch;
+                    branch.push_back(std::move(fp));
+                    or_clause.branches.push_back(std::move(branch));
+                }
+                Clause c;
+                c.data = std::move(or_clause);
+                rule.body.push_back(std::move(c));
+            }
+        } else if (includes.size() == 1) {
+            // Single include — add directly
+            std::string sym = resolve_symbol(includes[0]->ref);
+            std::string fact = form_filter_fact(includes[0]->ref);
             std::vector<Expr> args;
             args.push_back(make_var("NPC"));
             args.push_back(make_sym(sym));
-            rule.body.push_back(make_fact(fact, std::move(args), negated));
+            rule.body.push_back(make_fact(fact, std::move(args)));
         }
-    }
 
-    // Add exclude form filters directly to main rule (always AND)
-    if (fields.size() > 2 && !fields[2].empty() && !form_helper_name.empty()) {
-        auto entries = parse_filter_entries(fields[2]);
-        for (const auto& entry : entries) {
-            if (entry.mode == FilterEntry::Mode::Exclude) {
-                std::string sym = resolve_symbol(entry.ref);
-                std::string fact = form_filter_fact(entry.ref);
-                std::vector<Expr> args;
-                args.push_back(make_var("NPC"));
-                args.push_back(make_sym(sym));
-                rule.body.push_back(make_fact(fact, std::move(args), true));
-            }
+        // Excludes are always AND
+        for (const auto* e : excludes) {
+            std::string sym = resolve_symbol(e->ref);
+            std::string fact = form_filter_fact(e->ref);
+            std::vector<Expr> args;
+            args.push_back(make_var("NPC"));
+            args.push_back(make_sym(sym));
+            rule.body.push_back(make_fact(fact, std::move(args), true));
         }
     }
 
