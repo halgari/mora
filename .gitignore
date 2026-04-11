@@ -1,2 +1,3 @@
 build/
 .xmake/
+.xwin-cache/
