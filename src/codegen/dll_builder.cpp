@@ -4,7 +4,6 @@
 // LLVM core
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
-#include <llvm/Linker/Linker.h>
 #include <llvm/Passes/PassBuilder.h>
 
 // LLVM target
@@ -13,11 +12,8 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/TargetParser/Triple.h>
 
-// LLVM bitcode
-#include <llvm/Bitcode/BitcodeReader.h>
-#include <llvm/Support/MemoryBuffer.h>
+// LLVM support
 #include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 // LLD library API
 #include <lld/Common/Driver.h>
@@ -44,41 +40,6 @@ std::unique_ptr<llvm::Module> DLLBuilder::generate_ir(
     emitter.emit(patches, pool);
 
     return mod;
-}
-
-// ── LTO Merge ──────────────────────────────────────────────────────
-
-bool DLLBuilder::lto_merge(llvm::Module& patch_mod,
-                            const std::filesystem::path& rt_bc_path,
-                            std::string& error) {
-    // Load the bitcode file into a memory buffer
-    auto buf_or_err = llvm::MemoryBuffer::getFile(rt_bc_path.string());
-    if (!buf_or_err) {
-        error = "Failed to read " + rt_bc_path.string() + ": " +
-                buf_or_err.getError().message();
-        return false;
-    }
-
-    // Parse the bitcode into a Module
-    auto mod_or_err = llvm::parseBitcodeFile(
-        buf_or_err.get()->getMemBufferRef(), patch_mod.getContext());
-    if (!mod_or_err) {
-        error = "Failed to parse bitcode: " +
-                llvm::toString(mod_or_err.takeError());
-        return false;
-    }
-
-    auto rt_mod = std::move(*mod_or_err);
-    rt_mod->setTargetTriple(patch_mod.getTargetTriple());
-    rt_mod->setDataLayout(patch_mod.getDataLayout());
-
-    // Link mora_rt into the patch module (LTO merge)
-    if (llvm::Linker::linkModules(patch_mod, std::move(rt_mod))) {
-        error = "LTO link failed";
-        return false;
-    }
-
-    return true;
 }
 
 // ── Optimization ───────────────────────────────────────────────────
@@ -147,11 +108,11 @@ bool DLLBuilder::compile_to_object(llvm::Module& mod,
 
 bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
                                       const std::filesystem::path& dll_path,
+                                      const std::filesystem::path& rt_lib_path,
                                       std::string& error) {
     const char* home_env = std::getenv("HOME");
     std::string xwin = std::string(home_env ? home_env : "") + "/.xwin";
 
-    // Build lld-link command line arguments
     std::vector<std::string> arg_strings = {
         "lld-link",
         "/dll",
@@ -167,7 +128,11 @@ bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
         obj_path.string(),
     };
 
-    // Convert to const char* array for LLD
+    // Link against mora_rt.lib if provided
+    if (!rt_lib_path.empty()) {
+        arg_strings.push_back(rt_lib_path.string());
+    }
+
     std::vector<const char*> args;
     for (auto& s : arg_strings) args.push_back(s.c_str());
 
@@ -192,7 +157,7 @@ DLLBuilder::BuildResult DLLBuilder::build(
         const ResolvedPatchSet& patches,
         StringPool& pool,
         const std::filesystem::path& output_dir,
-        const std::filesystem::path& rt_bitcode_path) {
+        const std::filesystem::path& rt_lib_path) {
     BuildResult result;
     std::filesystem::create_directories(output_dir);
 
@@ -205,7 +170,6 @@ DLLBuilder::BuildResult DLLBuilder::build(
         return result;
     }
 
-    // Verify IR
     {
         std::string verify_err;
         llvm::raw_string_ostream vs(verify_err);
@@ -218,20 +182,13 @@ DLLBuilder::BuildResult DLLBuilder::build(
     auto t1 = std::chrono::steady_clock::now();
     result.ir_gen_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-    // Step 2: LTO merge with mora_rt.bc (if provided)
-    if (!rt_bitcode_path.empty() && std::filesystem::exists(rt_bitcode_path)) {
-        if (!lto_merge(*mod, rt_bitcode_path, result.error)) {
-            return result;
-        }
-    }
-
-    // Step 3: Optimize (LTO inlining, constant folding, dead code elimination)
+    // Step 2: Optimize the generated IR
     optimize(*mod);
 
     auto t2 = std::chrono::steady_clock::now();
     result.lto_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
 
-    // Step 4: Compile to object
+    // Step 3: Compile to object
     auto obj_path = output_dir / "mora_patches.obj";
     if (!compile_to_object(*mod, obj_path, result.error)) {
         return result;
@@ -240,17 +197,15 @@ DLLBuilder::BuildResult DLLBuilder::build(
     auto t3 = std::chrono::steady_clock::now();
     result.compile_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
 
-    // Step 5: Link DLL (in-process via LLD)
+    // Step 4: Link DLL — lld-link handles LTO between .obj and .lib
     auto dll_path = output_dir / "MoraRuntime.dll";
-    if (!link_dll_in_process(obj_path, dll_path, result.error)) {
+    if (!link_dll_in_process(obj_path, dll_path, rt_lib_path, result.error)) {
         return result;
     }
 
-    // Clean up intermediate .obj
     std::filesystem::remove(obj_path);
-    // Also remove .lib if lld created one
-    auto lib_path = output_dir / "MoraRuntime.lib";
-    if (std::filesystem::exists(lib_path)) std::filesystem::remove(lib_path);
+    auto lib_artifact = output_dir / "MoraRuntime.lib";
+    if (std::filesystem::exists(lib_artifact)) std::filesystem::remove(lib_artifact);
 
     auto t4 = std::chrono::steady_clock::now();
     result.link_ms = std::chrono::duration<double, std::milli>(t4 - t3).count();

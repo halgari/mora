@@ -29,12 +29,12 @@ public:
     };
 
     // Full in-process pipeline: patches → DLL on disk
-    // rt_bitcode_path: path to mora_rt.bc (shipped alongside mora binary)
-    //                  if empty, skips LTO merge (standalone IR only)
+    // rt_lib_path: path to mora_rt.lib (LTO-capable static library)
+    //              if empty, links without runtime support (standalone IR only)
     BuildResult build(const ResolvedPatchSet& patches,
                       StringPool& pool,
                       const std::filesystem::path& output_dir,
-                      const std::filesystem::path& rt_bitcode_path = {});
+                      const std::filesystem::path& rt_lib_path = {});
 
     // For testing: generate IR module only
     std::unique_ptr<llvm::Module> generate_ir(const ResolvedPatchSet& patches,
@@ -47,17 +47,13 @@ public:
                            std::string& error);
 
 private:
-    // Load mora_rt.bc and LTO-merge into the patch module (in-memory)
-    bool lto_merge(llvm::Module& patch_mod,
-                   const std::filesystem::path& rt_bc_path,
-                   std::string& error);
-
     // Run LLVM optimization passes (in-memory)
     void optimize(llvm::Module& mod);
 
     // Link .obj → .dll using LLD library API (in-process)
     bool link_dll_in_process(const std::filesystem::path& obj_path,
                               const std::filesystem::path& dll_path,
+                              const std::filesystem::path& rt_lib_path,
                               std::string& error);
 
     const AddressLibrary& addrlib_;

@@ -424,24 +424,24 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     progress.start_phase("Generating native DLL");
     mora::DLLBuilder builder(addrlib);
 
-    // Find mora_rt.bc — look next to the mora binary, then in data/
-    fs::path rt_bc_path;
+    // Find mora_rt.lib — look next to the mora binary, then in data/
+    fs::path rt_lib_path;
     {
         auto exe_dir = fs::canonical("/proc/self/exe").parent_path();
         std::vector<fs::path> candidates = {
-            exe_dir / "mora_rt.bc",
-            exe_dir / "../data/mora_rt.bc",
-            exe_dir / "../../data/mora_rt.bc",
-            exe_dir / "../../../data/mora_rt.bc",
-            exe_dir / "../../../../data/mora_rt.bc", // build/linux/x86_64/release → project root
-            fs::path("data/mora_rt.bc"),              // relative to cwd
+            exe_dir / "mora_rt.lib",
+            exe_dir / "../data/mora_rt.lib",
+            exe_dir / "../../data/mora_rt.lib",
+            exe_dir / "../../../data/mora_rt.lib",
+            exe_dir / "../../../../data/mora_rt.lib",
+            fs::path("data/mora_rt.lib"),
         };
         for (auto& p : candidates) {
-            if (fs::exists(p)) { rt_bc_path = fs::canonical(p); break; }
+            if (fs::exists(p)) { rt_lib_path = fs::canonical(p); break; }
         }
     }
 
-    auto build_result = builder.build(final_resolved, cr.pool, out_path, rt_bc_path);
+    auto build_result = builder.build(final_resolved, cr.pool, out_path, rt_lib_path);
     if (!build_result.success) {
         progress.print_failure("DLL build failed: " + build_result.error);
         return 1;
