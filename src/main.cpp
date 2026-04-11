@@ -422,7 +422,24 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     progress.start_phase("Generating native DLL");
     mora::DLLBuilder builder(addrlib);
-    auto build_result = builder.build(final_resolved, cr.pool, out_path);
+
+    // Find mora_rt.bc — look next to the mora binary, then in data/
+    fs::path rt_bc_path;
+    {
+        auto exe_dir = fs::canonical("/proc/self/exe").parent_path();
+        std::vector<fs::path> candidates = {
+            exe_dir / "mora_rt.bc",
+            exe_dir / "../data/mora_rt.bc",
+            exe_dir / "../../data/mora_rt.bc",   // build/linux/x86_64/release/../../..
+            exe_dir / "../../../data/mora_rt.bc",
+            fs::path("data/mora_rt.bc"),          // relative to cwd
+        };
+        for (auto& p : candidates) {
+            if (fs::exists(p)) { rt_bc_path = fs::canonical(p); break; }
+        }
+    }
+
+    auto build_result = builder.build(final_resolved, cr.pool, out_path, rt_bc_path);
     if (!build_result.success) {
         progress.print_failure("DLL build failed: " + build_result.error);
         return 1;

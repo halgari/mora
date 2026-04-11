@@ -5,13 +5,14 @@
 #ifdef _WIN32
 #include <cstdint>
 
+// Windows API import
+extern "C" __declspec(dllimport) void* __stdcall GetModuleHandleW(const wchar_t*);
+
 // Forward declaration -- defined by the IR emitter in the generated module
 extern "C" void apply_all_patches(void* skyrim_base);
 
 // Get the base address of SkyrimSE.exe at runtime
 static void* get_skyrim_base() {
-    // GetModuleHandleW(NULL) returns the base of the main executable
-    extern "C" __declspec(dllimport) void* __stdcall GetModuleHandleW(const wchar_t*);
     return GetModuleHandleW(nullptr);
 }
 
