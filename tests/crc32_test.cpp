@@ -41,10 +41,10 @@ TEST(BSTHashMapTest, LookupInMockMap) {
     map.entries = entries;
 
     // Lookup should find it
-    void* result = mora::rt::bst_hashmap_lookup(&map, 0x100);
+    void* result = ::bst_hashmap_lookup(&map, 0x100);
     EXPECT_EQ(result, reinterpret_cast<void*>(0xAAAA));
 
     // Lookup miss
-    void* miss = mora::rt::bst_hashmap_lookup(&map, 0x999);
+    void* miss = ::bst_hashmap_lookup(&map, 0x999);
     EXPECT_EQ(miss, nullptr);
 }

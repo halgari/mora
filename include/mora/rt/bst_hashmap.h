@@ -23,8 +23,7 @@ struct BSTHashMapLayout {
     BSTEntry* entries;     // 0x28
 };
 
-/// Look up a FormID in a BSTHashMap, returning the associated value pointer
-/// or nullptr if not found.
-void* bst_hashmap_lookup(const BSTHashMapLayout* map, uint32_t formid);
-
 } // namespace mora::rt
+
+// Exposed as extern "C" for clean LLVM IR linkage
+extern "C" void* bst_hashmap_lookup(const mora::rt::BSTHashMapLayout* map, uint32_t formid);

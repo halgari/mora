@@ -76,4 +76,84 @@ uint64_t get_field_offset(uint8_t form_type, uint16_t field_id) {
     return 0;
 }
 
-} // namespace mora::rt
+// ── Keyword mutation via Skyrim's MemoryManager ────────────────────
+
+// BGSKeywordForm layout (same across NPC_, WEAP, ARMO — offset varies by form type)
+// +0x00: vtable
+// +0x08: BGSKeyword** keywords
+// +0x10: uint32_t numKeywords
+// +0x14: uint32_t pad
+
+// NPC keyword form offset: 0x110
+// Weapon keyword form offset: 0x140
+// Armor keyword form offset: 0x1D8
+
+constexpr uint8_t kNPC = 0x2B;
+
+static uint64_t get_keyword_form_offset(uint8_t form_type) {
+    switch (form_type) {
+        case kNPC:    return 0x110;
+        case kWeapon: return 0x140;
+        case kArmor:  return 0x1D8;
+        default:      return 0;
+    }
+}
+
+} // close mora::rt namespace
+
+extern "C" void mora_rt_add_keyword(void* skyrim_base, void* form, void* keyword_form,
+                                     uint64_t get_singleton_offset,
+                                     uint64_t allocate_offset,
+                                     uint64_t deallocate_offset) {
+    using namespace mora::rt;
+    if (!form || !keyword_form) return;
+
+    uint8_t form_type = get_form_type(form);
+    uint64_t kf_offset = get_keyword_form_offset(form_type);
+    if (kf_offset == 0) return;
+
+    // Get pointers to the keyword form's members
+    char* kf_base = reinterpret_cast<char*>(form) + kf_offset;
+    void**   kw_array_ptr = reinterpret_cast<void**>(kf_base + 0x08);
+    uint32_t* num_kw_ptr  = reinterpret_cast<uint32_t*>(kf_base + 0x10);
+
+    void** old_keywords = *reinterpret_cast<void***>(kw_array_ptr);
+    uint32_t old_count = *num_kw_ptr;
+
+    // Check if keyword already present
+    for (uint32_t i = 0; i < old_count; i++) {
+        if (old_keywords[i] == keyword_form) return; // already has it
+    }
+
+    // Resolve MemoryManager functions from skyrim_base + offsets
+    auto get_singleton = reinterpret_cast<MemMgr_GetSingleton_t>(
+        reinterpret_cast<char*>(skyrim_base) + get_singleton_offset);
+    auto allocate = reinterpret_cast<MemMgr_Allocate_t>(
+        reinterpret_cast<char*>(skyrim_base) + allocate_offset);
+    auto deallocate = reinterpret_cast<MemMgr_Deallocate_t>(
+        reinterpret_cast<char*>(skyrim_base) + deallocate_offset);
+
+    void* mgr = get_singleton();
+    if (!mgr) return;
+
+    // Allocate new array
+    uint32_t new_count = old_count + 1;
+    void** new_keywords = reinterpret_cast<void**>(
+        allocate(mgr, new_count * sizeof(void*), 0, false));
+    if (!new_keywords) return;
+
+    // Copy old + append new
+    if (old_keywords && old_count > 0) {
+        std::memcpy(new_keywords, old_keywords, old_count * sizeof(void*));
+    }
+    new_keywords[old_count] = keyword_form;
+
+    // Update the form
+    *reinterpret_cast<void***>(kw_array_ptr) = new_keywords;
+    *num_kw_ptr = new_count;
+
+    // Free old array
+    if (old_keywords) {
+        deallocate(mgr, old_keywords, false);
+    }
+}

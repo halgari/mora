@@ -37,11 +37,19 @@ private:
     void emit_field_write(llvm::IRBuilder<>& builder, llvm::Value* form_ptr,
                           uint8_t form_type, const FieldPatch& fp);
 
+    // Emit a keyword add: look up both form and keyword, call add_keyword_to_form
+    void emit_keyword_add(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                           uint32_t form_id, uint32_t keyword_formid);
+
+    // Declare add_keyword_to_form (linked from mora_rt.bc)
+    llvm::Function* declare_add_keyword();
+
     llvm::LLVMContext& ctx_;
     llvm::Module& mod_;
     const AddressLibrary& addrlib_;
 
     llvm::Function* hashmap_lookup_fn_ = nullptr;
+    llvm::Function* add_keyword_fn_ = nullptr;
 };
 
 } // namespace mora

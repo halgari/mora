@@ -58,8 +58,23 @@ llvm::Function* IREmitter::declare_hashmap_lookup() {
     return fn;
 }
 
+llvm::Function* IREmitter::declare_add_keyword() {
+    // void add_keyword_to_form(void* skyrim_base, void* form, void* keyword,
+    //                           uint64_t singleton_off, uint64_t alloc_off, uint64_t dealloc_off)
+    auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
+    auto* void_ty = llvm::Type::getVoidTy(ctx_);
+    auto* fn_ty = llvm::FunctionType::get(void_ty,
+        {ptr_ty, ptr_ty, ptr_ty, i64_ty, i64_ty, i64_ty}, false);
+    auto* fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                                       "mora_rt_add_keyword", mod_);
+    fn->setDoesNotThrow();
+    return fn;
+}
+
 void IREmitter::emit(const ResolvedPatchSet& patches, StringPool& pool) {
     hashmap_lookup_fn_ = declare_hashmap_lookup();
+    add_keyword_fn_ = declare_add_keyword();
     emit_apply_function(patches, pool);
 }
 
@@ -101,9 +116,15 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
 
 void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
                             const ResolvedPatch& rp, const FieldPatch& fp) {
+    // Handle keyword add/remove specially — requires engine function calls
+    if (fp.field == FieldId::Keywords && fp.op == FieldOp::Add) {
+        emit_keyword_add(builder, map_ptr, rp.target_formid, fp.value.as_formid());
+        return;
+    }
+
     auto store_kind = get_store_kind(fp.field);
     if (store_kind == StoreKind::Unsupported) {
-        return; // Skip unsupported fields (Name, Keywords, etc.)
+        return; // Skip unsupported fields (Name, Spells, Perks, etc.)
     }
 
     uint8_t inferred_type = infer_form_type(fp.field);
@@ -242,6 +263,56 @@ void IREmitter::emit_field_write(llvm::IRBuilder<>& builder,
         case StoreKind::Unsupported:
             break;
     }
+}
+
+void IREmitter::emit_keyword_add(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                                  uint32_t form_id, uint32_t keyword_formid) {
+    auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
+
+    // Look up both the target form and the keyword form
+    llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, form_id);
+    llvm::Value* kw_ptr = emit_form_lookup(builder, map_ptr, keyword_formid);
+
+    // Null check both
+    auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto* null_val = llvm::ConstantPointerNull::get(ptr_ty);
+
+    auto* form_ok = builder.CreateICmpNE(form_ptr, null_val, "form_ok");
+    auto* kw_ok = builder.CreateICmpNE(kw_ptr, null_val, "kw_ok");
+    auto* both_ok = builder.CreateAnd(form_ok, kw_ok, "both_ok");
+
+    auto* func = builder.GetInsertBlock()->getParent();
+    auto* do_add_bb = llvm::BasicBlock::Create(ctx_, "do_kw_add", func);
+    auto* skip_bb = llvm::BasicBlock::Create(ctx_, "skip_kw", func);
+    builder.CreateCondBr(both_ok, do_add_bb, skip_bb);
+
+    builder.SetInsertPoint(do_add_bb);
+
+    // Get skyrim_base (first arg of apply_all_patches)
+    llvm::Value* skyrim_base = func->arg_begin();
+
+    // Resolve MemoryManager Address Library offsets
+    // SE IDs: GetSingleton=11045, Allocate=66859, Deallocate=66861
+    // AE IDs: GetSingleton=11141, Allocate=68115, Deallocate=68117
+    // Try AE first (1.6.x), fall back to SE
+    uint64_t singleton_off = addrlib_.resolve(11141).value_or(
+                              addrlib_.resolve(11045).value_or(0));
+    uint64_t allocate_off = addrlib_.resolve(68115).value_or(
+                             addrlib_.resolve(66859).value_or(0));
+    uint64_t deallocate_off = addrlib_.resolve(68117).value_or(
+                               addrlib_.resolve(66861).value_or(0));
+
+    builder.CreateCall(add_keyword_fn_, {
+        skyrim_base,
+        form_ptr,
+        kw_ptr,
+        llvm::ConstantInt::get(i64_ty, singleton_off),
+        llvm::ConstantInt::get(i64_ty, allocate_off),
+        llvm::ConstantInt::get(i64_ty, deallocate_off),
+    });
+
+    builder.CreateBr(skip_bb);
+    builder.SetInsertPoint(skip_bb);
 }
 
 } // namespace mora

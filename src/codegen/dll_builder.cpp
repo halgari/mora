@@ -172,12 +172,14 @@ bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
     for (auto& s : arg_strings) args.push_back(s.c_str());
 
     // Call LLD's COFF linker in-process
-    llvm::raw_null_ostream null_out;
-    lld::Result link_result = lld::lldMain(args, null_out, null_out,
+    std::string lld_stdout_str, lld_stderr_str;
+    llvm::raw_string_ostream lld_stdout(lld_stdout_str), lld_stderr(lld_stderr_str);
+    lld::Result link_result = lld::lldMain(args, lld_stdout, lld_stderr,
                                             {{lld::WinLink, &lld::coff::link}});
 
     if (link_result.retCode != 0) {
-        error = "LLD linking failed";
+        error = "LLD linking failed: " + lld_stderr_str;
+        if (error.back() == '\n') error.pop_back();
         return false;
     }
 

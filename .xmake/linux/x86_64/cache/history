@@ -1,15 +1,5 @@
 {
     cmdlines = {
-        "xmake build spid_parser_test",
-        "xmake run spid_parser_test",
-        "xmake build kid_parser_test",
-        "xmake run kid_parser_test",
-        "xmake build mora",
-        "xmake run mora import test_data/ --no-color",
-        "xmake run mora import test_data/ --no-color",
-        "xmake build mora",
-        "xmake build mora",
-        "xmake test",
         "xmake build mora",
         "xmake build mora",
         "xmake build mora",
@@ -64,6 +54,16 @@
         "xmake build mora",
         "xmake test",
         "xmake build mora",
+        "xmake test",
+        "xmake build",
+        "xmake test",
+        "xmake build mora",
+        "xmake test",
+        "xmake build mora",
+        "xmake build mora",
+        "xmake build mora",
+        "xmake test",
+        "xmake build",
         "xmake test"
     }
 }
