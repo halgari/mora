@@ -69,7 +69,12 @@ SOURCES=(
     # AST types (needed by evaluator)
     src/ast/types.cpp
     src/ast/ast.cpp
+    # Diagnostics (needed by dynamic_runner)
+    src/diag/diagnostic.cpp
     # Runtime
+    src/runtime/form_bridge.cpp
+    src/runtime/patch_applier.cpp
+    src/runtime/dynamic_runner.cpp
     src/runtime/plugin.cpp
 )
 
