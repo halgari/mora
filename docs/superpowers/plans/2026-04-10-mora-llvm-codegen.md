@@ -492,15 +492,15 @@ git add -A && git commit -m "feat: DLL builder orchestrates IR → LTO → DLL p
 
 ---
 
-### Task 6: Wire into `mora compile --emit-dll`
+### Task 6: Update `mora compile` to emit DLL
 
 **Files:**
 - Modify: `src/main.cpp`
 
-Add `--emit-dll` flag to the compile command. When present, instead of (or in addition to) emitting `.mora.patch`, emit a complete `MoraRuntime.dll`.
+`mora compile` now emits a native DLL directly — no more `.mora.patch` or `.mora.rt` intermediate files. The DLL is the only output.
 
 ```
-$ mora compile --emit-dll test_data/example.mora
+$ mora compile test_data/example.mora
 
   mora v0.1.0
 
@@ -515,32 +515,35 @@ $ mora compile --emit-dll test_data/example.mora
   ✓ LTO linking with mora_rt.bc                        45ms
   ✓ MoraRuntime.dll emitted                            22ms
 
-    Output: MoraCache/MoraRuntime.dll (148 KB)
+    Output: MoraRuntime.dll (148 KB)
     681 patches baked into native code
     Estimated runtime: ~7ms at DataLoaded
 ```
 
-- [ ] **Step 1: Add --emit-dll flag and codegen pipeline**
+- [ ] **Step 1: Replace old compile pipeline with LLVM codegen**
 
-After the existing evaluate phase, if `--emit-dll` is set:
+Remove the `.mora.patch` / `.mora.rt` / `.mora.lock` emission. After evaluation:
 1. Load Address Library
 2. Create LLVM context + module
 3. Emit IR via IREmitter
 4. LTO link with mora_rt.bc
 5. Compile to DLL via DLLBuilder
+6. Write DLL to output directory
+
+The `mora inspect` command can still dump the patch set (from the in-memory PatchSet, before codegen), but the on-disk output is just the DLL.
 
 - [ ] **Step 2: Test end-to-end**
 
 ```bash
 xmake build mora
-mora compile --emit-dll test_data/example.mora
+mora compile test_data/example.mora
 file MoraCache/MoraRuntime.dll  # should be PE32+ DLL
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "feat: mora compile --emit-dll generates native SKSE plugin"
+git add -A && git commit -m "feat: mora compile emits native SKSE DLL directly"
 ```
 
 ---
@@ -618,6 +621,8 @@ This plan delivers the Mora LLVM codegen pipeline:
 
 **The command:**
 ```bash
-mora compile --emit-dll my_rules.mora
-# → MoraCache/MoraRuntime.dll (drop into Data/SKSE/Plugins/)
+mora compile my_rules.mora
+# → MoraRuntime.dll (drop into Data/SKSE/Plugins/)
 ```
+
+No intermediate file formats. Rules go in, native DLL comes out.
