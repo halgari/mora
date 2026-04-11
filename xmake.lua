@@ -14,7 +14,7 @@ target("mora_lib")
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
-              "src/data/*.cpp", "src/esp/*.cpp")
+              "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp")
     add_packages("zlib")
 target_end()
 
