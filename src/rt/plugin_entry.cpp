@@ -25,16 +25,17 @@ int __stdcall DllMain(void* hinstDLL, uint32_t fdwReason, void* lpvReserved) {
     return 1; // TRUE
 }
 
-// SKSE Plugin Version data
+// SKSE plugin version struct — must be 0x350 bytes matching CommonLibSSE layout.
 struct SKSEPluginVersionData {
-    uint32_t dataVersion;
-    uint32_t pluginVersion;
-    char name[256];
-    char author[256];
-    uint32_t addressIndependence;
-    uint32_t structureCompatibility;
-    uint32_t compatible[16];
-    uint32_t seVersionRequired;
+    uint32_t dataVersion;               // 0x000
+    uint32_t pluginVersion;             // 0x004
+    char     pluginName[256];           // 0x008
+    char     author[256];               // 0x108
+    char     supportEmail[252];         // 0x208
+    uint32_t versionIndependenceEx;     // 0x304
+    uint32_t versionIndependence;       // 0x308
+    uint32_t compatibleVersions[16];    // 0x30C
+    uint32_t seVersionRequired;         // 0x34C
 };
 
 extern "C" __declspec(dllexport)
@@ -43,8 +44,9 @@ SKSEPluginVersionData SKSEPlugin_Version = {
     1,          // pluginVersion (0.0.1)
     "MoraRuntime",
     "Mora Project",
-    1,          // AddressIndependent
-    2,          // StructureIndependent (layout-dependent on runtime)
+    "",         // supportEmail
+    0,          // versionIndependenceEx
+    1 | 4,      // versionIndependence: AddressLibraryPostAE | StructsPost629
     {0},
     0
 };

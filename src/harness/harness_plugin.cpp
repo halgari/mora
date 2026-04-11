@@ -18,15 +18,17 @@ namespace fs = std::filesystem;
 
 // ── SKSE types (same as plugin_entry.cpp) ───────────────────────────
 
+// SKSE plugin version struct — must be 0x350 bytes matching CommonLibSSE layout.
 struct SKSEPluginVersionData {
-    uint32_t dataVersion;
-    uint32_t pluginVersion;
-    char name[256];
-    char author[256];
-    uint32_t addressIndependence;
-    uint32_t structureCompatibility;
-    uint32_t compatible[16];
-    uint32_t seVersionRequired;
+    uint32_t dataVersion;               // 0x000
+    uint32_t pluginVersion;             // 0x004
+    char     pluginName[256];           // 0x008
+    char     author[256];               // 0x108
+    char     supportEmail[252];         // 0x208
+    uint32_t versionIndependenceEx;     // 0x304
+    uint32_t versionIndependence;       // 0x308
+    uint32_t compatibleVersions[16];    // 0x30C
+    uint32_t seVersionRequired;         // 0x34C
 };
 
 struct SKSEMessage {
@@ -36,11 +38,14 @@ struct SKSEMessage {
     void* data;
 };
 
-using SKSEMessageCallback = void(*)(SKSEMessage*);
+using EventCallback = void(*)(SKSEMessage*);
+using PluginHandle = uint32_t;
 
 struct SKSEMessagingInterface {
     uint32_t interfaceVersion;
-    bool (*RegisterListener)(void* plugin, const char* sender, SKSEMessageCallback callback);
+    bool (*RegisterListener)(PluginHandle listener, const char* sender, EventCallback handler);
+    bool (*Dispatch)(PluginHandle sender, uint32_t messageType, void* data, uint32_t dataLen, const char* receiver);
+    void* (*GetEventDispatcher)(uint32_t dispatcherId);
 };
 
 struct SKSEInterface {
@@ -152,7 +157,9 @@ SKSEPluginVersionData SKSEPlugin_Version = {
     1, 1,
     "MoraTestHarness",
     "Mora Project",
-    1, 2,
+    "",         // supportEmail
+    0,          // versionIndependenceEx
+    1 | 4,      // versionIndependence: AddressLibraryPostAE | StructsPost629
     {0}, 0
 };
 
@@ -162,12 +169,16 @@ int __stdcall DllMain(void* hinstDLL, uint32_t fdwReason, void* lpvReserved) {
     return 1;
 }
 
+static uint32_t g_plugin_handle = 0;
+
 extern "C" __declspec(dllexport)
 bool SKSEPlugin_Load(SKSEInterface* skse) {
-    auto* messaging = static_cast<SKSEMessagingInterface*>(skse->QueryInterface(2));
-    if (messaging) {
-        messaging->RegisterListener(nullptr, "SKSE", message_handler);
-    }
+    g_plugin_handle = skse->GetPluginHandle();
+    constexpr uint32_t kInterface_Messaging = 5;
+    auto* messaging = static_cast<SKSEMessagingInterface*>(skse->QueryInterface(kInterface_Messaging));
+    if (!messaging) return true;
+
+    messaging->RegisterListener(g_plugin_handle, "SKSE", message_handler);
     return true;
 }
 

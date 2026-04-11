@@ -24,7 +24,6 @@ CFLAGS=(
     /DWIN32
     /D_WIN32
     /DNOMINMAX
-    -flto
     -imsvc "$XWIN/crt/include"
     -imsvc "$XWIN/sdk/include/ucrt"
     -imsvc "$XWIN/sdk/include/um"
