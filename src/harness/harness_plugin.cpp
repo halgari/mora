@@ -5,6 +5,7 @@
 #include "mora/harness/ini_reader.h"
 #include "mora/rt/bst_hashmap.h"
 #include "mora/rt/form_ops.h"
+#include "mora/codegen/address_library.h"
 
 #include <windows.h>
 #include <cstdint>
@@ -71,10 +72,43 @@ static void resolve_all_forms() {
     void* base = GetModuleHandleW(nullptr);
     if (!base) return;
 
-    constexpr uint64_t kAllFormsOffset = 0x1EEBE10;
+    // Load Address Library from Data/SKSE/Plugins/
+    // Find the DLL path to locate the Address Library bin
+    char dll_path[MAX_PATH];
+    HMODULE hm = nullptr;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCSTR>(&resolve_all_forms), &hm);
+    GetModuleFileNameA(hm, dll_path, MAX_PATH);
+    fs::path plugin_dir = fs::path(dll_path).parent_path();
+
+    // Try AE bin first, then SE
+    mora::AddressLibrary addrlib;
+    bool loaded = false;
+    for (const auto& entry : fs::directory_iterator(plugin_dir)) {
+        auto name = entry.path().filename().string();
+        if (name.find("versionlib-") == 0 && name.find(".bin") != std::string::npos) {
+            if (addrlib.load(entry.path())) { loaded = true; break; }
+        }
+    }
+    if (!loaded) {
+        // Try SE format
+        for (const auto& entry : fs::directory_iterator(plugin_dir)) {
+            auto name = entry.path().filename().string();
+            if (name.find("version-") == 0 && name.find(".bin") != std::string::npos) {
+                if (addrlib.load(entry.path())) { loaded = true; break; }
+            }
+        }
+    }
+    if (!loaded) return;
+
+    // Resolve allForms: AE ID 400507, SE ID 514351
+    auto offset_opt = addrlib.resolve(400507);
+    if (!offset_opt) offset_opt = addrlib.resolve(514351);
+    if (!offset_opt) return;
 
     auto* ptr = reinterpret_cast<const void* const*>(
-        static_cast<const char*>(base) + kAllFormsOffset);
+        static_cast<const char*>(base) + *offset_opt);
     g_all_forms = static_cast<const mora::rt::BSTHashMapLayout*>(*ptr);
 }
 

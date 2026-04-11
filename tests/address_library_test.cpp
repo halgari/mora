@@ -37,7 +37,9 @@ TEST(AddressLibraryTest, RealFile) {
     ASSERT_TRUE(lib.load(addr_lib));
     EXPECT_GT(lib.entry_count(), 100000u);
 
-    auto offset = lib.resolve(514351);
+    // Try AE ID first (400507), then SE ID (514351) for allForms
+    auto offset = lib.resolve(400507);
+    if (!offset) offset = lib.resolve(514351);
     ASSERT_TRUE(offset.has_value());
     EXPECT_GT(*offset, 0u);
 }

@@ -19,12 +19,6 @@ static void* get_skyrim_base() {
 // Simple DataLoaded handler
 static bool g_applied = false;
 
-extern "C" __declspec(dllexport)
-int __stdcall DllMain(void* hinstDLL, uint32_t fdwReason, void* lpvReserved) {
-    (void)hinstDLL; (void)fdwReason; (void)lpvReserved;
-    return 1; // TRUE
-}
-
 // SKSE plugin version struct — must be 0x350 bytes matching CommonLibSSE layout.
 struct SKSEPluginVersionData {
     uint32_t dataVersion;               // 0x000
@@ -63,10 +57,12 @@ struct SKSEMessage {
 
 using SKSEMessageCallback = void(*)(SKSEMessage*);
 
-// SKSE Messaging interface (simplified)
+// SKSE Messaging interface — must match SKSE's actual struct layout
 struct SKSEMessagingInterface {
     uint32_t interfaceVersion;
-    bool (*RegisterListener)(void* plugin, const char* sender, SKSEMessageCallback callback);
+    bool (*RegisterListener)(uint32_t pluginHandle, const char* sender, SKSEMessageCallback handler);
+    bool (*Dispatch)(uint32_t pluginHandle, uint32_t messageType, void* data, uint32_t dataLen, const char* receiver);
+    void* (*GetEventDispatcher)(uint32_t dispatcherId);
 };
 
 // SKSE Load interface
@@ -96,10 +92,10 @@ extern "C" __declspec(dllexport)
 bool SKSEPlugin_Load(SKSEInterface* skse) {
     g_plugin_handle = skse->GetPluginHandle();
 
-    // Query messaging interface (ID = 2)
-    auto* messaging = static_cast<SKSEMessagingInterface*>(skse->QueryInterface(2));
+    // Query messaging interface (ID = 5 = kInterface_Messaging)
+    auto* messaging = static_cast<SKSEMessagingInterface*>(skse->QueryInterface(5));
     if (messaging) {
-        messaging->RegisterListener(nullptr, "SKSE", message_handler);
+        messaging->RegisterListener(g_plugin_handle, "SKSE", message_handler);
     }
 
     return true;

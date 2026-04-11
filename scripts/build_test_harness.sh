@@ -36,6 +36,7 @@ SOURCES=(
     src/harness/weapon_dumper.cpp
     src/harness/ini_reader.cpp
     src/harness/tcp_listener.cpp
+    src/codegen/address_library.cpp
 )
 
 mkdir -p "$BUILD_DIR/obj"

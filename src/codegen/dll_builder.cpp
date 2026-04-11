@@ -133,6 +133,12 @@ bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
         arg_strings.push_back(rt_lib_path.string());
     }
 
+    // Force-include and export SKSE plugin symbols from mora_rt.lib
+    arg_strings.push_back("/INCLUDE:SKSEPlugin_Version");
+    arg_strings.push_back("/INCLUDE:SKSEPlugin_Load");
+    arg_strings.push_back("/EXPORT:SKSEPlugin_Version,DATA");
+    arg_strings.push_back("/EXPORT:SKSEPlugin_Load");
+
     std::vector<const char*> args;
     for (auto& s : arg_strings) args.push_back(s.c_str());
 
