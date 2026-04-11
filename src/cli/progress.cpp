@@ -96,10 +96,12 @@ void Progress::print_summary(size_t frozen_rules, size_t frozen_patches,
     };
 
     line("Frozen:", std::to_string(frozen_rules) + " rules",
-         "→ mora.patch (" + patch_size + ", " + std::to_string(frozen_patches) + " patches)");
+         "→ MoraRuntime.dll (" + patch_size + ")");
+    line("", std::to_string(frozen_patches) + " patches baked into native code");
+    line("", "Estimated runtime: <15ms");
 
     if (dynamic_rules > 0) {
-        line("Dynamic:", std::to_string(dynamic_rules) + " rules", "→ mora.rt");
+        line("Dynamic:", std::to_string(dynamic_rules) + " rules", "(deferred to runtime)");
     }
 
     if (conflicts > 0) {

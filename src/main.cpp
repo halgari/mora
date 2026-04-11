@@ -11,10 +11,8 @@
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/patch_set.h"
-#include "mora/emit/patch_writer.h"
-#include "mora/emit/patch_reader.h"
-#include "mora/emit/rt_writer.h"
-#include "mora/emit/lock_file.h"
+#include "mora/codegen/dll_builder.h"
+#include "mora/codegen/address_library.h"
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -101,6 +99,19 @@ static std::string format_bytes(std::uintmax_t bytes) {
     return ss.str();
 }
 
+static fs::path find_address_library(const std::string& data_dir) {
+    if (data_dir.empty()) return {};
+    fs::path skse_plugins = fs::path(data_dir) / "SKSE" / "Plugins";
+    if (!fs::exists(skse_plugins)) return {};
+    for (auto& entry : fs::directory_iterator(skse_plugins)) {
+        std::string fname = entry.path().filename().string();
+        if (fname.find("versionlib") == 0 && entry.path().extension() == ".bin") {
+            return entry.path();
+        }
+    }
+    return {};
+}
+
 static std::string field_name(mora::FieldId id) {
     switch (id) {
         case mora::FieldId::Name:        return "Name";
@@ -181,8 +192,8 @@ static void print_usage() {
     std::printf("Usage: mora <command> [options] [path]\n\n");
     std::printf("Commands:\n");
     std::printf("  check     Type check and lint .mora files\n");
-    std::printf("  compile   Compile .mora files to patch/runtime output\n");
-    std::printf("  inspect   Display .mora.patch file contents\n");
+    std::printf("  compile   Compile .mora files to native SKSE DLL\n");
+    std::printf("  inspect   Display patch set from .mora source files\n");
     std::printf("  info      Show project status overview\n");
     std::printf("  import    Scan for SPID/KID INI files and display as Mora rules\n");
     std::printf("\nOptions:\n");
@@ -384,8 +395,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         std::to_string(final_resolved.patch_count()) + " patches generated",
         "done");
 
-    // Emit
-    progress.start_phase("Emitting");
+    // ── LLVM Codegen ──
 
     // Determine output directory — resolve relative to target
     fs::path out_path(output_dir);
@@ -398,39 +408,31 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
     fs::create_directories(out_path);
 
-    // Compute hashes
-    uint64_t source_hash = mora::LockFile::hash_files(cr.files);
-    uint64_t load_order_hash = mora::LockFile::hash_string("default_load_order");
-
-    // Write .mora.patch
-    fs::path patch_path = out_path / "mora.patch";
-    {
-        std::ofstream out(patch_path, std::ios::binary);
-        mora::PatchWriter writer(cr.pool);
-        writer.write(out, final_resolved, load_order_hash, source_hash);
+    progress.start_phase("Loading Address Library");
+    mora::AddressLibrary addrlib;
+    // Try to find real Address Library
+    auto addr_lib_path = find_address_library(data_dir);
+    if (!addr_lib_path.empty()) {
+        addrlib.load(addr_lib_path);
+    } else {
+        // Use mock with known SE 1.5.97 offset
+        addrlib = mora::AddressLibrary::mock({{514351, 0x1EEBE10}});
     }
+    progress.finish_phase(std::to_string(addrlib.entry_count()) + " entries", "done");
 
-    // Write .mora.rt
-    fs::path rt_path = out_path / "mora.rt";
-    {
-        std::ofstream out(rt_path, std::ios::binary);
-        mora::RtWriter writer(cr.pool);
-        writer.write(out, dynamic_rules);
+    progress.start_phase("Generating native DLL");
+    mora::DLLBuilder builder(addrlib);
+    auto build_result = builder.build(final_resolved, cr.pool, out_path);
+    if (!build_result.success) {
+        progress.print_failure("DLL build failed: " + build_result.error);
+        return 1;
     }
-
-    // Write .mora.lock
-    fs::path lock_path = out_path / "mora.lock";
-    mora::LockFile lock;
-    lock.source_hash = source_hash;
-    lock.load_order_hash = load_order_hash;
-    lock.write(lock_path);
-
     progress.finish_phase(
-        "Output to " + out_path.string(),
+        "MoraRuntime.dll (" + format_bytes(fs::file_size(build_result.output_path)) + ")",
         "done");
 
     // Summary
-    auto patch_size = fs::file_size(patch_path);
+    auto dll_size = fs::file_size(build_result.output_path);
     progress.print_summary(
         static_count,
         final_resolved.patch_count(),
@@ -438,7 +440,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         final_resolved.get_conflicts().size(),
         cr.diags.error_count(),
         cr.diags.warning_count(),
-        format_bytes(patch_size));
+        format_bytes(dll_size));
 
     auto total_end = std::chrono::steady_clock::now();
     auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(total_end - start).count();
@@ -452,51 +454,83 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     return 0;
 }
 
-static int cmd_inspect(const std::string& target_path, bool show_conflicts) {
-    fs::path patch_path = target_path;
-    if (fs::is_directory(patch_path)) {
-        patch_path = patch_path / "MoraCache" / "mora.patch";
-    }
-    // If target is "." or a directory without the file, also try default
-    if (!fs::exists(patch_path) && !patch_path.has_extension()) {
-        patch_path = fs::path(target_path) / "MoraCache" / "mora.patch";
-    }
+static int cmd_inspect(const std::string& target_path, bool show_conflicts,
+                       bool use_color) {
+    // Inspect now works by compiling in-memory and displaying the PatchSet
+    mora::Progress progress(use_color, mora::stdout_is_tty());
 
-    if (!fs::exists(patch_path)) {
-        std::fprintf(stderr, "error: patch file not found: %s\n", patch_path.string().c_str());
+    auto files = find_mora_files(target_path);
+    if (files.empty()) {
+        std::fprintf(stderr, "  No .mora files found in %s\n", target_path.c_str());
+        std::fprintf(stderr, "  hint: mora inspect reads .mora source files and displays the patch set\n");
         return 1;
     }
 
     mora::StringPool pool;
-    mora::PatchReader reader(pool);
+    mora::DiagBag diags;
+    std::vector<mora::Module> modules;
+    std::vector<std::string> sources;
 
-    std::ifstream in(patch_path, std::ios::binary);
-    auto result = reader.read(in);
-    if (!result) {
-        std::fprintf(stderr, "error: failed to read patch file: %s\n", patch_path.string().c_str());
+    // Quick parse + resolve + type-check + evaluate
+    sources.reserve(files.size());
+    for (auto& file : files) {
+        sources.push_back(read_file(file));
+        const std::string& source = sources.back();
+        if (source.empty()) continue;
+        mora::Lexer lexer(source, file.string(), pool, diags);
+        mora::Parser parser(lexer, pool, diags);
+        auto mod = parser.parse_module();
+        mod.filename = file.string();
+        mod.source = source;
+        modules.push_back(std::move(mod));
+    }
+
+    mora::NameResolver resolver(pool, diags);
+    for (auto& mod : modules) resolver.resolve(mod);
+
+    mora::TypeChecker checker(pool, diags, resolver);
+    for (auto& mod : modules) checker.check(mod);
+
+    if (diags.has_errors()) {
+        mora::DiagRenderer renderer(use_color);
+        std::printf("%s", renderer.render_all(diags).c_str());
         return 1;
     }
 
-    auto file_size = fs::file_size(patch_path);
+    mora::FactDB db(pool);
+    mora::Evaluator evaluator(pool, diags, db);
+    mora::PatchSet all_patches;
+    for (auto& mod : modules) {
+        auto mod_patches = evaluator.evaluate_static(mod);
+        auto resolved = mod_patches.resolve();
+        for (auto& rp : resolved.all_patches_sorted()) {
+            for (auto& fp : rp.fields) {
+                all_patches.add_patch(rp.target_formid, fp.field, fp.op, fp.value, fp.source_mod, fp.priority);
+            }
+        }
+    }
+
+    auto final_resolved = all_patches.resolve();
 
     if (show_conflicts) {
-        std::printf("  no conflict data in patch file\n");
+        auto conflicts = final_resolved.get_conflicts();
+        if (conflicts.empty()) {
+            std::printf("  no conflicts\n");
+        } else {
+            std::printf("  %zu conflict(s)\n", conflicts.size());
+        }
         return 0;
     }
 
     // Header
-    std::printf("  mora.patch v%u — %zu patches (%s)\n",
-        result->version,
-        result->patches.size(),
-        format_bytes(file_size).c_str());
-    std::printf("  load order hash: %016llX\n", (unsigned long long)result->load_order_hash);
-    std::printf("  source hash:     %016llX\n", (unsigned long long)result->source_hash);
-    std::printf("\n");
+    std::printf("  mora inspect — %zu patches (from %zu files)\n\n",
+        final_resolved.patch_count(), files.size());
 
-    if (result->patches.empty()) {
+    auto all_sorted = final_resolved.all_patches_sorted();
+    if (all_sorted.empty()) {
         std::printf("  (no patches)\n");
     } else {
-        for (auto& rp : result->patches) {
+        for (auto& rp : all_sorted) {
             std::printf("  0x%08X:\n", rp.target_formid);
             for (auto& fp : rp.fields) {
                 std::string op = op_prefix(fp.op);
@@ -538,20 +572,15 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
 
     std::printf("  Mora rules:    %zu across %zu files\n", rule_count, files.size());
 
-    // Check cache
+    // Check cache — look for compiled DLL
     fs::path cache_dir = base / "MoraCache";
-    fs::path lock_path = cache_dir / "mora.lock";
+    fs::path dll_path = cache_dir / "MoraRuntime.dll";
 
-    if (!fs::exists(cache_dir) || !fs::exists(lock_path)) {
-        std::printf("  Cache status:  no cache\n");
+    if (!fs::exists(cache_dir) || !fs::exists(dll_path)) {
+        std::printf("  Cache status:  no DLL (run mora compile)\n");
     } else {
-        auto lock = mora::LockFile::read(lock_path);
-        uint64_t current_hash = mora::LockFile::hash_files(files);
-        if (lock.matches(current_hash, lock.load_order_hash)) {
-            std::printf("  Cache status:  up to date\n");
-        } else {
-            std::printf("  Cache status:  stale\n");
-        }
+        auto dll_size = fs::file_size(dll_path);
+        std::printf("  Cache status:  MoraRuntime.dll (%s)\n", format_bytes(dll_size).c_str());
     }
 
     // If --data-dir provided, show plugin count and fact count
@@ -838,7 +867,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "inspect") {
-        return cmd_inspect(target_path, show_conflicts);
+        return cmd_inspect(target_path, show_conflicts, use_color);
     }
 
     if (command == "info") {
