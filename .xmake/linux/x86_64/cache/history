@@ -1,17 +1,5 @@
 {
     cmdlines = {
-        "xmake run rt_writer_test",
-        "xmake build mora_lib",
-        "xmake build mora",
-        "xmake build mora",
-        "xmake run mora compile test_data/example.mora",
-        "xmake run mora -- compile test_data/example.mora",
-        "xmake build",
-        "xmake test",
-        "xmake build backend_integration_test",
-        "xmake run backend_integration_test",
-        "xmake test",
-        "xmake build",
         "xmake test",
         "xmake build indexed_relation_test",
         "xmake run indexed_relation_test",
@@ -64,6 +52,18 @@
         "xmake build",
         "xmake build",
         "xmake test",
-        "xmake build mora"
+        "xmake build mora",
+        "xmake build",
+        "xmake test",
+        "xmake f -p windows --toolchain=clang-cl -y",
+        "xmake f -p windows --toolchain=clang-cl --sdk=/home/tbaldrid/.xwin -y",
+        "xmake f -p windows --cc=clang-cl --cxx=clang-cl --ld=lld-link -y",
+        "xmake f -p windows --cc=clang-cl --cxx=clang-cl --ld=lld-link --ar=llvm-lib -y",
+        "xmake f -p linux -y",
+        "xmake build",
+        "xmake test",
+        "xmake f -p windows --cc=clang-cl --cxx=clang-cl --ld=lld-link --ar=llvm-lib -y",
+        "xmake f -p cross --cross=x86_64-w64-mingw32 --cc=clang-cl --cxx=clang-cl --ld=lld-link --ar=llvm-lib -y",
+        "xmake f -p linux -y"
     }
 }
