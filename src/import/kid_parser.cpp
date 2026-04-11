@@ -137,8 +137,20 @@ std::vector<Rule> KidParser::parse_line(const std::string& line,
         return {};
     }
 
-    // Build rule name
-    std::string rule_name = "kid_keyword_" + keyword_name
+    // Sanitize name for valid identifier
+    auto sanitize = [](const std::string& s) {
+        std::string r;
+        for (char c : s) {
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                r += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            else if (c == '.' || c == '|' || c == '/' || c == ' ' || c == '-')
+                if (!r.empty() && r.back() != '_') r += '_';
+        }
+        while (!r.empty() && r.back() == '_') r.pop_back();
+        return r.empty() ? std::string("unknown") : r;
+    };
+    std::string keyword_clean = sanitize(keyword_name);
+    std::string rule_name = "add_" + keyword_clean + "_to_" + relation
                             + "_L" + std::to_string(line_num);
 
     SourceSpan span{filename, static_cast<uint32_t>(line_num), 0,

@@ -12,12 +12,10 @@ SpidParser::SpidParser(StringPool& pool, DiagBag& diags,
 
 std::string SpidParser::resolve_symbol(const FormRef& ref) const {
     if (ref.is_editor_id()) return ref.editor_id;
-    // Try resolver first
     if (resolver_ && resolver_->has_data()) {
         auto edid = resolver_->resolve_ref(ref);
         if (!edid.empty()) return edid;
     }
-    // Fall back to plugin|hex or just hex
     if (!ref.plugin.empty()) {
         char buf[16];
         std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
@@ -62,20 +60,31 @@ Clause SpidParser::make_guard(BinaryExpr::Op op, Expr left, Expr right) {
     bin.op = op;
     bin.left = std::make_unique<Expr>(std::move(left));
     bin.right = std::make_unique<Expr>(std::move(right));
-
     Expr guard_expr;
     guard_expr.data = std::move(bin);
-
     GuardClause gc;
     gc.expr = std::make_unique<Expr>(std::move(guard_expr));
-
     Clause c;
     c.data = std::move(gc);
     return c;
 }
 
-// Determine if a string looks like a keyword EditorID:
-// starts with uppercase, no spaces, alphanumeric/underscore only.
+// Sanitize a string into a valid Mora identifier (lowercase, underscores)
+static std::string sanitize_name(const std::string& s) {
+    std::string result;
+    for (char c : s) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        } else if (c == '.' || c == '|' || c == '/' || c == ' ' || c == '-') {
+            if (!result.empty() && result.back() != '_') result += '_';
+        }
+    }
+    // Trim trailing underscores
+    while (!result.empty() && result.back() == '_') result.pop_back();
+    if (result.empty()) result = "unknown";
+    return result;
+}
+
 static bool looks_like_keyword(const std::string& s) {
     if (s.empty()) return false;
     if (!std::isupper(static_cast<unsigned char>(s[0]))) return false;
@@ -84,6 +93,17 @@ static bool looks_like_keyword(const std::string& s) {
             return false;
     }
     return true;
+}
+
+// Determine the fact name for a form filter entry
+static std::string form_filter_fact(const FormRef& ref) {
+    if (ref.is_editor_id()) {
+        if (ref.editor_id.find("Faction") != std::string::npos) return "has_faction";
+        if (ref.editor_id.find("Race") != std::string::npos) return "race_of";
+        if (ref.editor_id.find("Class") != std::string::npos) return "class_of";
+    }
+    // Raw FormIDs in SPID form filters are most commonly races
+    return "race_of";
 }
 
 void SpidParser::add_string_filters(const std::string& field,
@@ -103,47 +123,10 @@ void SpidParser::add_string_filters(const std::string& field,
         } else {
             std::vector<Expr> args;
             args.push_back(make_var("NPC"));
-            // Use string literal for non-keyword names
             Expr str_expr;
             str_expr.data = StringLiteral{pool_.intern(name), {}};
             args.push_back(std::move(str_expr));
             body.push_back(make_fact("editor_id", std::move(args), negated));
-        }
-    }
-}
-
-void SpidParser::add_form_filters(const std::string& field,
-                                  std::vector<Clause>& body) {
-    if (field.empty()) return;
-    auto entries = parse_filter_entries(field);
-
-    // SPID form filters: comma-separated = OR (any match qualifies).
-    // For a single entry or AND entries, emit directly.
-    // For multiple OR entries, they are typically race filters.
-    // Heuristic: EditorIDs with "Faction" → has_faction,
-    //            EditorIDs with "Race" or raw FormIDs → race_of,
-    //            else → has_keyword
-
-    for (const auto& entry : entries) {
-        bool negated = (entry.mode == FilterEntry::Mode::Exclude);
-        const auto& ref = entry.ref;
-        std::string sym = resolve_symbol(ref);
-
-        std::vector<Expr> args;
-        args.push_back(make_var("NPC"));
-        args.push_back(make_sym(sym));
-
-        if (ref.is_editor_id()) {
-            if (ref.editor_id.find("Faction") != std::string::npos) {
-                body.push_back(make_fact("has_faction", std::move(args), negated));
-            } else if (ref.editor_id.find("Race") != std::string::npos) {
-                body.push_back(make_fact("race_of", std::move(args), negated));
-            } else {
-                body.push_back(make_fact("has_keyword", std::move(args), negated));
-            }
-        } else {
-            // Raw FormID — most commonly a race reference in SPID form filters
-            body.push_back(make_fact("race_of", std::move(args), negated));
         }
     }
 }
@@ -154,7 +137,6 @@ void SpidParser::add_level_filters(const std::string& field,
     auto range = parse_level_range(field);
 
     if (range.has_min || range.has_max) {
-        // Add base_level(NPC, Level) clause
         std::vector<Expr> args;
         args.push_back(make_var("NPC"));
         args.push_back(make_var("Level"));
@@ -179,16 +161,12 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
         return {};
     }
 
-    // Parse "Type = Value|..."
     auto eq_pos = trimmed.find('=');
-    if (eq_pos == std::string_view::npos) {
-        return {};
-    }
+    if (eq_pos == std::string_view::npos) return {};
 
     auto type_str = std::string(trim(trimmed.substr(0, eq_pos)));
     auto value_str = std::string(trim(trimmed.substr(eq_pos + 1)));
 
-    // Validate type
     std::string type_lower = type_str;
     std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
                    [](unsigned char c) { return std::tolower(c); });
@@ -198,65 +176,136 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
     else if (type_lower == "spell") action = "add_spell";
     else if (type_lower == "perk") action = "add_perk";
     else if (type_lower == "item") action = "add_item";
-    else {
-        return {}; // Unknown type, skip
-    }
+    else return {};
 
-    // Split by pipes
     auto fields = split_pipes(value_str);
     if (fields.empty()) return {};
 
-    // Field 0: FormOrEditorID (the target)
+    // Field 0: target form
     auto target_ref = parse_form_ref(fields[0]);
-    std::string target_name = resolve_symbol(target_ref);
-
-    // Build rule name
-    std::string rule_name = "spid_" + type_lower + "_" + target_name
-                            + "_L" + std::to_string(line_num);
+    std::string target_sym = resolve_symbol(target_ref);
+    std::string target_clean = sanitize_name(target_sym);
 
     SourceSpan span{filename, static_cast<uint32_t>(line_num), 0,
                     static_cast<uint32_t>(line_num), 0};
+
+    std::vector<Rule> result;
+
+    // ── Handle form filters (field 2) with OR semantics ──
+    // If multiple comma-separated form filters, generate a derived helper rule
+    // with multiple heads (Datalog OR pattern)
+    std::string form_helper_name;
+    if (fields.size() > 2 && !fields[2].empty()) {
+        auto entries = parse_filter_entries(fields[2]);
+
+        // Separate includes from excludes
+        std::vector<const FilterEntry*> includes;
+        std::vector<const FilterEntry*> excludes;
+        for (const auto& entry : entries) {
+            if (entry.mode == FilterEntry::Mode::Exclude) {
+                excludes.push_back(&entry);
+            } else {
+                includes.push_back(&entry);
+            }
+        }
+
+        if (includes.size() > 1) {
+            // Multiple OR entries → generate helper derived rules
+            form_helper_name = target_clean + "_match_L" + std::to_string(line_num);
+
+            for (const auto* entry : includes) {
+                std::string sym = resolve_symbol(entry->ref);
+                std::string fact = form_filter_fact(entry->ref);
+
+                Rule helper;
+                helper.name = pool_.intern(form_helper_name);
+                helper.head_args.push_back(make_var("NPC"));
+                helper.span = span;
+
+                // Body: fact(NPC, :Symbol)
+                std::vector<Expr> args;
+                args.push_back(make_var("NPC"));
+                args.push_back(make_sym(sym));
+                helper.body.push_back(make_fact(fact, std::move(args)));
+
+                result.push_back(std::move(helper));
+            }
+        } else if (includes.size() == 1) {
+            // Single include — will be added directly to main rule body
+            form_helper_name = ""; // signal: handle inline
+        }
+        // Excludes are always added directly to main rule body (AND semantics)
+    }
+
+    // ── Build main patch rule ──
+    std::string rule_name = type_lower + "_" + target_clean + "_L" + std::to_string(line_num);
 
     Rule rule;
     rule.name = pool_.intern(rule_name);
     rule.head_args.push_back(make_var("NPC"));
     rule.span = span;
 
-    // Always add npc(NPC)
+    // Always: npc(NPC)
     {
         std::vector<Expr> args;
         args.push_back(make_var("NPC"));
         rule.body.push_back(make_fact("npc", std::move(args)));
     }
 
-    // Field 1: String filters
+    // String filters (field 1)
     if (fields.size() > 1 && !fields[1].empty()) {
         add_string_filters(fields[1], rule.body);
     }
 
-    // Field 2: Form filters
-    if (fields.size() > 2 && !fields[2].empty()) {
-        add_form_filters(fields[2], rule.body);
+    // Form filters (field 2)
+    if (!form_helper_name.empty()) {
+        // Reference the OR helper
+        std::vector<Expr> args;
+        args.push_back(make_var("NPC"));
+        rule.body.push_back(make_fact(form_helper_name, std::move(args)));
+    } else if (fields.size() > 2 && !fields[2].empty()) {
+        // Single include or no includes — add directly
+        auto entries = parse_filter_entries(fields[2]);
+        for (const auto& entry : entries) {
+            std::string sym = resolve_symbol(entry.ref);
+            std::string fact = form_filter_fact(entry.ref);
+            bool negated = (entry.mode == FilterEntry::Mode::Exclude);
+
+            std::vector<Expr> args;
+            args.push_back(make_var("NPC"));
+            args.push_back(make_sym(sym));
+            rule.body.push_back(make_fact(fact, std::move(args), negated));
+        }
     }
 
-    // Field 3: Level filters
+    // Add exclude form filters directly to main rule (always AND)
+    if (fields.size() > 2 && !fields[2].empty() && !form_helper_name.empty()) {
+        auto entries = parse_filter_entries(fields[2]);
+        for (const auto& entry : entries) {
+            if (entry.mode == FilterEntry::Mode::Exclude) {
+                std::string sym = resolve_symbol(entry.ref);
+                std::string fact = form_filter_fact(entry.ref);
+                std::vector<Expr> args;
+                args.push_back(make_var("NPC"));
+                args.push_back(make_sym(sym));
+                rule.body.push_back(make_fact(fact, std::move(args), true));
+            }
+        }
+    }
+
+    // Level filters (field 3)
     if (fields.size() > 3 && !fields[3].empty()) {
         add_level_filters(fields[3], rule.body);
     }
 
-    // Field 4: Traits (noted but not fully implemented)
-    // Field 5: Count/Index (not implemented in Phase 1)
-    // Field 6: Chance (not implemented in Phase 1)
-
-    // Build effect
+    // Effect
     Effect effect;
     effect.action = pool_.intern(action);
     effect.args.push_back(make_var("NPC"));
-    effect.args.push_back(make_sym(target_name));
+    effect.args.push_back(make_sym(target_sym));
     effect.span = span;
     rule.effects.push_back(std::move(effect));
 
-    std::vector<Rule> result;
     result.push_back(std::move(rule));
     return result;
 }
