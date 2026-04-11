@@ -1,99 +1,156 @@
 #include "mora/runtime/form_bridge.h"
 
-#ifdef MORA_HAS_COMMONLIB
-#include <RE/Skyrim.h>
+#ifdef _WIN32
+#include "mora/runtime/skyrim_abi.h"
+#endif
+
+#ifdef _WIN32
+// Global function pointer — resolved at plugin load via Address Library
+skyrim::LookupFormByID_t skyrim::g_lookupFormByID = nullptr;
 #endif
 
 namespace mora {
 
+#ifdef _WIN32
+
+static skyrim::TESForm* lookup_form(uint32_t formid) {
+    if (skyrim::g_lookupFormByID)
+        return skyrim::g_lookupFormByID(formid);
+    return nullptr;
+}
+
 bool FormBridge::apply_patch(uint32_t formid, const FieldPatch& patch) {
-#ifdef MORA_HAS_COMMONLIB
-    auto* form = RE::TESForm::LookupByID(formid);
+    auto* form = lookup_form(formid);
     if (!form) return false;
 
     switch (patch.field) {
-    case FieldId::Name: {
-        auto* named = form->As<RE::TESFullName>();
-        if (!named) return false;
-        // TODO: set name from patch.value
-        return true;
-    }
-    case FieldId::GoldValue: {
-        auto* valued = form->As<RE::TESValueForm>();
-        if (!valued) return false;
-        valued->value = static_cast<int32_t>(patch.value.as_int());
-        return true;
-    }
-    case FieldId::Weight: {
-        auto* weighted = form->As<RE::TESWeightForm>();
-        if (!weighted) return false;
-        weighted->weight = static_cast<float>(patch.value.as_float());
-        return true;
-    }
-    case FieldId::Keywords: {
-        auto* kwd_form = form->As<RE::BGSKeywordForm>();
-        if (!kwd_form) return false;
-        auto* keyword = RE::TESForm::LookupByID<RE::BGSKeyword>(patch.value.as_formid());
-        if (!keyword) return false;
-        if (patch.op == FieldOp::Add) {
-            kwd_form->AddKeyword(keyword);
-        } else if (patch.op == FieldOp::Remove) {
-            kwd_form->RemoveKeyword(keyword);
+        case FieldId::Keywords: {
+            auto* kf = skyrim::get_keyword_form(form);
+            if (!kf) return false;
+            // For keyword add/remove, we need to reallocate the keyword array.
+            // This requires Skyrim's heap allocator. For Phase 1, log and skip.
+            // TODO: implement keyword array mutation via Skyrim heap
+            return false;
         }
-        return true;
+
+        case FieldId::Damage: {
+            auto* dmg = skyrim::get_attack_damage_form(form);
+            if (!dmg) return false;
+            dmg->attackDamage = static_cast<uint16_t>(patch.value.as_int());
+            return true;
+        }
+
+        case FieldId::ArmorRating: {
+            // Direct memory write at known offset
+            if (static_cast<skyrim::FormType>(form->formType) == skyrim::FormType::Armor) {
+                auto* rating = reinterpret_cast<uint32_t*>(
+                    reinterpret_cast<char*>(form) + skyrim::armor_offsets::armor_rating);
+                *rating = static_cast<uint32_t>(patch.value.as_int());
+                return true;
+            }
+            return false;
+        }
+
+        case FieldId::GoldValue: {
+            auto* vf = skyrim::get_value_form(form);
+            if (!vf) return false;
+            vf->value = static_cast<int32_t>(patch.value.as_int());
+            return true;
+        }
+
+        case FieldId::Weight: {
+            auto* wf = skyrim::get_weight_form(form);
+            if (!wf) return false;
+            wf->weight = static_cast<float>(patch.value.as_float());
+            return true;
+        }
+
+        case FieldId::Name: {
+            // SetFullName requires calling a Skyrim function (not just a memory write)
+            // because BSFixedString is ref-counted and interned.
+            // TODO: resolve SetFullName via Address Library
+            return false;
+        }
+
+        case FieldId::Spells:
+        case FieldId::Perks:
+        case FieldId::Factions:
+        case FieldId::Items: {
+            // These require array reallocation via Skyrim's heap.
+            // TODO: implement via Address Library function resolution
+            return false;
+        }
+
+        default:
+            return false;
     }
-    default:
-        return false;
-    }
-#else
-    (void)formid;
-    (void)patch;
-    return false;
-#endif
 }
+
+#else // !_WIN32
+
+bool FormBridge::apply_patch(uint32_t formid, const FieldPatch& patch) {
+    (void)formid; (void)patch;
+    return false;
+}
+
+#endif // _WIN32
 
 int FormBridge::apply_patches(uint32_t formid, const std::vector<FieldPatch>& patches) {
     int applied = 0;
-    for (const auto& patch : patches) {
-        if (apply_patch(formid, patch)) {
-            ++applied;
-        }
+    for (const auto& p : patches) {
+        if (apply_patch(formid, p)) applied++;
     }
     return applied;
 }
 
 void FormBridge::populate_facts_for_npc(uint32_t formid, FactDB& db, StringPool& pool) {
-#ifdef MORA_HAS_COMMONLIB
-    auto* npc = RE::TESForm::LookupByID<RE::TESNPC>(formid);
-    if (!npc) return;
+#ifdef _WIN32
+    auto* form = lookup_form(formid);
+    if (!form) return;
+    if (static_cast<skyrim::FormType>(form->formType) != skyrim::FormType::NPC) return;
+
+    // NPC existence
+    db.add_fact(pool.intern("npc"), {Value::make_formid(formid)});
 
     // Keywords
-    auto kw_rel = pool.intern("npc_has_keyword");
-    if (npc->HasKeywordArray()) {
-        for (uint32_t i = 0; i < npc->GetNumKeywords(); ++i) {
-            if (auto* kw = npc->GetKeywordAt(i)) {
-                db.add_fact(kw_rel, {Value::make_formid(formid), Value::make_formid(kw->GetFormID())});
+    auto* kf = skyrim::get_keyword_form(form);
+    if (kf && kf->keywords) {
+        auto has_kw = pool.intern("has_keyword");
+        for (uint32_t i = 0; i < kf->numKeywords; i++) {
+            if (kf->keywords[i]) {
+                auto* kw = reinterpret_cast<skyrim::TESForm*>(kf->keywords[i]);
+                db.add_fact(has_kw, {Value::make_formid(formid),
+                                      Value::make_formid(kw->formID)});
             }
         }
     }
 
-    // Factions
-    auto fac_rel = pool.intern("npc_in_faction");
-    for (const auto& fac_data : npc->factions) {
-        if (fac_data.faction) {
-            db.add_fact(fac_rel, {Value::make_formid(formid), Value::make_formid(fac_data.faction->GetFormID())});
+    // Factions (BSTArray<FACTION_RANK> at known offset)
+    auto* factions = skyrim::component_at<skyrim::BSTArray<skyrim::FACTION_RANK>>(
+        form, skyrim::npc_offsets::factions);
+    if (factions && factions->data) {
+        auto has_faction = pool.intern("has_faction");
+        for (uint32_t i = 0; i < factions->size; i++) {
+            if (factions->data[i].faction) {
+                auto* fac = reinterpret_cast<skyrim::TESForm*>(factions->data[i].faction);
+                db.add_fact(has_faction, {Value::make_formid(formid),
+                                           Value::make_formid(fac->formID)});
+            }
         }
     }
 
     // Race
-    if (npc->race) {
-        auto race_rel = pool.intern("npc_race");
-        db.add_fact(race_rel, {Value::make_formid(formid), Value::make_formid(npc->race->GetFormID())});
+    // TESRaceForm at npc_offsets::race_form has a TESRace* at offset 0x08
+    auto* race_ptr = *reinterpret_cast<skyrim::TESRace**>(
+        reinterpret_cast<char*>(form) + skyrim::npc_offsets::race_form + 0x08);
+    if (race_ptr) {
+        auto race_of = pool.intern("race_of");
+        auto* race_form = reinterpret_cast<skyrim::TESForm*>(race_ptr);
+        db.add_fact(race_of, {Value::make_formid(formid),
+                               Value::make_formid(race_form->formID)});
     }
 #else
-    (void)formid;
-    (void)db;
-    (void)pool;
+    (void)formid; (void)db; (void)pool;
 #endif
 }
 
