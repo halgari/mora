@@ -6,8 +6,27 @@
 
 namespace mora {
 
-SpidParser::SpidParser(StringPool& pool, DiagBag& diags)
-    : pool_(pool), diags_(diags) {}
+SpidParser::SpidParser(StringPool& pool, DiagBag& diags,
+                       const FormIdResolver* resolver)
+    : pool_(pool), diags_(diags), resolver_(resolver) {}
+
+std::string SpidParser::resolve_symbol(const FormRef& ref) const {
+    if (ref.is_editor_id()) return ref.editor_id;
+    // Try resolver first
+    if (resolver_ && resolver_->has_data()) {
+        auto edid = resolver_->resolve_ref(ref);
+        if (!edid.empty()) return edid;
+    }
+    // Fall back to plugin|hex or just hex
+    if (!ref.plugin.empty()) {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
+        return ref.plugin + "|" + buf;
+    }
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
+    return std::string(buf);
+}
 
 Expr SpidParser::make_var(const char* name) {
     Expr e;
@@ -97,26 +116,34 @@ void SpidParser::add_form_filters(const std::string& field,
                                   std::vector<Clause>& body) {
     if (field.empty()) return;
     auto entries = parse_filter_entries(field);
+
+    // SPID form filters: comma-separated = OR (any match qualifies).
+    // For a single entry or AND entries, emit directly.
+    // For multiple OR entries, they are typically race filters.
+    // Heuristic: EditorIDs with "Faction" → has_faction,
+    //            EditorIDs with "Race" or raw FormIDs → race_of,
+    //            else → has_keyword
+
     for (const auto& entry : entries) {
         bool negated = (entry.mode == FilterEntry::Mode::Exclude);
         const auto& ref = entry.ref;
+        std::string sym = resolve_symbol(ref);
 
         std::vector<Expr> args;
         args.push_back(make_var("NPC"));
+        args.push_back(make_sym(sym));
 
         if (ref.is_editor_id()) {
-            // Heuristic: if it contains "Faction", treat as faction
             if (ref.editor_id.find("Faction") != std::string::npos) {
-                args.push_back(make_sym(ref.editor_id));
                 body.push_back(make_fact("has_faction", std::move(args), negated));
+            } else if (ref.editor_id.find("Race") != std::string::npos) {
+                body.push_back(make_fact("race_of", std::move(args), negated));
             } else {
-                args.push_back(make_sym(ref.editor_id));
                 body.push_back(make_fact("has_keyword", std::move(args), negated));
             }
         } else {
-            // Form reference with plugin
-            args.push_back(make_sym(ref.to_mora_symbol().substr(1))); // strip leading ':'
-            body.push_back(make_fact("has_form", std::move(args), negated));
+            // Raw FormID — most commonly a race reference in SPID form filters
+            body.push_back(make_fact("race_of", std::move(args), negated));
         }
     }
 }
@@ -181,9 +208,7 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
 
     // Field 0: FormOrEditorID (the target)
     auto target_ref = parse_form_ref(fields[0]);
-    std::string target_name = target_ref.is_editor_id()
-        ? target_ref.editor_id
-        : "form_" + std::to_string(target_ref.form_id);
+    std::string target_name = resolve_symbol(target_ref);
 
     // Build rule name
     std::string rule_name = "spid_" + type_lower + "_" + target_name

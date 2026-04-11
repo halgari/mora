@@ -175,4 +175,26 @@ std::vector<std::string> split_pipes(std::string_view line) {
     return parts;
 }
 
+void FormIdResolver::build_from_editor_ids(const std::unordered_map<std::string, uint32_t>& editor_ids) {
+    reverse_.clear();
+    for (auto& [edid, formid] : editor_ids) {
+        reverse_[formid] = edid;
+    }
+}
+
+std::string FormIdResolver::resolve(uint32_t formid) const {
+    auto it = reverse_.find(formid);
+    if (it != reverse_.end()) return it->second;
+    return "";
+}
+
+std::string FormIdResolver::resolve_ref(const FormRef& ref) const {
+    if (ref.is_editor_id()) return ref.editor_id;
+    if (ref.form_id != 0) {
+        auto edid = resolve(ref.form_id);
+        if (!edid.empty()) return edid;
+    }
+    return "";
+}
+
 } // namespace mora

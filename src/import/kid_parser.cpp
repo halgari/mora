@@ -6,8 +6,25 @@
 
 namespace mora {
 
-KidParser::KidParser(StringPool& pool, DiagBag& diags)
-    : pool_(pool), diags_(diags) {}
+KidParser::KidParser(StringPool& pool, DiagBag& diags,
+                     const FormIdResolver* resolver)
+    : pool_(pool), diags_(diags), resolver_(resolver) {}
+
+std::string KidParser::resolve_symbol(const FormRef& ref) const {
+    if (ref.is_editor_id()) return ref.editor_id;
+    if (resolver_ && resolver_->has_data()) {
+        auto edid = resolver_->resolve_ref(ref);
+        if (!edid.empty()) return edid;
+    }
+    if (!ref.plugin.empty()) {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
+        return ref.plugin + "|" + buf;
+    }
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
+    return std::string(buf);
+}
 
 Expr KidParser::make_var(const char* name) {
     Expr e;
@@ -102,9 +119,7 @@ std::vector<Rule> KidParser::parse_line(const std::string& line,
 
     // Field 0: keyword to assign (FormOrEditorID)
     auto keyword_ref = parse_form_ref(fields[0]);
-    std::string keyword_name = keyword_ref.is_editor_id()
-        ? keyword_ref.editor_id
-        : "form_" + std::to_string(keyword_ref.form_id);
+    std::string keyword_name = resolve_symbol(keyword_ref);
 
     // Field 1: item type
     std::string item_type;

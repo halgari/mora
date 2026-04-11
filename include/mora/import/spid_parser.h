@@ -10,7 +10,8 @@ namespace mora {
 
 class SpidParser {
 public:
-    SpidParser(StringPool& pool, DiagBag& diags);
+    SpidParser(StringPool& pool, DiagBag& diags,
+               const FormIdResolver* resolver = nullptr);
 
     std::vector<Rule> parse_line(const std::string& line,
                                  const std::string& filename, int line_num);
@@ -35,8 +36,12 @@ private:
     void add_level_filters(const std::string& field,
                            std::vector<Clause>& body);
 
+    // Resolve a FormRef to a clean symbol name (EditorID if available, else hex)
+    std::string resolve_symbol(const FormRef& ref) const;
+
     StringPool& pool_;
     DiagBag& diags_;
+    const FormIdResolver* resolver_;
 };
 
 } // namespace mora

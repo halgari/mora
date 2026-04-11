@@ -596,7 +596,8 @@ static void print_file_header(const std::string& filename, size_t rule_count, bo
     std::printf("%s\n\n", header.c_str());
 }
 
-static int cmd_import(const std::string& target_path, bool use_color) {
+static int cmd_import(const std::string& target_path, const std::string& data_dir,
+                      bool use_color) {
     mora::Progress progress(use_color, mora::stdout_is_tty());
     progress.print_header("0.1.0");
 
@@ -608,18 +609,38 @@ static int cmd_import(const std::string& target_path, bool use_color) {
         return 1;
     }
 
-    std::printf("  Scanning for INI files...\n\n");
-
     mora::StringPool pool;
     mora::DiagBag diags;
+
+    // Load ESP data for FormID resolution (optional but improves output)
+    mora::FormIdResolver resolver;
+    if (!data_dir.empty()) {
+        progress.start_phase("Loading ESP data for symbol resolution");
+        mora::SchemaRegistry schema(pool);
+        schema.register_defaults();
+        mora::FactDB db(pool);
+        schema.configure_fact_db(db);
+        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+        mora::EspReader esp_reader(pool, diags, schema);
+        esp_reader.read_load_order(lo.plugins, db);
+        resolver.build_from_editor_ids(esp_reader.editor_id_map());
+        progress.finish_phase(
+            std::to_string(resolver.has_data() ? esp_reader.editor_id_map().size() : 0)
+            + " EditorIDs loaded", "done");
+        std::printf("\n");
+    }
+
+    std::printf("  Scanning for INI files...\n\n");
+
     mora::MoraPrinter printer(pool);
+    const mora::FormIdResolver* resolver_ptr = resolver.has_data() ? &resolver : nullptr;
 
     size_t total_spid_rules = 0;
     size_t total_kid_rules  = 0;
 
     // Process SPID files
     for (auto& path : spid_files) {
-        mora::SpidParser parser(pool, diags);
+        mora::SpidParser parser(pool, diags, resolver_ptr);
         auto rules = parser.parse_file(path.string());
 
         std::string fname = path.filename().string();
@@ -684,7 +705,7 @@ static int cmd_import(const std::string& target_path, bool use_color) {
 
     // Process KID files
     for (auto& path : kid_files) {
-        mora::KidParser parser(pool, diags);
+        mora::KidParser parser(pool, diags, resolver_ptr);
         auto rules = parser.parse_file(path.string());
 
         std::string fname = path.filename().string();
@@ -796,7 +817,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Auto-detect Skyrim Data directory if not specified
-    if (data_dir.empty() && (command == "compile" || command == "info")) {
+    if (data_dir.empty() && (command == "compile" || command == "info" || command == "import")) {
         data_dir = detect_skyrim_data_dir();
     }
 
@@ -821,7 +842,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "import") {
-        return cmd_import(target_path, use_color);
+        return cmd_import(target_path, data_dir, use_color);
     }
 
     print_usage();

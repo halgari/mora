@@ -10,7 +10,8 @@ namespace mora {
 
 class KidParser {
 public:
-    KidParser(StringPool& pool, DiagBag& diags);
+    KidParser(StringPool& pool, DiagBag& diags,
+              const FormIdResolver* resolver = nullptr);
 
     std::vector<Rule> parse_line(const std::string& line,
                                  const std::string& filename, int line_num);
@@ -28,8 +29,11 @@ private:
     void add_item_filters(const std::string& field, const std::string& item_var,
                           std::vector<Clause>& body);
 
+    std::string resolve_symbol(const FormRef& ref) const;
+
     StringPool& pool_;
     DiagBag& diags_;
+    const FormIdResolver* resolver_;
 };
 
 } // namespace mora

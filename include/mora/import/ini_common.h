@@ -4,6 +4,7 @@
 #include <vector>
 #include <optional>
 #include <cstdint>
+#include <unordered_map>
 
 namespace mora {
 
@@ -14,6 +15,18 @@ struct FormRef {
 
     bool is_editor_id() const { return plugin.empty() && form_id == 0; }
     std::string to_mora_symbol() const;  // ":EditorID" or ":Plugin.esp|0xHEX"
+};
+
+// Resolves FormIDs to EditorIDs using ESP data (optional, improves output quality)
+class FormIdResolver {
+public:
+    void build_from_editor_ids(const std::unordered_map<std::string, uint32_t>& editor_ids);
+    std::string resolve(uint32_t formid) const;
+    std::string resolve_ref(const FormRef& ref) const;
+    bool has_data() const { return !reverse_.empty(); }
+
+private:
+    std::unordered_map<uint32_t, std::string> reverse_;
 };
 
 struct FilterEntry {
