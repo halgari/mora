@@ -19,17 +19,11 @@ TEST(AddressLibraryTest, MockLibrary) {
 TEST(AddressLibraryTest, RealFile) {
     std::filesystem::path skyrim_data =
         "/home/tbaldrid/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data";
-    auto addr_lib = skyrim_data / "SKSE" / "Plugins" / "versionlib-1-5-97-0.bin";
+
+    // Prefer the exact 1170 file
+    auto addr_lib = skyrim_data / "SKSE" / "Plugins" / "versionlib-1-6-1170-0.bin";
     if (!std::filesystem::exists(addr_lib)) {
-        auto plugins_dir = skyrim_data / "SKSE" / "Plugins";
-        if (std::filesystem::exists(plugins_dir)) {
-            for (auto& entry : std::filesystem::directory_iterator(plugins_dir)) {
-                if (entry.path().filename().string().starts_with("versionlib")) {
-                    addr_lib = entry.path();
-                    break;
-                }
-            }
-        }
+        addr_lib = skyrim_data / "SKSE" / "Plugins" / "version-1-5-97-0.bin";
     }
     if (!std::filesystem::exists(addr_lib)) GTEST_SKIP();
 
@@ -37,9 +31,15 @@ TEST(AddressLibraryTest, RealFile) {
     ASSERT_TRUE(lib.load(addr_lib));
     EXPECT_GT(lib.entry_count(), 100000u);
 
-    // Try AE ID first (400507), then SE ID (514351) for allForms
+    // AE 1.6.1170: ID 400507 -> 0x20FBB88
     auto offset = lib.resolve(400507);
-    if (!offset) offset = lib.resolve(514351);
-    ASSERT_TRUE(offset.has_value());
+    if (offset) {
+        EXPECT_EQ(*offset, 0x20FBB88u)
+            << "Expected AE allForms offset 0x20FBB88, got 0x" << std::hex << *offset;
+    } else {
+        // SE fallback
+        offset = lib.resolve(514351);
+        ASSERT_TRUE(offset.has_value()) << "Neither AE (400507) nor SE (514351) ID found";
+    }
     EXPECT_GT(*offset, 0u);
 }

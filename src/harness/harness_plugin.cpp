@@ -72,43 +72,12 @@ static void resolve_all_forms() {
     void* base = GetModuleHandleW(nullptr);
     if (!base) return;
 
-    // Load Address Library from Data/SKSE/Plugins/
-    // Find the DLL path to locate the Address Library bin
-    char dll_path[MAX_PATH];
-    HMODULE hm = nullptr;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCSTR>(&resolve_all_forms), &hm);
-    GetModuleFileNameA(hm, dll_path, MAX_PATH);
-    fs::path plugin_dir = fs::path(dll_path).parent_path();
-
-    // Try AE bin first, then SE
-    mora::AddressLibrary addrlib;
-    bool loaded = false;
-    for (const auto& entry : fs::directory_iterator(plugin_dir)) {
-        auto name = entry.path().filename().string();
-        if (name.find("versionlib-") == 0 && name.find(".bin") != std::string::npos) {
-            if (addrlib.load(entry.path())) { loaded = true; break; }
-        }
-    }
-    if (!loaded) {
-        // Try SE format
-        for (const auto& entry : fs::directory_iterator(plugin_dir)) {
-            auto name = entry.path().filename().string();
-            if (name.find("version-") == 0 && name.find(".bin") != std::string::npos) {
-                if (addrlib.load(entry.path())) { loaded = true; break; }
-            }
-        }
-    }
-    if (!loaded) return;
-
-    // Resolve allForms: AE ID 400507, SE ID 514351
-    auto offset_opt = addrlib.resolve(400507);
-    if (!offset_opt) offset_opt = addrlib.resolve(514351);
-    if (!offset_opt) return;
+    // Hardcoded AE 1.6.1170 offset for allForms (Address Library ID 400507)
+    // TODO: load Address Library at runtime for version independence
+    constexpr uint64_t kAllFormsOffset_AE = 0x20FBB88;
 
     auto* ptr = reinterpret_cast<const void* const*>(
-        static_cast<const char*>(base) + *offset_opt);
+        static_cast<const char*>(base) + kAllFormsOffset_AE);
     g_all_forms = static_cast<const mora::rt::BSTHashMapLayout*>(*ptr);
 }
 
@@ -116,8 +85,17 @@ static void resolve_all_forms() {
 
 static std::string handle_status(const std::string&) {
     bool ready = (g_all_forms != nullptr);
-    return std::string(R"({"ok":true,"forms_loaded":)") +
-           (ready ? "true" : "false") + "}";
+    std::ostringstream ss;
+    ss << R"({"ok":true,"forms_loaded":)" << (ready ? "true" : "false");
+    if (ready) {
+        ss << R"(,"capacity":)" << g_all_forms->capacity;
+        ss << R"(,"entries_ptr":"0x)" << std::hex
+           << reinterpret_cast<uintptr_t>(g_all_forms->entries) << "\"";
+        ss << R"(,"sentinel_ptr":"0x)"
+           << reinterpret_cast<uintptr_t>(g_all_forms->sentinel) << "\"";
+    }
+    ss << "}";
+    return ss.str();
 }
 
 static std::string handle_dump_weapons(const std::string&) {
@@ -169,15 +147,8 @@ static void message_handler(SKSEMessage* msg) {
 
     resolve_all_forms();
 
-    char dll_path[MAX_PATH];
-    HMODULE hm = nullptr;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCSTR>(&message_handler), &hm);
-    GetModuleFileNameA(hm, dll_path, MAX_PATH);
-    fs::path ini_path = fs::path(dll_path).parent_path() / "MoraTestHarness.ini";
-
-    g_config = mora::harness::read_ini(ini_path);
+    g_config.port = 9742;
+    g_config.dump_path = "Data/MoraCache/dumps";
 
     g_listener = new mora::harness::TcpListener(g_config.port);
     g_listener->on("status", handle_status);

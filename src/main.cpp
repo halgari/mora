@@ -104,9 +104,16 @@ static fs::path find_address_library(const std::string& data_dir) {
     if (data_dir.empty()) return {};
     fs::path skse_plugins = fs::path(data_dir) / "SKSE" / "Plugins";
     if (!fs::exists(skse_plugins)) return {};
+
+    // Try exact match for 1.6.1170 first (most common AE version)
+    auto exact = skse_plugins / "versionlib-1-6-1170-0.bin";
+    if (fs::exists(exact)) return exact;
+
+    // Fall back to any versionlib (AE) or version (SE) bin
     for (auto& entry : fs::directory_iterator(skse_plugins)) {
         std::string fname = entry.path().filename().string();
-        if (fname.find("versionlib") == 0 && entry.path().extension() == ".bin") {
+        if ((fname.find("versionlib") == 0 || fname.find("version-") == 0)
+            && entry.path().extension() == ".bin") {
             return entry.path();
         }
     }

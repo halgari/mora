@@ -38,8 +38,10 @@ StoreKind get_store_kind(FieldId field) {
     }
 }
 
-// Address library ID for the global form map pointer
-constexpr uint64_t kFormMapAddrLibId = 514351;
+// Address library IDs for the global form map pointer
+// SE: 514351, AE: 400507
+constexpr uint64_t kFormMapAddrLibId_AE = 400507;
+constexpr uint64_t kFormMapAddrLibId_SE = 514351;
 
 } // anonymous namespace
 
@@ -110,7 +112,8 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
     llvm::Value* skyrim_base = func->getArg(0);
 
     // Load the form map pointer: *(skyrim_base + map_offset)
-    auto map_offset_opt = addrlib_.resolve(kFormMapAddrLibId);
+    auto map_offset_opt = addrlib_.resolve(kFormMapAddrLibId_AE);
+    if (!map_offset_opt) map_offset_opt = addrlib_.resolve(kFormMapAddrLibId_SE);
     uint64_t map_offset = map_offset_opt.value_or(0);
 
     auto* i8_ty = llvm::Type::getInt8Ty(ctx_);
