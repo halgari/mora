@@ -1,22 +1,22 @@
 {
-    zlib = {
-        __requirestr = "zlib",
-        __enabled = true,
-        links = "z"
-    },
     gtest = {
         __requirestr = "gtest",
+        links = "gtest",
         defines = "GTEST_HAS_PTHREAD=1",
+        libfiles = "/usr/lib/libgtest.so",
         version = "1.17.0",
+        shared = true,
         envs = {
             PATH = {
                 "/home/tbaldrid/.xmake/packages/n/ninja/v1.13.1/e7cc4735aeb048e6870171a23c4ee800/bin",
                 "/home/tbaldrid/.xmake/packages/c/cmake/4.2.3/e71a3c9d8ba0426bac589c2c548be58b/bin"
             }
         },
-        shared = true,
-        __enabled = true,
-        links = "gtest",
-        libfiles = "/usr/lib/libgtest.so"
+        __enabled = true
+    },
+    zlib = {
+        __requirestr = "zlib",
+        links = "z",
+        __enabled = true
     }
 }

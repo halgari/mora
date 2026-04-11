@@ -92,7 +92,7 @@ bool DLLBuilder::link_dll(const std::vector<std::filesystem::path>& obj_files,
     cmd += " /libpath:" + xwin + "/crt/lib/x86_64";
     cmd += " /libpath:" + xwin + "/sdk/lib/um/x86_64";
     cmd += " /libpath:" + xwin + "/sdk/lib/ucrt/x86_64";
-    cmd += " msvcrt.lib ucrt.lib kernel32.lib";
+    cmd += " msvcrt.lib ucrt.lib vcruntime.lib kernel32.lib";
 
     for (const auto& obj : obj_files) {
         cmd += " " + obj.string();
