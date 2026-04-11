@@ -1,7 +1,5 @@
 {
     cmdlines = {
-        "xmake test",
-        "xmake build indexed_relation_test",
         "xmake run indexed_relation_test",
         "xmake build",
         "xmake test",
@@ -64,6 +62,8 @@
         "xmake test",
         "xmake f -p windows --cc=clang-cl --cxx=clang-cl --ld=lld-link --ar=llvm-lib -y",
         "xmake f -p cross --cross=x86_64-w64-mingw32 --cc=clang-cl --cxx=clang-cl --ld=lld-link --ar=llvm-lib -y",
-        "xmake f -p linux -y"
+        "xmake f -p linux -y",
+        "xmake build",
+        "xmake test"
     }
 }
