@@ -75,11 +75,26 @@ llvm::Function* IREmitter::declare_add_keyword() {
 void IREmitter::emit(const ResolvedPatchSet& patches, StringPool& pool) {
     hashmap_lookup_fn_ = declare_hashmap_lookup();
     add_keyword_fn_ = declare_add_keyword();
+    write_name_fn_ = declare_write_name();
     emit_apply_function(patches, pool);
 }
 
+llvm::Function* IREmitter::declare_write_name() {
+    // void mora_rt_write_name(void* skyrim_base, void* form, const char* name,
+    //                          uint64_t ctor8_offset, uint64_t release8_offset)
+    auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
+    auto* void_ty = llvm::Type::getVoidTy(ctx_);
+    auto* fn_ty = llvm::FunctionType::get(void_ty,
+        {ptr_ty, ptr_ty, ptr_ty, i64_ty, i64_ty}, false);
+    auto* fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
+                                       "mora_rt_write_name", mod_);
+    fn->setDoesNotThrow();
+    return fn;
+}
+
 void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
-                                     StringPool& /*pool*/) {
+                                     StringPool& pool) {
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto* void_ty = llvm::Type::getVoidTy(ctx_);
 
@@ -107,6 +122,13 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
     auto sorted = patches.all_patches_sorted();
     for (const auto& rp : sorted) {
         for (const auto& fp : rp.fields) {
+            // Name writes need the string pool to resolve StringId → const char*
+            if (fp.field == FieldId::Name && fp.op == FieldOp::Set) {
+                auto str = pool.get(fp.value.as_string());
+                emit_name_write(builder, map_ptr, rp.target_formid,
+                                std::string(str).c_str());
+                continue;
+            }
             emit_patch(builder, map_ptr, rp, fp);
         }
     }
@@ -309,6 +331,51 @@ void IREmitter::emit_keyword_add(llvm::IRBuilder<>& builder, llvm::Value* map_pt
         llvm::ConstantInt::get(i64_ty, singleton_off),
         llvm::ConstantInt::get(i64_ty, allocate_off),
         llvm::ConstantInt::get(i64_ty, deallocate_off),
+    });
+
+    builder.CreateBr(skip_bb);
+    builder.SetInsertPoint(skip_bb);
+}
+
+void IREmitter::emit_name_write(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                                 uint32_t form_id, const char* name_str) {
+    auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
+    auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
+
+    // Look up the target form
+    llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, form_id);
+
+    // Null check
+    auto* null_val = llvm::ConstantPointerNull::get(ptr_ty);
+    auto* not_null = builder.CreateICmpNE(form_ptr, null_val, "name_form_ok");
+
+    auto* func = builder.GetInsertBlock()->getParent();
+    auto* do_write_bb = llvm::BasicBlock::Create(ctx_, "do_name_write", func);
+    auto* skip_bb = llvm::BasicBlock::Create(ctx_, "skip_name", func);
+    builder.CreateCondBr(not_null, do_write_bb, skip_bb);
+
+    builder.SetInsertPoint(do_write_bb);
+
+    // Get skyrim_base (first arg of apply_all_patches)
+    llvm::Value* skyrim_base = func->arg_begin();
+
+    // Create a global constant string in .rdata
+    auto* name_const = builder.CreateGlobalString(name_str, "name_str");
+
+    // Resolve BSFixedString Address Library offsets
+    // SE IDs: ctor8=67819, release8=67847
+    // AE IDs: ctor8=69161, release8=69192
+    uint64_t ctor8_off = addrlib_.resolve(69161).value_or(
+                          addrlib_.resolve(67819).value_or(0));
+    uint64_t release8_off = addrlib_.resolve(69192).value_or(
+                             addrlib_.resolve(67847).value_or(0));
+
+    builder.CreateCall(write_name_fn_, {
+        skyrim_base,
+        form_ptr,
+        name_const,
+        llvm::ConstantInt::get(i64_ty, ctor8_off),
+        llvm::ConstantInt::get(i64_ty, release8_off),
     });
 
     builder.CreateBr(skip_bb);

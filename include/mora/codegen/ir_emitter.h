@@ -44,12 +44,20 @@ private:
     // Declare add_keyword_to_form (linked from mora_rt.bc)
     llvm::Function* declare_add_keyword();
 
+    // Declare mora_rt_write_name (linked from mora_rt.lib)
+    llvm::Function* declare_write_name();
+
+    // Emit a name write: look up form, call mora_rt_write_name with string constant
+    void emit_name_write(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                          uint32_t form_id, const char* name_str);
+
     llvm::LLVMContext& ctx_;
     llvm::Module& mod_;
     const AddressLibrary& addrlib_;
 
     llvm::Function* hashmap_lookup_fn_ = nullptr;
     llvm::Function* add_keyword_fn_ = nullptr;
+    llvm::Function* write_name_fn_ = nullptr;
 };
 
 } // namespace mora

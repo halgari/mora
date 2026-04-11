@@ -16,8 +16,7 @@ bool AddressLibrary::load(const std::filesystem::path& bin_path) {
         return false;
     }
 
-    if (format != 1) {
-        // Only format 1 (SSE) is supported for now
+    if (format != 1 && format != 2) {
         std::fclose(f);
         return false;
     }
@@ -26,6 +25,20 @@ bool AddressLibrary::load(const std::filesystem::path& bin_path) {
     if (std::fread(version_.data(), sizeof(int32_t), 4, f) != 4) {
         std::fclose(f);
         return false;
+    }
+
+    // Format 2 (AE) has a name string after version
+    if (format == 2) {
+        int32_t name_len = 0;
+        if (std::fread(&name_len, sizeof(name_len), 1, f) != 1) {
+            std::fclose(f);
+            return false;
+        }
+        // Skip the name string
+        if (std::fseek(f, name_len, SEEK_CUR) != 0) {
+            std::fclose(f);
+            return false;
+        }
     }
 
     // Read pointer_size

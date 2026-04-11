@@ -57,3 +57,32 @@ extern "C" void mora_rt_add_keyword(void* skyrim_base, void* form, void* keyword
                                      uint64_t get_singleton_offset,
                                      uint64_t allocate_offset,
                                      uint64_t deallocate_offset);
+
+// BSFixedString operations via Skyrim's string interning system.
+//
+// BSFixedString layout: a single char* pointer to string data.
+// The string data is preceded by a BSStringPool::Entry (0x18 bytes)
+// containing refcount, CRC, and BST pointers for the global string cache.
+//
+// ctor8 interns a const char* → BSFixedString (refcount=1 or incremented if exists).
+// release8 decrements the refcount (frees if zero).
+//
+// Address Library IDs (SE / AE):
+//   ctor8:    67819 / 69161
+//   release8: 67847 / 69192
+//
+// Function signatures (from CommonLibSSE):
+//   ctor8:    BSFixedString* (*)(BSFixedString* self, const char* data)
+//   release8: void (*)(const char*& entry)
+
+using BSFixedString_ctor8_t = void* (*)(void* self, const char* data);
+using BSFixedString_release8_t = void (*)(const char** entry);
+
+// Write a name (BSFixedString) to a form's TESFullName component.
+// skyrim_base: base address of SkyrimSE.exe
+// form: TESForm* pointer
+// name: null-terminated UTF-8 string
+// ctor8_offset: Address Library offset for BSFixedString::ctor8
+// release8_offset: Address Library offset for BSStringPool::Entry::release8
+extern "C" void mora_rt_write_name(void* skyrim_base, void* form, const char* name,
+                                    uint64_t ctor8_offset, uint64_t release8_offset);

@@ -99,7 +99,49 @@ static uint64_t get_keyword_form_offset(uint8_t form_type) {
     }
 }
 
+// TESFullName offset per form type (from skyrim_abi.h)
+// TESFullName is 0x10 bytes: { void* vtable; void* fullName; }
+// The BSFixedString (char*) is at TESFullName + 0x08
+static uint64_t get_full_name_offset(uint8_t form_type) {
+    switch (form_type) {
+        case kNPC:    return 0x0D8;
+        case kWeapon: return 0x030;
+        case kArmor:  return 0x030;
+        default:      return 0;
+    }
+}
+
 } // close mora::rt namespace
+
+extern "C" void mora_rt_write_name(void* skyrim_base, void* form, const char* name,
+                                    uint64_t ctor8_offset, uint64_t release8_offset) {
+    using namespace mora::rt;
+    if (!form || !name) return;
+
+    uint8_t form_type = get_form_type(form);
+    uint64_t fn_offset = get_full_name_offset(form_type);
+    if (fn_offset == 0) return;
+
+    // TESFullName.fullName (BSFixedString) is at component + 0x08
+    char** name_ptr = reinterpret_cast<char**>(
+        reinterpret_cast<char*>(form) + fn_offset + 0x08);
+
+    // Resolve BSFixedString::ctor8 and Entry::release8 from skyrim_base
+    auto ctor8 = reinterpret_cast<BSFixedString_ctor8_t>(
+        reinterpret_cast<char*>(skyrim_base) + ctor8_offset);
+    auto release8 = reinterpret_cast<BSFixedString_release8_t>(
+        reinterpret_cast<char*>(skyrim_base) + release8_offset);
+
+    // Release old string (decrement refcount)
+    const char* old_name = *name_ptr;
+    if (old_name) {
+        release8(&old_name);
+    }
+
+    // Intern new string via ctor8. It takes a BSFixedString* (which is just a char**)
+    // and a const char*, and sets *self = interned pointer.
+    ctor8(name_ptr, name);
+}
 
 extern "C" void mora_rt_add_keyword(void* skyrim_base, void* form, void* keyword_form,
                                      uint64_t get_singleton_offset,
