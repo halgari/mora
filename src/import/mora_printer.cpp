@@ -84,7 +84,7 @@ std::string MoraPrinter::print_rule(const Rule& rule) const {
             } else if constexpr (std::is_same_v<T, GuardClause>) {
                 oss << "    | " << print_expr(*c.expr) << "\n";
             } else if constexpr (std::is_same_v<T, OrClause>) {
-                oss << "    or\n";
+                oss << "    or:\n";
                 for (const auto& branch : c.branches) {
                     oss << "        ";
                     for (size_t i = 0; i < branch.size(); ++i) {

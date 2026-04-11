@@ -1,6 +1,5 @@
 {
     cmdlines = {
-        "xmake build rt_writer_test",
         "xmake run rt_writer_test",
         "xmake build mora_lib",
         "xmake build mora",
@@ -64,6 +63,7 @@
         "xmake test",
         "xmake build",
         "xmake build",
-        "xmake test"
+        "xmake test",
+        "xmake build mora"
     }
 }
