@@ -19,6 +19,22 @@ void IndexedRelation::add(Tuple tuple) {
     }
 }
 
+void IndexedRelation::absorb(std::vector<Tuple>&& incoming) {
+    uint32_t base = static_cast<uint32_t>(tuples_.size());
+    tuples_.insert(tuples_.end(),
+                   std::make_move_iterator(incoming.begin()),
+                   std::make_move_iterator(incoming.end()));
+
+    // Rebuild indexes for the absorbed range only
+    for (uint32_t i = base; i < tuples_.size(); ++i) {
+        for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
+            size_t col = indexed_columns_[slot];
+            uint64_t h = tuples_[i][col].hash();
+            indexes_[slot][h].push_back(i);
+        }
+    }
+}
+
 int IndexedRelation::find_index(size_t column) const {
     for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
         if (indexed_columns_[slot] == column)

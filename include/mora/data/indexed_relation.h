@@ -12,6 +12,9 @@ public:
     IndexedRelation(size_t arity, std::vector<size_t> indexed_columns);
 
     void add(Tuple tuple);
+    // Bulk-absorb tuples from another relation. Moves tuples and rebuilds
+    // indexes for the absorbed range. Much faster than add() in a loop.
+    void absorb(std::vector<Tuple>&& tuples);
 
     // Lookup all tuples where the specified column equals key (uses hash index)
     std::vector<const Tuple*> lookup(size_t column, const Value& key) const;
@@ -26,6 +29,7 @@ public:
     size_t size() const;
     size_t arity() const;
     const std::vector<Tuple>& all() const;
+    std::vector<Tuple>& mutable_tuples() { return tuples_; }
 
 private:
     size_t arity_;

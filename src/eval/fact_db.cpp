@@ -37,8 +37,15 @@ void FactDB::configure_relation(StringId name, size_t arity, std::vector<size_t>
 
 void FactDB::merge_from(FactDB& other) {
     for (auto& [rel_id, other_rel] : other.relations_) {
-        for (auto& tuple : other_rel.all()) {
-            add_fact(StringId{rel_id}, Tuple(tuple));
+        auto it = relations_.find(rel_id);
+        if (it == relations_.end()) {
+            // Relation doesn't exist in target — move the whole thing
+            relations_.emplace(rel_id, std::move(other_rel));
+        } else {
+            // Relation exists — absorb tuples (move + index rebuild)
+            // We need to steal the tuples vector from other_rel.
+            // IndexedRelation doesn't expose a mutable all(), so use absorb.
+            it->second.absorb(std::move(other_rel.mutable_tuples()));
         }
     }
 }
