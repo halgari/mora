@@ -107,7 +107,10 @@ std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) const {
             } else if constexpr (std::is_same_v<T, GuardClause>) {
                 score = 8; // guards depend on bound variables
             } else if constexpr (std::is_same_v<T, InClause>) {
-                score = 8;
+                // InClause with a list var should run early — it iterates
+                // list elements and binds the variable, driving indexed
+                // lookups in subsequent clauses.
+                score = 2;
             } else {
                 score = 9;
             }
@@ -178,7 +181,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
                     }
                 }
 
-                const auto& neg_results = cached_query(c.name, query_tuple);
+                auto neg_results = merged_query(c.name, query_tuple);
                 if (neg_results.empty()) {
                     // No match found, negation succeeds
                     match_clauses(rule, order, step + 1, bindings, patches, priority);
@@ -201,15 +204,32 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
             // Conditional effects in body are handled separately; skip
             match_clauses(rule, order, step + 1, bindings, patches, priority);
         } else if constexpr (std::is_same_v<T, InClause>) {
-            // In clause: variable must match one of the listed values
             Value var_val = resolve_expr(*c.variable, bindings);
-            // If RHS is a single expression that resolves to a list Value,
-            // perform a membership check against the list.
+
+            // List-typed RHS from FactDB binding
             if (c.values.size() == 1) {
                 Value rhs = resolve_expr(c.values[0], bindings);
                 if (rhs.kind() == Value::Kind::List) {
-                    if (rhs.list_contains(var_val)) {
-                        match_clauses(rule, order, step + 1, bindings, patches, priority);
+                    if (var_val.is_var()) {
+                        // Unbound variable: iterate list elements, bind each,
+                        // and recurse. This turns "KW in KWList" into a
+                        // generator that drives downstream indexed lookups.
+                        const auto* ve = std::get_if<VariableExpr>(
+                            &c.variable->data);
+                        if (ve) {
+                            for (const auto& elem : rhs.as_list()) {
+                                Bindings new_bindings = bindings;
+                                new_bindings[ve->name.index] = elem;
+                                match_clauses(rule, order, step + 1,
+                                              new_bindings, patches, priority);
+                            }
+                        }
+                    } else {
+                        // Bound variable: membership check
+                        if (rhs.list_contains(var_val)) {
+                            match_clauses(rule, order, step + 1, bindings,
+                                          patches, priority);
+                        }
                     }
                     return;
                 }
@@ -219,7 +239,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
                 Value v = resolve_expr(val_expr, bindings);
                 if (var_val.matches(v)) {
                     match_clauses(rule, order, step + 1, bindings, patches, priority);
-                    return; // first match suffices
+                    return;
                 }
             }
         } else if constexpr (std::is_same_v<T, OrClause>) {
@@ -238,15 +258,12 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
     }, clause.data);
 }
 
-const std::vector<Tuple>& Evaluator::cached_query(StringId relation, const Tuple& pattern) {
-    CacheKey key{relation.index, pattern};
-    auto it = query_cache_.find(key);
-    if (it != query_cache_.end()) {
-        return it->second;
-    }
-
+std::vector<Tuple> Evaluator::merged_query(StringId relation, const Tuple& pattern) {
     auto results_db = db_.query(relation, pattern);
     auto results_derived = derived_facts_.query(relation, pattern);
+
+    if (results_derived.empty()) return results_db;
+    if (results_db.empty()) return results_derived;
 
     std::vector<Tuple> merged;
     merged.reserve(results_db.size() + results_derived.size());
@@ -254,9 +271,7 @@ const std::vector<Tuple>& Evaluator::cached_query(StringId relation, const Tuple
                                 std::make_move_iterator(results_db.end()));
     merged.insert(merged.end(), std::make_move_iterator(results_derived.begin()),
                                 std::make_move_iterator(results_derived.end()));
-
-    auto [ins, _] = query_cache_.emplace(std::move(key), std::move(merged));
-    return ins->second;
+    return merged;
 }
 
 std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
@@ -293,7 +308,7 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
     }
 
     // Query with caching — identical queries across rules return the same result
-    const auto& all_results = cached_query(pattern.name, query_tuple);
+    auto all_results = merged_query(pattern.name, query_tuple);
 
     // For each matching tuple, create new bindings
     std::vector<Bindings> result;

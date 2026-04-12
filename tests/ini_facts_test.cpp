@@ -26,7 +26,7 @@ TEST_F(IniFactsTest, SpidSimpleKeyword) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id);
+    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {});
 
     EXPECT_EQ(count, 1u);
     EXPECT_EQ(next_id, 2u);
@@ -59,7 +59,7 @@ TEST_F(IniFactsTest, SpidWithLevelRange) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id);
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
 
     auto level_rel = pool.intern("spid_level");
     EXPECT_EQ(db.fact_count(level_rel), 1u);
@@ -76,7 +76,7 @@ TEST_F(IniFactsTest, SpidNoFilters) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id);
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
 
     auto dist_rel = pool.intern("spid_dist");
     EXPECT_EQ(db.fact_count(dist_rel), 1u);
@@ -96,7 +96,7 @@ TEST_F(IniFactsTest, SpidExcludeFilter) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id);
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
 
     auto exclude_rel = pool.intern("spid_exclude");
     EXPECT_EQ(db.fact_count(exclude_rel), 1u);
@@ -115,7 +115,7 @@ TEST_F(IniFactsTest, KidSimple) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id);
+    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {});
 
     EXPECT_EQ(count, 1u);
     auto dist_rel = pool.intern("kid_dist");
@@ -133,7 +133,7 @@ TEST_F(IniFactsTest, KidWithFilters) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_kid_facts(path, db, pool, diags, next_id);
+    mora::emit_kid_facts(path, db, pool, diags, next_id, {});
 
     auto filter_rel = pool.intern("kid_filter");
     EXPECT_EQ(db.fact_count(filter_rel), 1u);
@@ -151,7 +151,7 @@ TEST_F(IniFactsTest, KidUnknownType) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id);
+    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {});
 
     EXPECT_EQ(count, 0u);
     EXPECT_EQ(diags.warning_count(), 1u);
@@ -170,7 +170,7 @@ TEST_F(IniFactsTest, MultipleLines) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 100;
-    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id);
+    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {});
 
     EXPECT_EQ(count, 3u);
     EXPECT_EQ(next_id, 103u);

@@ -325,7 +325,7 @@ static bool run_check_pipeline(
         }
     }
 
-    if (result.modules.empty()) {
+    if (result.modules.empty() && import_ini) {
         std::fprintf(stderr, "  No .mora or INI files found in %s\n", target_path.c_str());
         return false;
     }
@@ -454,6 +454,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::Evaluator evaluator(cr.pool, cr.diags, db);
 
     // If --data-dir provided, load ESP data before evaluation
+    mora::EditorIdMap editor_id_map;
     if (!data_dir.empty()) {
         progress.start_phase("Loading ESPs");
 
@@ -471,7 +472,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         esp_reader.read_load_order(lo.plugins, db);
 
         // Wire up symbol resolution to the evaluator
-        for (auto& [edid, formid] : esp_reader.editor_id_map()) {
+        editor_id_map = esp_reader.editor_id_map();
+        for (auto& [edid, formid] : editor_id_map) {
             evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
         }
 
@@ -481,7 +483,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             std::to_string(db.fact_count()) + " facts", "done");
     }
 
-    // Load INI distribution facts
+    // Load INI distribution facts (with FormID resolution from ESPs)
     mora::configure_ini_relations(db, cr.pool);
     uint32_t next_rule_id = 1;
 
@@ -492,10 +494,12 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         progress.start_phase("Loading INI distributions");
         size_t spid_count = 0, kid_count = 0;
         for (auto& path : spid_files) {
-            spid_count += mora::emit_spid_facts(path.string(), db, cr.pool, cr.diags, next_rule_id);
+            spid_count += mora::emit_spid_facts(path.string(), db, cr.pool,
+                                                 cr.diags, next_rule_id, editor_id_map);
         }
         for (auto& path : kid_files) {
-            kid_count += mora::emit_kid_facts(path.string(), db, cr.pool, cr.diags, next_rule_id);
+            kid_count += mora::emit_kid_facts(path.string(), db, cr.pool,
+                                               cr.diags, next_rule_id, editor_id_map);
         }
         progress.finish_phase(
             std::to_string(spid_count) + " SPID + " + std::to_string(kid_count) + " KID → " +
