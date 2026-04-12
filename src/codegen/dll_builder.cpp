@@ -114,6 +114,11 @@ bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
     const char* home_env = std::getenv("HOME");
     std::string xwin = std::string(home_env ? home_env : "") + "/.xwin";
 
+    if (!std::filesystem::exists(xwin)) {
+        error = "Windows SDK not found at " + xwin + ". Install with: xwin splat --output " + xwin;
+        return false;
+    }
+
     std::vector<std::string> arg_strings = {
         "lld-link",
         "/dll",

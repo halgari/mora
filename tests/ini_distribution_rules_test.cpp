@@ -14,10 +14,10 @@ protected:
 TEST_F(IniDistributionRulesTest, ModuleHasExpectedRuleCount) {
     auto mod = mora::build_ini_distribution_rules(pool);
 
-    // 5 dist_types * 2 filter_kinds = 10 SPID rules
-    // 11 item_types = 11 KID rules
-    // Total = 21
-    EXPECT_EQ(mod.rules.size(), 21u);
+    // 5 dist_types * (2 filter_kinds + 1 no-filter) = 15 SPID rules
+    // 11 item_types * (1 filtered + 1 no-filter) = 22 KID rules
+    // Total = 37
+    EXPECT_EQ(mod.rules.size(), 37u);
 }
 
 TEST_F(IniDistributionRulesTest, SpidRuleNamesAreCorrect) {

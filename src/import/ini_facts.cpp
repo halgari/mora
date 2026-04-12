@@ -32,22 +32,30 @@ static std::string kid_item_type_to_relation(const std::string& item_type) {
     return {};
 }
 
-// Resolve a FilterEntry to a Value. If the editor_id_map has a FormID
-// mapping, return make_formid. Otherwise fall back to make_string.
-static Value resolve_filter_entry(const FilterEntry& entry,
-                                   StringPool& pool,
-                                   const EditorIdMap& editor_id_map) {
+// Resolve a FilterEntry to a Value. Returns nullopt if the entry references
+// a plugin not in loaded_plugins (signals "skip this rule").
+static std::optional<Value> resolve_filter_entry(
+        const FilterEntry& entry,
+        StringPool& pool,
+        const EditorIdMap& editor_id_map,
+        const PluginSet& loaded_plugins,
+        IniLoadStats& stats) {
     if (entry.ref.is_editor_id()) {
         auto it = editor_id_map.find(entry.ref.editor_id);
         if (it != editor_id_map.end()) {
             return Value::make_formid(it->second);
         }
         // Unresolved — keep as string (won't match FormID facts but preserves data)
+        stats.unresolved_editor_ids++;
         return Value::make_string(pool.intern(entry.ref.editor_id));
     }
-    // Form reference with plugin: resolve from hex FormID
-    // The form_id in the ref is the local ID; for matching against the FactDB
-    // we'd need the resolved global ID. For now, store as FormID if we have it.
+    // Form reference with plugin name — check if plugin is loaded
+    if (!entry.ref.plugin.empty() && !loaded_plugins.empty()) {
+        if (loaded_plugins.find(entry.ref.plugin) == loaded_plugins.end()) {
+            // Plugin not loaded — signal to skip this rule
+            return std::nullopt;
+        }
+    }
     if (entry.ref.form_id != 0) {
         return Value::make_formid(entry.ref.form_id);
     }
@@ -55,23 +63,31 @@ static Value resolve_filter_entry(const FilterEntry& entry,
 }
 
 // Emit filter/exclude facts from a list of FilterEntry values.
-static void emit_filter_facts(const std::vector<FilterEntry>& entries,
+// Returns false if a filter references a missing plugin (skip the whole rule).
+static bool emit_filter_facts(const std::vector<FilterEntry>& entries,
                                uint32_t rule_id,
                                const std::string& filter_kind,
                                StringId include_rel,
                                StringId exclude_rel,
                                FactDB& db, StringPool& pool,
-                               const EditorIdMap& editor_id_map) {
+                               const EditorIdMap& editor_id_map,
+                               const PluginSet& loaded_plugins,
+                               IniLoadStats& stats) {
     std::vector<Value> includes;
     std::vector<Value> excludes;
 
     for (const auto& entry : entries) {
-        auto val = resolve_filter_entry(entry, pool, editor_id_map);
+        auto val = resolve_filter_entry(entry, pool, editor_id_map,
+                                         loaded_plugins, stats);
+        if (!val.has_value()) {
+            // Missing plugin — signal caller to skip rule
+            return false;
+        }
 
         if (entry.mode == FilterEntry::Mode::Exclude) {
-            excludes.push_back(std::move(val));
+            excludes.push_back(std::move(*val));
         } else {
-            includes.push_back(std::move(val));
+            includes.push_back(std::move(*val));
         }
     }
 
@@ -91,6 +107,7 @@ static void emit_filter_facts(const std::vector<FilterEntry>& entries,
             Value::make_list(std::move(excludes))
         });
     }
+    return true;
 }
 
 static size_t emit_spid_line(const std::string& line,
@@ -99,7 +116,9 @@ static size_t emit_spid_line(const std::string& line,
                               FactDB& db, StringPool& pool,
                               DiagBag& diags,
                               uint32_t& next_rule_id,
-                              const EditorIdMap& editor_id_map) {
+                              const EditorIdMap& editor_id_map,
+                              const PluginSet& loaded_plugins,
+                              IniLoadStats& stats) {
     auto trimmed = trim(line);
     if (trimmed.empty() || trimmed[0] == ';' || trimmed[0] == '#') {
         return 0;
@@ -125,16 +144,25 @@ static size_t emit_spid_line(const std::string& line,
     auto fields = split_pipes(value_str);
     if (fields.empty()) return 0;
 
-    uint32_t rule_id = next_rule_id++;
-
     // Field 0: target form — resolve to FormID if possible
     auto target_ref = parse_form_ref(fields[0]);
+
+    // Check plugin availability for target
+    if (!target_ref.plugin.empty() && !loaded_plugins.empty()) {
+        if (loaded_plugins.find(target_ref.plugin) == loaded_plugins.end()) {
+            stats.rules_dropped_missing_plugin++;
+            stats.missing_plugins[target_ref.plugin]++;
+            return 0;
+        }
+    }
+
     Value target_val;
     if (target_ref.is_editor_id()) {
         auto it = editor_id_map.find(target_ref.editor_id);
         if (it != editor_id_map.end()) {
             target_val = Value::make_formid(it->second);
         } else {
+            stats.unresolved_editor_ids++;
             target_val = Value::make_string(pool.intern(target_ref.editor_id));
         }
     } else if (target_ref.form_id != 0) {
@@ -142,6 +170,8 @@ static size_t emit_spid_line(const std::string& line,
     } else {
         target_val = Value::make_string(pool.intern(target_ref.to_mora_symbol()));
     }
+
+    uint32_t rule_id = next_rule_id++;
 
     // Emit spid_dist(RuleID, DistType, Target)
     auto spid_dist_rel = pool.intern("spid_dist");
@@ -151,14 +181,23 @@ static size_t emit_spid_line(const std::string& line,
         target_val
     });
 
+    bool any_filter_emitted = false;
+
     // Field 1: string filters (keyword/editor_id)
     if (fields.size() > 1 && !fields[1].empty()) {
         auto entries = parse_filter_entries(fields[1]);
         if (!entries.empty()) {
-            emit_filter_facts(entries, rule_id, "keyword",
+            if (!emit_filter_facts(entries, rule_id, "keyword",
                               pool.intern("spid_filter"),
                               pool.intern("spid_exclude"),
-                              db, pool, editor_id_map);
+                              db, pool, editor_id_map,
+                              loaded_plugins, stats)) {
+                // Missing plugin in filter — drop rule. Undo rule_id bump.
+                stats.rules_dropped_missing_plugin++;
+                stats.missing_plugins[entries[0].ref.plugin]++;
+                return 0;
+            }
+            any_filter_emitted = true;
         }
     }
 
@@ -166,11 +205,26 @@ static size_t emit_spid_line(const std::string& line,
     if (fields.size() > 2 && !fields[2].empty()) {
         auto entries = parse_filter_entries(fields[2]);
         if (!entries.empty()) {
-            emit_filter_facts(entries, rule_id, "form",
+            if (!emit_filter_facts(entries, rule_id, "form",
                               pool.intern("spid_filter"),
                               pool.intern("spid_exclude"),
-                              db, pool, editor_id_map);
+                              db, pool, editor_id_map,
+                              loaded_plugins, stats)) {
+                stats.rules_dropped_missing_plugin++;
+                stats.missing_plugins[entries[0].ref.plugin]++;
+                return 0;
+            }
+            any_filter_emitted = true;
         }
+    }
+
+    // If no filters were emitted, emit a "none" marker so no-filter rules can match
+    if (!any_filter_emitted) {
+        db.add_fact(pool.intern("spid_filter"), {
+            Value::make_int(static_cast<int64_t>(rule_id)),
+            Value::make_string(pool.intern("none")),
+            Value::make_list({})
+        });
     }
 
     // Field 3: level range
@@ -193,7 +247,9 @@ static size_t emit_spid_line(const std::string& line,
 size_t emit_spid_facts(const std::string& path, FactDB& db,
                         StringPool& pool, DiagBag& diags,
                         uint32_t& next_rule_id,
-                        const EditorIdMap& editor_id_map) {
+                        const EditorIdMap& editor_id_map,
+                        const PluginSet& loaded_plugins,
+                        IniLoadStats& stats) {
     std::ifstream file(path);
     if (!file.is_open()) {
         diags.error("E_SPID_FILE", "Cannot open file: " + path, {}, "");
@@ -211,8 +267,10 @@ size_t emit_spid_facts(const std::string& path, FactDB& db,
     while (std::getline(stream, line)) {
         ++line_num;
         count += emit_spid_line(line, path, line_num, db, pool, diags,
-                                next_rule_id, editor_id_map);
+                                next_rule_id, editor_id_map,
+                                loaded_plugins, stats);
     }
+    stats.rules_emitted += count;
     return count;
 }
 
@@ -222,7 +280,9 @@ static size_t emit_kid_line(const std::string& line,
                              FactDB& db, StringPool& pool,
                              DiagBag& diags,
                              uint32_t& next_rule_id,
-                             const EditorIdMap& editor_id_map) {
+                             const EditorIdMap& editor_id_map,
+                             const PluginSet& loaded_plugins,
+                             IniLoadStats& stats) {
     auto trimmed = trim(line);
     if (trimmed.empty() || trimmed[0] == ';' || trimmed[0] == '#') {
         return 0;
@@ -247,12 +307,23 @@ static size_t emit_kid_line(const std::string& line,
 
     // Field 0: keyword to assign — resolve to FormID if possible
     auto keyword_ref = parse_form_ref(fields[0]);
+
+    // Check plugin availability for target keyword
+    if (!keyword_ref.plugin.empty() && !loaded_plugins.empty()) {
+        if (loaded_plugins.find(keyword_ref.plugin) == loaded_plugins.end()) {
+            stats.rules_dropped_missing_plugin++;
+            stats.missing_plugins[keyword_ref.plugin]++;
+            return 0;
+        }
+    }
+
     Value keyword_val;
     if (keyword_ref.is_editor_id()) {
         auto it = editor_id_map.find(keyword_ref.editor_id);
         if (it != editor_id_map.end()) {
             keyword_val = Value::make_formid(it->second);
         } else {
+            stats.unresolved_editor_ids++;
             keyword_val = Value::make_string(pool.intern(keyword_ref.editor_id));
         }
     } else if (keyword_ref.form_id != 0) {
@@ -286,15 +357,32 @@ static size_t emit_kid_line(const std::string& line,
         Value::make_string(pool.intern(relation))
     });
 
+    bool any_filter_emitted = false;
+
     // Field 2: filters
     if (fields.size() > 2 && !fields[2].empty()) {
         auto entries = parse_filter_entries(fields[2]);
         if (!entries.empty()) {
-            emit_filter_facts(entries, rule_id, "keyword",
+            if (!emit_filter_facts(entries, rule_id, "keyword",
                               pool.intern("kid_filter"),
                               pool.intern("kid_exclude"),
-                              db, pool, editor_id_map);
+                              db, pool, editor_id_map,
+                              loaded_plugins, stats)) {
+                stats.rules_dropped_missing_plugin++;
+                stats.missing_plugins[entries[0].ref.plugin]++;
+                return 0;
+            }
+            any_filter_emitted = true;
         }
+    }
+
+    // If no filters were emitted, emit a "none" marker so no-filter rules can match
+    if (!any_filter_emitted) {
+        db.add_fact(pool.intern("kid_filter"), {
+            Value::make_int(static_cast<int64_t>(rule_id)),
+            Value::make_string(pool.intern("none")),
+            Value::make_list({})
+        });
     }
 
     // Fields 3-4: traits, chance — not emitted
@@ -304,7 +392,9 @@ static size_t emit_kid_line(const std::string& line,
 size_t emit_kid_facts(const std::string& path, FactDB& db,
                        StringPool& pool, DiagBag& diags,
                        uint32_t& next_rule_id,
-                       const EditorIdMap& editor_id_map) {
+                       const EditorIdMap& editor_id_map,
+                       const PluginSet& loaded_plugins,
+                       IniLoadStats& stats) {
     std::ifstream file(path);
     if (!file.is_open()) {
         diags.error("E_KID_FILE", "Cannot open file: " + path, {}, "");
@@ -322,8 +412,10 @@ size_t emit_kid_facts(const std::string& path, FactDB& db,
     while (std::getline(stream, line)) {
         ++line_num;
         count += emit_kid_line(line, path, line_num, db, pool, diags,
-                               next_rule_id, editor_id_map);
+                               next_rule_id, editor_id_map,
+                               loaded_plugins, stats);
     }
+    stats.rules_emitted += count;
     return count;
 }
 

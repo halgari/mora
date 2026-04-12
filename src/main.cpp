@@ -456,6 +456,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // If --data-dir provided, load ESP data before evaluation
     mora::EditorIdMap editor_id_map;
+    mora::PluginSet loaded_plugins;
     if (!data_dir.empty()) {
         progress.start_phase("Loading ESPs");
 
@@ -464,6 +465,11 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         schema.configure_fact_db(db);
 
         mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+
+        // Build PluginSet from load order plugin filenames
+        for (auto& p : lo.plugins) {
+            loaded_plugins.insert(p.filename().string());
+        }
 
         // Lazy loading: only extract facts that rules actually reference
         auto needed = collect_used_relations(cr.modules);
@@ -528,20 +534,46 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
     auto kid_files = find_files_by_suffix(target_path, "_KID.ini");
 
+    mora::IniLoadStats ini_stats;
+
     if (!spid_files.empty() || !kid_files.empty()) {
         progress.start_phase("Loading INI distributions");
         size_t spid_count = 0, kid_count = 0;
         for (auto& path : spid_files) {
             spid_count += mora::emit_spid_facts(path.string(), db, cr.pool,
-                                                 cr.diags, next_rule_id, editor_id_map);
+                                                 cr.diags, next_rule_id, editor_id_map,
+                                                 loaded_plugins, ini_stats);
         }
         for (auto& path : kid_files) {
             kid_count += mora::emit_kid_facts(path.string(), db, cr.pool,
-                                               cr.diags, next_rule_id, editor_id_map);
+                                               cr.diags, next_rule_id, editor_id_map,
+                                               loaded_plugins, ini_stats);
         }
         progress.finish_phase(
             std::to_string(spid_count) + " SPID + " + std::to_string(kid_count) + " KID → " +
             std::to_string(next_rule_id - 1) + " distribution facts", "done");
+
+        // Report INI loading stats
+        if (ini_stats.rules_dropped_missing_plugin > 0) {
+            std::printf("    Dropped %zu rules referencing %zu missing plugins\n",
+                        ini_stats.rules_dropped_missing_plugin,
+                        ini_stats.missing_plugins.size());
+            // Show top 5 missing plugins by count
+            std::vector<std::pair<std::string, size_t>> sorted_missing(
+                ini_stats.missing_plugins.begin(), ini_stats.missing_plugins.end());
+            std::sort(sorted_missing.begin(), sorted_missing.end(),
+                      [](const auto& a, const auto& b) { return a.second > b.second; });
+            size_t show = std::min(sorted_missing.size(), size_t(5));
+            for (size_t i = 0; i < show; ++i) {
+                std::printf("      %s (%zu rules)\n",
+                            sorted_missing[i].first.c_str(),
+                            sorted_missing[i].second);
+            }
+        }
+        if (ini_stats.unresolved_editor_ids > 0) {
+            std::printf("    %zu editor IDs could not be resolved\n",
+                        ini_stats.unresolved_editor_ids);
+        }
 
         // Add generic distribution rules
         auto ini_mod = mora::build_ini_distribution_rules(cr.pool);
@@ -597,6 +629,9 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     } else {
         // Use mock with known SE 1.5.97 offset
         addrlib = mora::AddressLibrary::mock({{514351, 0x1EEBE10}});
+        if (!data_dir.empty()) {
+            std::printf("  \xe2\x9a\xa0 No Address Library found \xe2\x80\x94 using fallback offsets (SE 1.5.97)\n");
+        }
     }
     progress.finish_phase(std::to_string(addrlib.entry_count()) + " entries", "done");
 
@@ -643,6 +678,10 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     std::printf("  ✓ Compile to x86-64 COFF %.*s%s\n",
                 40, ". . . . . . . . . . . . . . . . . . . .",
                 fmt_ms(build_result.compile_ms).c_str());
+    if (!fs::exists(build_result.output_path)) {
+        progress.print_failure("DLL output missing: " + build_result.output_path.string());
+        return 1;
+    }
     std::printf("  ✓ Link MoraRuntime.dll (%s) %.*s%s\n",
                 format_bytes(fs::file_size(build_result.output_path)).c_str(),
                 34, ". . . . . . . . . . . . . . . . .",

@@ -8,6 +8,8 @@ class IniFactsTest : public ::testing::Test {
 protected:
     mora::StringPool pool;
     mora::DiagBag diags;
+    mora::PluginSet loaded_plugins;
+    mora::IniLoadStats ini_stats;
 
     // Write content to a temp file, return the path.
     std::string write_temp(const std::string& suffix,
@@ -26,7 +28,7 @@ TEST_F(IniFactsTest, SpidSimpleKeyword) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {});
+    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     EXPECT_EQ(count, 1u);
     EXPECT_EQ(next_id, 2u);
@@ -59,7 +61,7 @@ TEST_F(IniFactsTest, SpidWithLevelRange) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     auto level_rel = pool.intern("spid_level");
     EXPECT_EQ(db.fact_count(level_rel), 1u);
@@ -76,14 +78,20 @@ TEST_F(IniFactsTest, SpidNoFilters) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     auto dist_rel = pool.intern("spid_dist");
     EXPECT_EQ(db.fact_count(dist_rel), 1u);
 
-    // No filter or level facts should exist
+    // No-filter rules emit a "none" marker in spid_filter
     auto filter_rel = pool.intern("spid_filter");
-    EXPECT_EQ(db.fact_count(filter_rel), 0u);
+    EXPECT_EQ(db.fact_count(filter_rel), 1u);
+    auto filters = db.get_relation(filter_rel);
+    ASSERT_EQ(filters.size(), 1u);
+    EXPECT_EQ(filters[0][0].as_int(), 1);
+    EXPECT_EQ(pool.get(filters[0][1].as_string()), "none");
+    EXPECT_TRUE(filters[0][2].as_list().empty());
+
     auto exclude_rel = pool.intern("spid_exclude");
     EXPECT_EQ(db.fact_count(exclude_rel), 0u);
     auto level_rel = pool.intern("spid_level");
@@ -96,7 +104,7 @@ TEST_F(IniFactsTest, SpidExcludeFilter) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_spid_facts(path, db, pool, diags, next_id, {});
+    mora::emit_spid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     auto exclude_rel = pool.intern("spid_exclude");
     EXPECT_EQ(db.fact_count(exclude_rel), 1u);
@@ -115,7 +123,7 @@ TEST_F(IniFactsTest, KidSimple) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {});
+    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     EXPECT_EQ(count, 1u);
     auto dist_rel = pool.intern("kid_dist");
@@ -133,7 +141,7 @@ TEST_F(IniFactsTest, KidWithFilters) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    mora::emit_kid_facts(path, db, pool, diags, next_id, {});
+    mora::emit_kid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     auto filter_rel = pool.intern("kid_filter");
     EXPECT_EQ(db.fact_count(filter_rel), 1u);
@@ -151,7 +159,7 @@ TEST_F(IniFactsTest, KidUnknownType) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 1;
-    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {});
+    auto count = mora::emit_kid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     EXPECT_EQ(count, 0u);
     EXPECT_EQ(diags.warning_count(), 1u);
@@ -170,7 +178,7 @@ TEST_F(IniFactsTest, MultipleLines) {
     mora::FactDB db(pool);
     mora::configure_ini_relations(db, pool);
     uint32_t next_id = 100;
-    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {});
+    auto count = mora::emit_spid_facts(path, db, pool, diags, next_id, {}, loaded_plugins, ini_stats);
 
     EXPECT_EQ(count, 3u);
     EXPECT_EQ(next_id, 103u);

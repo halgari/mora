@@ -7,12 +7,8 @@ namespace mora {
 // Build a Module containing generic SPID/KID distribution rules.
 // These rules join spid_dist/kid_dist facts against the form DB.
 //
-// Currently generates ~20 rules that replace thousands of individually
-// generated rules from INI files.
-//
-// Known limitation: no-filter variants (rules without spid_filter/kid_filter)
-// are not generated because negation (not spid_filter(RuleID, _, _)) support
-// is complex. Rules without filters will produce no patches.
+// Generates filtered rules (by keyword/form) and no-filter variants
+// that match the "none" marker emitted for rules with no filters.
 Module build_ini_distribution_rules(StringPool& pool);
 
 } // namespace mora

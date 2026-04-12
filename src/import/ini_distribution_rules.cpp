@@ -193,6 +193,84 @@ static Rule build_kid_rule(StringPool& pool, const std::string& item_type) {
     return rule;
 }
 
+// ── No-filter SPID rule ─────────────────────────────────────────
+//
+// _spid_{dist_type}_no_filter(NPC):
+//     spid_dist(RuleID, "{dist_type}", Target)
+//     spid_filter(RuleID, "none", _Unused)
+//     npc(NPC)
+//     => {effect}(NPC, Target)
+static Rule build_spid_no_filter_rule(StringPool& pool,
+                                       const std::string& dist_type) {
+    std::string rule_name = "_spid_" + dist_type + "_no_filter";
+
+    Rule rule;
+    rule.name = pool.intern(rule_name);
+    rule.head_args.push_back(make_var(pool, "NPC"));
+
+    // spid_dist(RuleID, "{dist_type}", Target)
+    rule.body.push_back(make_fact3(pool, "spid_dist",
+        make_var(pool, "RuleID"),
+        make_string_lit(pool, dist_type.c_str()),
+        make_var(pool, "Target")));
+
+    // spid_filter(RuleID, "none", _Unused) — matches the "none" marker
+    rule.body.push_back(make_fact3(pool, "spid_filter",
+        make_var(pool, "RuleID"),
+        make_string_lit(pool, "none"),
+        make_var(pool, "_Unused")));
+
+    // npc(NPC) — scan all NPCs
+    rule.body.push_back(make_fact1(pool, "npc",
+        make_var(pool, "NPC")));
+
+    // Effect: {effect}(NPC, Target)
+    rule.effects.push_back(make_effect2(pool, effect_for_dist_type(dist_type),
+        make_var(pool, "NPC"),
+        make_var(pool, "Target")));
+
+    return rule;
+}
+
+// ── No-filter KID rule ──────────────────────────────────────────
+//
+// _kid_{item_type}_no_filter(Item):
+//     kid_dist(RuleID, TargetKW, "{item_type}")
+//     kid_filter(RuleID, "none", _Unused)
+//     {item_type}(Item)
+//     => add_keyword(Item, TargetKW)
+static Rule build_kid_no_filter_rule(StringPool& pool,
+                                      const std::string& item_type) {
+    std::string rule_name = "_kid_" + item_type + "_no_filter";
+
+    Rule rule;
+    rule.name = pool.intern(rule_name);
+    rule.head_args.push_back(make_var(pool, "Item"));
+
+    // kid_dist(RuleID, TargetKW, "{item_type}")
+    rule.body.push_back(make_fact3(pool, "kid_dist",
+        make_var(pool, "RuleID"),
+        make_var(pool, "TargetKW"),
+        make_string_lit(pool, item_type.c_str())));
+
+    // kid_filter(RuleID, "none", _Unused) — matches the "none" marker
+    rule.body.push_back(make_fact3(pool, "kid_filter",
+        make_var(pool, "RuleID"),
+        make_string_lit(pool, "none"),
+        make_var(pool, "_Unused")));
+
+    // {item_type}(Item) — scan all items of this type
+    rule.body.push_back(make_fact1(pool, item_type.c_str(),
+        make_var(pool, "Item")));
+
+    // Effect: add_keyword(Item, TargetKW)
+    rule.effects.push_back(make_effect2(pool, "add_keyword",
+        make_var(pool, "Item"),
+        make_var(pool, "TargetKW")));
+
+    return rule;
+}
+
 // ── Public API ──────────────────────────────────────────────────
 
 Module build_ini_distribution_rules(StringPool& pool) {
@@ -214,6 +292,8 @@ Module build_ini_distribution_rules(StringPool& pool) {
         for (const auto& filter_kind : spid_filter_kinds) {
             mod.rules.push_back(build_spid_rule(pool, dist_type, filter_kind));
         }
+        // Also generate no-filter variant for each dist_type
+        mod.rules.push_back(build_spid_no_filter_rule(pool, dist_type));
     }
 
     // KID item types
@@ -223,9 +303,10 @@ Module build_ini_distribution_rules(StringPool& pool) {
         "scroll", "soul_gem"
     };
 
-    // Generate one KID rule per item_type
+    // Generate one KID rule per item_type (filtered + no-filter)
     for (const auto& item_type : kid_item_types) {
         mod.rules.push_back(build_kid_rule(pool, item_type));
+        mod.rules.push_back(build_kid_no_filter_rule(pool, item_type));
     }
 
     return mod;
