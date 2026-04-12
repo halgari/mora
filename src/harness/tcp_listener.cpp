@@ -4,7 +4,6 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <thread>
 #include <vector>
 
 #pragma comment(lib, "ws2_32.lib")
@@ -50,7 +49,7 @@ bool TcpListener::start() {
 
     listen_socket_ = reinterpret_cast<void*>(sock);
     running_ = true;
-    thread_ = new std::thread(&TcpListener::listen_loop, this);
+    thread_ = std::make_unique<std::thread>(&TcpListener::listen_loop, this);
 
     return true;
 }
@@ -62,10 +61,8 @@ void TcpListener::stop() {
         listen_socket_ = nullptr;
     }
     if (thread_) {
-        auto* t = static_cast<std::thread*>(thread_);
-        if (t->joinable()) t->join();
-        delete t;
-        thread_ = nullptr;
+        if (thread_->joinable()) thread_->join();
+        thread_.reset();
     }
     WSACleanup();
 }

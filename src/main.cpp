@@ -227,7 +227,7 @@ static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
     mora::Progress& progress,
-    [[maybe_unused]] bool use_color)
+    bool use_color)
 {
     result.files = find_mora_files(target_path);
     if (result.files.empty()) {
@@ -926,7 +926,6 @@ int main(int argc, char* argv[]) {
 
     std::string command = argv[1];
     bool force_no_color = false;
-    [[maybe_unused]] bool verbose = false;
     bool show_conflicts = false;
     std::string target_path = ".";
     std::string output_dir = "MoraCache";
@@ -935,7 +934,6 @@ int main(int argc, char* argv[]) {
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--no-color") force_no_color = true;
-        else if (arg == "-v") verbose = true;
         else if (arg == "--conflicts") show_conflicts = true;
         else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
         else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }

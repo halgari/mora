@@ -37,12 +37,16 @@ private:
     void emit_field_write(llvm::IRBuilder<>& builder, llvm::Value* form_ptr,
                           uint8_t form_type, const FieldPatch& fp);
 
-    // Emit a keyword add: look up both form and keyword, call add_keyword_to_form
-    void emit_keyword_add(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
-                           uint32_t form_id, uint32_t keyword_formid);
+    // Emit an NPC-array mutation (keyword add/remove, spell/perk/faction add).
+    // `rt_fn` is the mora_rt_* function to call with the shared
+    // (skyrim_base, form, target, singleton, alloc, dealloc) signature.
+    void emit_memmgr_call(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                          uint32_t target_formid, uint32_t element_formid,
+                          llvm::Function* rt_fn, const char* label);
 
-    // Declare add_keyword_to_form (linked from mora_rt.bc)
-    llvm::Function* declare_add_keyword();
+    // Declare an extern "C" function with the standard MemoryManager RT
+    // signature: (ptr, ptr, ptr, i64, i64, i64) -> void.
+    llvm::Function* declare_memmgr_rt(const char* name);
 
     // Declare mora_rt_write_name (linked from mora_rt.lib)
     llvm::Function* declare_write_name();
@@ -51,13 +55,28 @@ private:
     void emit_name_write(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
                           uint32_t form_id, const char* name_str);
 
+    // Resolve the six MemoryManager/BSFixedString offsets once per module.
+    // Called from emit() after declaring RT functions.
+    void resolve_engine_offsets();
+
     llvm::LLVMContext& ctx_;
     llvm::Module& mod_;
     const AddressLibrary& addrlib_;
 
     llvm::Function* hashmap_lookup_fn_ = nullptr;
-    llvm::Function* add_keyword_fn_ = nullptr;
-    llvm::Function* write_name_fn_ = nullptr;
+    llvm::Function* add_keyword_fn_    = nullptr;
+    llvm::Function* remove_keyword_fn_ = nullptr;
+    llvm::Function* add_spell_fn_      = nullptr;
+    llvm::Function* add_perk_fn_       = nullptr;
+    llvm::Function* add_faction_fn_    = nullptr;
+    llvm::Function* write_name_fn_     = nullptr;
+
+    // Address Library offsets resolved at emit time (0 if unresolved).
+    uint64_t mm_singleton_off_  = 0;
+    uint64_t mm_allocate_off_   = 0;
+    uint64_t mm_deallocate_off_ = 0;
+    uint64_t bs_ctor8_off_      = 0;
+    uint64_t bs_release8_off_   = 0;
 };
 
 } // namespace mora

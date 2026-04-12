@@ -1,4 +1,5 @@
 #include "mora/codegen/ir_emitter.h"
+#include "mora/data/form_constants.h"
 #include "mora/rt/form_ops.h"
 
 #include <llvm/IR/Constants.h>
@@ -11,21 +12,19 @@ namespace mora {
 
 namespace {
 
-// FormType constants (matching skyrim_abi.h)
-constexpr uint8_t kWeapon = 0x29;
-constexpr uint8_t kArmor  = 0x1A;
-
-// Infer expected form type from a FieldId.
-// Returns 0 if the field could apply to multiple form types (needs runtime check).
+// Infer the expected form type from a FieldId. Returns 0 if the field
+// could apply to multiple form types (runtime dispatch needed).
 uint8_t infer_form_type(FieldId field) {
     switch (field) {
-        case FieldId::Damage:      return kWeapon;
-        case FieldId::ArmorRating: return kArmor;
-        default:                   return 0; // GoldValue, Weight, etc.
+        case FieldId::Damage:      return form_type::kWeapon;
+        case FieldId::ArmorRating: return form_type::kArmor;
+        case FieldId::Spells:      return form_type::kNPC;
+        case FieldId::Perks:       return form_type::kNPC;
+        case FieldId::Factions:    return form_type::kNPC;
+        default:                   return 0; // Keywords, GoldValue, Weight, etc.
     }
 }
 
-// Get the LLVM store type for a field
 enum class StoreKind { Int16, Int32, Float, Unsupported };
 
 StoreKind get_store_kind(FieldId field) {
@@ -38,10 +37,32 @@ StoreKind get_store_kind(FieldId field) {
     }
 }
 
-// Address library IDs for the global form map pointer
-// SE: 514351, AE: 400507
+// Address Library IDs for the global form map pointer.
 constexpr uint64_t kFormMapAddrLibId_AE = 400507;
 constexpr uint64_t kFormMapAddrLibId_SE = 514351;
+
+// MemoryManager Address Library IDs.
+// SE: GetSingleton=11045, Allocate=66859, Deallocate=66861
+// AE: GetSingleton=11141, Allocate=68115, Deallocate=68117
+constexpr uint64_t kMemMgr_GetSingleton_AE = 11141;
+constexpr uint64_t kMemMgr_GetSingleton_SE = 11045;
+constexpr uint64_t kMemMgr_Allocate_AE     = 68115;
+constexpr uint64_t kMemMgr_Allocate_SE     = 66859;
+constexpr uint64_t kMemMgr_Deallocate_AE   = 68117;
+constexpr uint64_t kMemMgr_Deallocate_SE   = 66861;
+
+// BSFixedString Address Library IDs.
+// SE: ctor8=67819, release8=67847
+// AE: ctor8=69161, release8=69192
+constexpr uint64_t kBS_Ctor8_AE    = 69161;
+constexpr uint64_t kBS_Ctor8_SE    = 67819;
+constexpr uint64_t kBS_Release8_AE = 69192;
+constexpr uint64_t kBS_Release8_SE = 67847;
+
+// Try AE first, fall back to SE.
+uint64_t resolve_ae_or_se(const AddressLibrary& al, uint64_t ae_id, uint64_t se_id) {
+    return al.resolve(ae_id).value_or(al.resolve(se_id).value_or(0));
+}
 
 } // anonymous namespace
 
@@ -60,25 +81,18 @@ llvm::Function* IREmitter::declare_hashmap_lookup() {
     return fn;
 }
 
-llvm::Function* IREmitter::declare_add_keyword() {
-    // void add_keyword_to_form(void* skyrim_base, void* form, void* keyword,
-    //                           uint64_t singleton_off, uint64_t alloc_off, uint64_t dealloc_off)
+llvm::Function* IREmitter::declare_memmgr_rt(const char* name) {
+    // void (*)(void* skyrim_base, void* form, void* target,
+    //          uint64_t singleton_off, uint64_t alloc_off, uint64_t dealloc_off)
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
     auto* void_ty = llvm::Type::getVoidTy(ctx_);
     auto* fn_ty = llvm::FunctionType::get(void_ty,
         {ptr_ty, ptr_ty, ptr_ty, i64_ty, i64_ty, i64_ty}, false);
     auto* fn = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
-                                       "mora_rt_add_keyword", mod_);
+                                       name, mod_);
     fn->setDoesNotThrow();
     return fn;
-}
-
-void IREmitter::emit(const ResolvedPatchSet& patches, StringPool& pool) {
-    hashmap_lookup_fn_ = declare_hashmap_lookup();
-    add_keyword_fn_ = declare_add_keyword();
-    write_name_fn_ = declare_write_name();
-    emit_apply_function(patches, pool);
 }
 
 llvm::Function* IREmitter::declare_write_name() {
@@ -95,20 +109,40 @@ llvm::Function* IREmitter::declare_write_name() {
     return fn;
 }
 
+void IREmitter::resolve_engine_offsets() {
+    mm_singleton_off_  = resolve_ae_or_se(addrlib_, kMemMgr_GetSingleton_AE, kMemMgr_GetSingleton_SE);
+    mm_allocate_off_   = resolve_ae_or_se(addrlib_, kMemMgr_Allocate_AE,     kMemMgr_Allocate_SE);
+    mm_deallocate_off_ = resolve_ae_or_se(addrlib_, kMemMgr_Deallocate_AE,   kMemMgr_Deallocate_SE);
+    bs_ctor8_off_      = resolve_ae_or_se(addrlib_, kBS_Ctor8_AE,            kBS_Ctor8_SE);
+    bs_release8_off_   = resolve_ae_or_se(addrlib_, kBS_Release8_AE,         kBS_Release8_SE);
+}
+
+void IREmitter::emit(const ResolvedPatchSet& patches, StringPool& pool) {
+    hashmap_lookup_fn_ = declare_hashmap_lookup();
+    add_keyword_fn_    = declare_memmgr_rt("mora_rt_add_keyword");
+    remove_keyword_fn_ = declare_memmgr_rt("mora_rt_remove_keyword");
+    add_spell_fn_      = declare_memmgr_rt("mora_rt_add_spell");
+    add_perk_fn_       = declare_memmgr_rt("mora_rt_add_perk");
+    add_faction_fn_    = declare_memmgr_rt("mora_rt_add_faction");
+    write_name_fn_     = declare_write_name();
+
+    resolve_engine_offsets();
+    emit_apply_function(patches, pool);
+}
+
 void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
                                      StringPool& pool) {
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto* void_ty = llvm::Type::getVoidTy(ctx_);
 
-    // Emit patch count as a global constant for runtime logging
+    // Emit patch count as a global constant for runtime introspection (Phase 2).
     auto* i32_ty = llvm::Type::getInt32Ty(ctx_);
     auto sorted_preview = patches.all_patches_sorted();
     uint32_t total_patches = 0;
     for (const auto& rp : sorted_preview) total_patches += rp.fields.size();
-    auto* patch_count_gv = new llvm::GlobalVariable(
+    new llvm::GlobalVariable(
         mod_, i32_ty, true, llvm::GlobalValue::ExternalLinkage,
         llvm::ConstantInt::get(i32_ty, total_patches), "mora_patch_count");
-    (void)patch_count_gv;
 
     // void apply_all_patches(void* skyrim_base)
     auto* fn_ty = llvm::FunctionType::get(void_ty, {ptr_ty}, false);
@@ -122,23 +156,19 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
     llvm::Value* skyrim_base = func->getArg(0);
 
     // Load the form map pointer: *(skyrim_base + map_offset)
-    auto map_offset_opt = addrlib_.resolve(kFormMapAddrLibId_AE);
-    if (!map_offset_opt) map_offset_opt = addrlib_.resolve(kFormMapAddrLibId_SE);
-    uint64_t map_offset = map_offset_opt.value_or(0);
+    uint64_t map_offset = resolve_ae_or_se(addrlib_, kFormMapAddrLibId_AE, kFormMapAddrLibId_SE);
 
     auto* i8_ty = llvm::Type::getInt8Ty(ctx_);
     auto* offset_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), map_offset);
     auto* map_addr = builder.CreateGEP(i8_ty, skyrim_base, offset_val, "map_addr");
     auto* map_ptr = builder.CreateLoad(ptr_ty, map_addr, "map_ptr");
 
-    // Emit patches
     auto sorted = patches.all_patches_sorted();
     for (const auto& rp : sorted) {
         for (const auto& fp : rp.fields) {
-            // Name writes need the string pool to resolve StringId → const char*
+            // Name writes need the string pool to resolve StringId → const char*.
             if (fp.field == FieldId::Name && fp.op == FieldOp::Set) {
                 auto str = pool.get(fp.value.as_string());
-                // Strip surrounding quotes if present (lexer includes them)
                 std::string s(str);
                 if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
                     s = s.substr(1, s.size() - 2);
@@ -155,30 +185,48 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
 
 void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
                             const ResolvedPatch& rp, const FieldPatch& fp) {
-    // Handle keyword add/remove specially — requires engine function calls
-    if (fp.field == FieldId::Keywords && fp.op == FieldOp::Add) {
-        emit_keyword_add(builder, map_ptr, rp.target_formid, fp.value.as_formid());
+    // NPC-array mutations go through MemoryManager RT helpers.
+    if (fp.field == FieldId::Keywords) {
+        if (fp.op == FieldOp::Add) {
+            emit_memmgr_call(builder, map_ptr, rp.target_formid,
+                             fp.value.as_formid(), add_keyword_fn_, "kw_add");
+        } else if (fp.op == FieldOp::Remove) {
+            emit_memmgr_call(builder, map_ptr, rp.target_formid,
+                             fp.value.as_formid(), remove_keyword_fn_, "kw_rem");
+        }
+        return;
+    }
+    if (fp.field == FieldId::Spells && fp.op == FieldOp::Add) {
+        emit_memmgr_call(builder, map_ptr, rp.target_formid,
+                         fp.value.as_formid(), add_spell_fn_, "spell_add");
+        return;
+    }
+    if (fp.field == FieldId::Perks && fp.op == FieldOp::Add) {
+        emit_memmgr_call(builder, map_ptr, rp.target_formid,
+                         fp.value.as_formid(), add_perk_fn_, "perk_add");
+        return;
+    }
+    if (fp.field == FieldId::Factions && fp.op == FieldOp::Add) {
+        emit_memmgr_call(builder, map_ptr, rp.target_formid,
+                         fp.value.as_formid(), add_faction_fn_, "faction_add");
         return;
     }
 
     auto store_kind = get_store_kind(fp.field);
     if (store_kind == StoreKind::Unsupported) {
-        return; // Skip unsupported fields (Name, Spells, Perks, etc.)
+        return; // Items, Level, Race, EditorId — not yet supported
     }
 
     uint8_t inferred_type = infer_form_type(fp.field);
 
-    // For fields that could apply to multiple form types (GoldValue, Weight),
-    // we need to emit both weapon and armor variants with a runtime type check.
+    // Unambiguous form type — single path.
     if (inferred_type != 0) {
-        // Single known form type
         uint64_t offset = rt::get_field_offset(inferred_type,
                                                 static_cast<uint16_t>(fp.field));
         if (offset == 0) return;
 
         llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, rp.target_formid);
 
-        // Null check
         auto* func = builder.GetInsertBlock()->getParent();
         auto* do_write_bb = llvm::BasicBlock::Create(ctx_, "do_write", func);
         auto* skip_bb = llvm::BasicBlock::Create(ctx_, "skip", func);
@@ -194,7 +242,7 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
 
         builder.SetInsertPoint(skip_bb);
     } else {
-        // GoldValue or Weight: need runtime form type check
+        // GoldValue or Weight: runtime form type check (Weapon vs Armor).
         llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, rp.target_formid);
 
         auto* func = builder.GetInsertBlock()->getParent();
@@ -203,7 +251,6 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
         auto* write_armor_bb = llvm::BasicBlock::Create(ctx_, "write_armor", func);
         auto* skip_bb = llvm::BasicBlock::Create(ctx_, "skip", func);
 
-        // Null check
         auto* null_val = llvm::ConstantPointerNull::get(
             llvm::PointerType::get(ctx_, 0));
         auto* not_null = builder.CreateICmpNE(form_ptr, null_val, "not_null");
@@ -218,17 +265,17 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
 
         auto* is_weapon = builder.CreateICmpEQ(
             form_type_val,
-            llvm::ConstantInt::get(i8_ty, kWeapon),
+            llvm::ConstantInt::get(i8_ty, form_type::kWeapon),
             "is_weapon");
         builder.CreateCondBr(is_weapon, write_weapon_bb, write_armor_bb);
 
         // Weapon path
         builder.SetInsertPoint(write_weapon_bb);
         {
-            uint64_t offset = rt::get_field_offset(kWeapon,
+            uint64_t offset = rt::get_field_offset(form_type::kWeapon,
                                                     static_cast<uint16_t>(fp.field));
             if (offset != 0) {
-                emit_field_write(builder, form_ptr, kWeapon, fp);
+                emit_field_write(builder, form_ptr, form_type::kWeapon, fp);
             }
         }
         builder.CreateBr(skip_bb);
@@ -238,16 +285,16 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
         {
             auto* is_armor = builder.CreateICmpEQ(
                 form_type_val,
-                llvm::ConstantInt::get(i8_ty, kArmor),
+                llvm::ConstantInt::get(i8_ty, form_type::kArmor),
                 "is_armor");
             auto* do_armor_bb = llvm::BasicBlock::Create(ctx_, "do_armor", func);
             builder.CreateCondBr(is_armor, do_armor_bb, skip_bb);
 
             builder.SetInsertPoint(do_armor_bb);
-            uint64_t offset = rt::get_field_offset(kArmor,
+            uint64_t offset = rt::get_field_offset(form_type::kArmor,
                                                     static_cast<uint16_t>(fp.field));
             if (offset != 0) {
-                emit_field_write(builder, form_ptr, kArmor, fp);
+                emit_field_write(builder, form_ptr, form_type::kArmor, fp);
             }
             builder.CreateBr(skip_bb);
         }
@@ -304,50 +351,38 @@ void IREmitter::emit_field_write(llvm::IRBuilder<>& builder,
     }
 }
 
-void IREmitter::emit_keyword_add(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
-                                  uint32_t form_id, uint32_t keyword_formid) {
+void IREmitter::emit_memmgr_call(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
+                                  uint32_t target_formid, uint32_t element_formid,
+                                  llvm::Function* rt_fn, const char* label) {
     auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
-
-    // Look up both the target form and the keyword form
-    llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, form_id);
-    llvm::Value* kw_ptr = emit_form_lookup(builder, map_ptr, keyword_formid);
-
-    // Null check both
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
-    auto* null_val = llvm::ConstantPointerNull::get(ptr_ty);
 
+    llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, target_formid);
+    llvm::Value* elem_ptr = emit_form_lookup(builder, map_ptr, element_formid);
+
+    // Null-check both — the RT function is also safe with nullptr, but
+    // short-circuiting here avoids an indirect call through LTO-inlined code
+    // on the cold path.
+    auto* null_val = llvm::ConstantPointerNull::get(ptr_ty);
     auto* form_ok = builder.CreateICmpNE(form_ptr, null_val, "form_ok");
-    auto* kw_ok = builder.CreateICmpNE(kw_ptr, null_val, "kw_ok");
-    auto* both_ok = builder.CreateAnd(form_ok, kw_ok, "both_ok");
+    auto* elem_ok = builder.CreateICmpNE(elem_ptr, null_val, "elem_ok");
+    auto* both_ok = builder.CreateAnd(form_ok, elem_ok, "both_ok");
 
     auto* func = builder.GetInsertBlock()->getParent();
-    auto* do_add_bb = llvm::BasicBlock::Create(ctx_, "do_kw_add", func);
-    auto* skip_bb = llvm::BasicBlock::Create(ctx_, "skip_kw", func);
-    builder.CreateCondBr(both_ok, do_add_bb, skip_bb);
+    auto* do_bb = llvm::BasicBlock::Create(ctx_, std::string("do_") + label, func);
+    auto* skip_bb = llvm::BasicBlock::Create(ctx_, std::string("skip_") + label, func);
+    builder.CreateCondBr(both_ok, do_bb, skip_bb);
 
-    builder.SetInsertPoint(do_add_bb);
+    builder.SetInsertPoint(do_bb);
 
-    // Get skyrim_base (first arg of apply_all_patches)
     llvm::Value* skyrim_base = func->arg_begin();
-
-    // Resolve MemoryManager Address Library offsets
-    // SE IDs: GetSingleton=11045, Allocate=66859, Deallocate=66861
-    // AE IDs: GetSingleton=11141, Allocate=68115, Deallocate=68117
-    // Try AE first (1.6.x), fall back to SE
-    uint64_t singleton_off = addrlib_.resolve(11141).value_or(
-                              addrlib_.resolve(11045).value_or(0));
-    uint64_t allocate_off = addrlib_.resolve(68115).value_or(
-                             addrlib_.resolve(66859).value_or(0));
-    uint64_t deallocate_off = addrlib_.resolve(68117).value_or(
-                               addrlib_.resolve(66861).value_or(0));
-
-    builder.CreateCall(add_keyword_fn_, {
+    builder.CreateCall(rt_fn, {
         skyrim_base,
         form_ptr,
-        kw_ptr,
-        llvm::ConstantInt::get(i64_ty, singleton_off),
-        llvm::ConstantInt::get(i64_ty, allocate_off),
-        llvm::ConstantInt::get(i64_ty, deallocate_off),
+        elem_ptr,
+        llvm::ConstantInt::get(i64_ty, mm_singleton_off_),
+        llvm::ConstantInt::get(i64_ty, mm_allocate_off_),
+        llvm::ConstantInt::get(i64_ty, mm_deallocate_off_),
     });
 
     builder.CreateBr(skip_bb);
@@ -359,10 +394,8 @@ void IREmitter::emit_name_write(llvm::IRBuilder<>& builder, llvm::Value* map_ptr
     auto* i64_ty = llvm::Type::getInt64Ty(ctx_);
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
 
-    // Look up the target form
     llvm::Value* form_ptr = emit_form_lookup(builder, map_ptr, form_id);
 
-    // Null check
     auto* null_val = llvm::ConstantPointerNull::get(ptr_ty);
     auto* not_null = builder.CreateICmpNE(form_ptr, null_val, "name_form_ok");
 
@@ -373,26 +406,15 @@ void IREmitter::emit_name_write(llvm::IRBuilder<>& builder, llvm::Value* map_ptr
 
     builder.SetInsertPoint(do_write_bb);
 
-    // Get skyrim_base (first arg of apply_all_patches)
     llvm::Value* skyrim_base = func->arg_begin();
-
-    // Create a global constant string in .rdata
     auto* name_const = builder.CreateGlobalString(name_str, "name_str");
-
-    // Resolve BSFixedString Address Library offsets
-    // SE IDs: ctor8=67819, release8=67847
-    // AE IDs: ctor8=69161, release8=69192
-    uint64_t ctor8_off = addrlib_.resolve(69161).value_or(
-                          addrlib_.resolve(67819).value_or(0));
-    uint64_t release8_off = addrlib_.resolve(69192).value_or(
-                             addrlib_.resolve(67847).value_or(0));
 
     builder.CreateCall(write_name_fn_, {
         skyrim_base,
         form_ptr,
         name_const,
-        llvm::ConstantInt::get(i64_ty, ctor8_off),
-        llvm::ConstantInt::get(i64_ty, release8_off),
+        llvm::ConstantInt::get(i64_ty, bs_ctor8_off_),
+        llvm::ConstantInt::get(i64_ty, bs_release8_off_),
     });
 
     builder.CreateBr(skip_bb);

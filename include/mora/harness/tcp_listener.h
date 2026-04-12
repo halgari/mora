@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace mora::harness {
@@ -37,7 +39,7 @@ private:
 
 #ifdef _WIN32
     void* listen_socket_ = nullptr;
-    void* thread_ = nullptr;
+    std::unique_ptr<std::thread> thread_;
 #endif
 
     struct HandlerEntry {

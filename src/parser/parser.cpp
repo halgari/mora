@@ -387,7 +387,7 @@ Expr Parser::parse_comparison() {
             case TokenKind::Gt:   op = BinaryExpr::Op::Gt;   break;
             case TokenKind::LtEq: op = BinaryExpr::Op::LtEq; break;
             case TokenKind::GtEq: op = BinaryExpr::Op::GtEq; break;
-            default: op = BinaryExpr::Op::Eq; break; // unreachable
+            default: __builtin_unreachable();
         }
         Expr right = parse_additive();
 
@@ -418,7 +418,7 @@ Expr Parser::parse_additive() {
             case TokenKind::Minus: op = BinaryExpr::Op::Sub; break;
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
             case TokenKind::Slash: op = BinaryExpr::Op::Div; break;
-            default: op = BinaryExpr::Op::Add; break; // unreachable
+            default: __builtin_unreachable();
         }
         Expr right = parse_primary();
 

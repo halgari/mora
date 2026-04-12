@@ -1,38 +1,30 @@
 #pragma once
 #include <cstdint>
 
+// Mora runtime form operations.
+//
+// These helpers are compiled into mora_rt.lib and linked into every generated
+// patch DLL via LTO. The IR emitter produces calls to the extern "C" functions
+// below, passing Address Library offsets as constants so LTO can inline and
+// constant-fold the whole thing.
+//
+// All functions are safe to call with nullptr forms/targets — they no-op.
+
 namespace mora::rt {
 
-// Write operations on raw form memory.
-// 'form' is a TESForm* cast to void*.
-// These functions use the offset constants from skyrim_abi.h.
-
-// Get form type byte from a TESForm*
+// Read the form type byte from a TESForm*.
 inline uint8_t get_form_type(const void* form) {
     return *reinterpret_cast<const uint8_t*>(
         reinterpret_cast<const char*>(form) + 0x1A);
 }
 
-// Scalar field writes -- direct memory poke at known offsets
-void write_attack_damage(void* form, uint16_t value);
-void write_armor_rating(void* form, uint32_t value);
-void write_gold_value(void* form, int32_t value);
-void write_weight(void* form, float value);
-
-// Returns the offset of the field within the form, or 0 if not applicable.
-// Used by the IR emitter to generate direct GEP instructions.
-// form_type: FormType byte (0x29=Weapon, 0x1A=Armor, etc.)
-// field_id: FieldId value (2=Damage, 3=ArmorRating, 4=GoldValue, 5=Weight)
+// Return the offset of a scalar field within the form, or 0 if not applicable.
+// Used by the IR emitter to emit direct GEP+store instructions for scalar
+// fields (Damage, ArmorRating, GoldValue, Weight).
 uint64_t get_field_offset(uint8_t form_type, uint16_t field_id);
 
-// ── Keyword mutation ─────────────────────────────────────────────────
-// Requires Skyrim's MemoryManager for heap allocation.
-// These functions are called with resolved engine function pointers.
-//
-// Function pointer types matching Skyrim's MemoryManager:
-//   GetSingleton: () → MemoryManager*
-//   Allocate: (MemoryManager*, size, alignment, aligned_required) → void*
-//   Deallocate: (MemoryManager*, ptr, aligned) → void
+// ── MemoryManager function types ────────────────────────────────────
+// Resolved at runtime from (skyrim_base + AddressLibrary offset).
 //
 // Address Library IDs (SE / AE):
 //   GetSingleton: 11045 / 11141
@@ -43,46 +35,71 @@ using MemMgr_GetSingleton_t = void* (*)();
 using MemMgr_Allocate_t = void* (*)(void* mgr, uint64_t size, int32_t align, bool align_req);
 using MemMgr_Deallocate_t = void (*)(void* mgr, void* ptr, bool aligned);
 
-// Add a keyword to a form's BGSKeywordForm component.
-// skyrim_base: base address of SkyrimSE.exe (for resolving engine functions)
-// form: TESForm* pointer
-// keyword_form: BGSKeyword* pointer (looked up via BSTHashMap)
-// get_singleton_offset: Address Library offset for MemoryManager::GetSingleton
-// allocate_offset: Address Library offset for MemoryManager::Allocate
-// deallocate_offset: Address Library offset for MemoryManager::Deallocate
-} // namespace mora::rt
-
-// Exposed as extern "C" for clean LLVM IR linkage (no name mangling)
-extern "C" void mora_rt_add_keyword(void* skyrim_base, void* form, void* keyword_form,
-                                     uint64_t get_singleton_offset,
-                                     uint64_t allocate_offset,
-                                     uint64_t deallocate_offset);
-
-// BSFixedString operations via Skyrim's string interning system.
-//
-// BSFixedString layout: a single char* pointer to string data.
-// The string data is preceded by a BSStringPool::Entry (0x18 bytes)
-// containing refcount, CRC, and BST pointers for the global string cache.
-//
-// ctor8 interns a const char* → BSFixedString (refcount=1 or incremented if exists).
+// ── BSFixedString function types ────────────────────────────────────
+// ctor8 interns a const char* → BSFixedString.
 // release8 decrements the refcount (frees if zero).
 //
 // Address Library IDs (SE / AE):
 //   ctor8:    67819 / 69161
 //   release8: 67847 / 69192
-//
-// Function signatures (from CommonLibSSE):
-//   ctor8:    BSFixedString* (*)(BSFixedString* self, const char* data)
-//   release8: void (*)(const char*& entry)
 
 using BSFixedString_ctor8_t = void* (*)(void* self, const char* data);
 using BSFixedString_release8_t = void (*)(const char** entry);
 
+} // namespace mora::rt
+
+// ── RT entry points (extern "C" for clean LLVM IR linkage) ──────────
+//
+// All functions take `skyrim_base` (the base address of SkyrimSE.exe) plus
+// Address Library offsets for the engine functions they call. The IR emitter
+// resolves those offsets at compile time and passes them as LLVM constants,
+// so after LTO the calls are fully inlined and the MemoryManager/BSFixedString
+// function pointers are loaded from known displacements.
+//
+// Semantics: all "add" operations are idempotent — if the entry is already
+// present the call returns without modification. All operations no-op on
+// nullptr or form-type mismatch.
+
+extern "C" {
+
 // Write a name (BSFixedString) to a form's TESFullName component.
-// skyrim_base: base address of SkyrimSE.exe
-// form: TESForm* pointer
-// name: null-terminated UTF-8 string
-// ctor8_offset: Address Library offset for BSFixedString::ctor8
-// release8_offset: Address Library offset for BSStringPool::Entry::release8
-extern "C" void mora_rt_write_name(void* skyrim_base, void* form, const char* name,
-                                    uint64_t ctor8_offset, uint64_t release8_offset);
+// Works for NPC / Weapon / Armor (form type determined at runtime).
+void mora_rt_write_name(void* skyrim_base, void* form, const char* name,
+                         uint64_t ctor8_offset, uint64_t release8_offset);
+
+// Add a keyword to a form's BGSKeywordForm component (NPC / Weapon / Armor).
+void mora_rt_add_keyword(void* skyrim_base, void* form, void* keyword_form,
+                          uint64_t singleton_off,
+                          uint64_t allocate_off,
+                          uint64_t deallocate_off);
+
+// Remove a keyword from a form's BGSKeywordForm component (NPC / Weapon / Armor).
+// No-op if the keyword is not present.
+void mora_rt_remove_keyword(void* skyrim_base, void* form, void* keyword_form,
+                             uint64_t singleton_off,
+                             uint64_t allocate_off,
+                             uint64_t deallocate_off);
+
+// Add a spell to an NPC's TESSpellList. No-op on non-NPC forms or NPCs
+// without an existing SpellData block.
+void mora_rt_add_spell(void* skyrim_base, void* form, void* spell_form,
+                        uint64_t singleton_off,
+                        uint64_t allocate_off,
+                        uint64_t deallocate_off);
+
+// Add a perk to an NPC's BGSPerkRankArray at rank 0. No-op on non-NPC forms.
+void mora_rt_add_perk(void* skyrim_base, void* form, void* perk_form,
+                       uint64_t singleton_off,
+                       uint64_t allocate_off,
+                       uint64_t deallocate_off);
+
+// Add a faction to an NPC's faction BSTArray at rank 0.
+// BSTArray's allocator (BSTArrayHeapAllocator) calls RE::malloc/RE::free
+// which route through MemoryManager — same allocator used here.
+// Respects BSTArray capacity (appends in-place when possible, grows 2x).
+void mora_rt_add_faction(void* skyrim_base, void* form, void* faction_form,
+                          uint64_t singleton_off,
+                          uint64_t allocate_off,
+                          uint64_t deallocate_off);
+
+} // extern "C"

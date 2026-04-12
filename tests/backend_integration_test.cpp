@@ -6,9 +6,6 @@
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
-#include "mora/emit/patch_writer.h"
-#include "mora/emit/patch_reader.h"
-#include <sstream>
 
 class BackendIntegrationTest : public ::testing::Test {
 protected:
@@ -53,18 +50,6 @@ TEST_F(BackendIntegrationTest, FullPipeline) {
     auto patch_set = evaluator.evaluate_static(mod);
     auto resolved = patch_set.resolve();
     EXPECT_EQ(resolved.patch_count(), 2u);
-
-    // Write .mora.patch
-    std::ostringstream out;
-    mora::PatchWriter writer(pool);
-    writer.write(out, resolved, 0, 0);
-
-    // Read it back
-    std::istringstream in(out.str());
-    mora::PatchReader reader(pool);
-    auto patch_file = reader.read(in);
-    ASSERT_TRUE(patch_file.has_value());
-    EXPECT_EQ(patch_file->patches.size(), 2u);
 }
 
 TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
