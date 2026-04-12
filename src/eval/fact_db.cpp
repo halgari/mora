@@ -35,6 +35,14 @@ void FactDB::configure_relation(StringId name, size_t arity, std::vector<size_t>
     );
 }
 
+void FactDB::merge_from(FactDB& other) {
+    for (auto& [rel_id, other_rel] : other.relations_) {
+        for (auto& tuple : other_rel.all()) {
+            add_fact(StringId{rel_id}, Tuple(tuple));
+        }
+    }
+}
+
 std::vector<Tuple> FactDB::query(StringId relation, const Tuple& pattern) const {
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return {};

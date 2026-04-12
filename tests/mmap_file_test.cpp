@@ -34,7 +34,8 @@ TEST_F(MmapFileTest, SubSpan) {
 }
 
 TEST_F(MmapFileTest, NonExistentFile) {
-    EXPECT_THROW(mora::MmapFile("nonexistent.bin"), std::runtime_error);
+    mora::MmapFile f("nonexistent.bin");
+    EXPECT_EQ(f.size(), 0u);
 }
 
 TEST_F(MmapFileTest, RealSkyrimEsm) {

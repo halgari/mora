@@ -30,6 +30,7 @@
 #include <fstream>
 #include <future>
 #include <iomanip>
+#include <thread>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -463,16 +464,53 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         schema.configure_fact_db(db);
 
         mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
-        mora::EspReader esp_reader(cr.pool, cr.diags, schema);
 
         // Lazy loading: only extract facts that rules actually reference
         auto needed = collect_used_relations(cr.modules);
-        esp_reader.set_needed_relations(needed);
 
-        esp_reader.read_load_order(lo.plugins, db);
+        // Parallel plugin reading: partition across hardware threads,
+        // each with its own EspReader + local FactDB. Merge after.
+        auto hw = std::max(1u, std::thread::hardware_concurrency());
+        size_t batch_size = (lo.plugins.size() + hw - 1) / hw;
+
+        struct BatchResult {
+            mora::FactDB local_db;
+            std::unordered_map<std::string, uint32_t> editor_ids;
+            BatchResult(mora::StringPool& p) : local_db(p) {}
+        };
+
+        std::vector<std::future<BatchResult>> futures;
+        for (size_t i = 0; i < lo.plugins.size(); i += batch_size) {
+            size_t end = std::min(i + batch_size, lo.plugins.size());
+            uint32_t start_idx = static_cast<uint32_t>(i);
+
+            futures.push_back(std::async(std::launch::async,
+                [&, start_idx, i, end]() -> BatchResult {
+                    BatchResult result(cr.pool);
+                    schema.configure_fact_db(result.local_db);
+
+                    mora::EspReader reader(cr.pool, cr.diags, schema);
+                    reader.set_needed_relations(needed);
+
+                    // Read this batch's plugins sequentially into local DB
+                    std::vector<std::filesystem::path> batch(
+                        lo.plugins.begin() + i, lo.plugins.begin() + end);
+                    reader.read_load_order(batch, result.local_db);
+                    result.editor_ids = reader.editor_id_map();
+                    return result;
+                }));
+        }
+
+        // Merge results
+        for (auto& fut : futures) {
+            auto result = fut.get();
+            db.merge_from(result.local_db);
+            for (auto& [edid, formid] : result.editor_ids) {
+                editor_id_map[edid] = formid;
+            }
+        }
 
         // Wire up symbol resolution to the evaluator
-        editor_id_map = esp_reader.editor_id_map();
         for (auto& [edid, formid] : editor_id_map) {
             evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
         }

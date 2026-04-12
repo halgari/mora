@@ -16,6 +16,7 @@ public:
 
     void add_fact(StringId relation, Tuple values);
     void configure_relation(StringId name, size_t arity, std::vector<size_t> indexes);
+    void merge_from(FactDB& other);
     std::vector<Tuple> query(StringId relation, const Tuple& pattern) const;
     bool has_fact(StringId relation, const Tuple& values) const;
     size_t fact_count(StringId relation) const;

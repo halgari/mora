@@ -1,7 +1,6 @@
 #include "mora/esp/mmap_file.h"
 
-#include <stdexcept>
-#include <string>
+#include <cstdio>
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -13,19 +12,19 @@ namespace mora {
 MmapFile::MmapFile(const std::string& path) {
     int fd = ::open(path.c_str(), O_RDONLY);
     if (fd == -1) {
-        throw std::runtime_error("MmapFile: failed to open file: " + path);
+        std::fprintf(stderr, "MmapFile: failed to open: %s\n", path.c_str());
+        return;
     }
 
     struct stat st{};
     if (::fstat(fd, &st) == -1) {
         ::close(fd);
-        throw std::runtime_error("MmapFile: failed to stat file: " + path);
+        return;
     }
     size_ = static_cast<size_t>(st.st_size);
 
     if (size_ == 0) {
         ::close(fd);
-        data_ = nullptr;
         return;
     }
 
@@ -33,9 +32,11 @@ MmapFile::MmapFile(const std::string& path) {
     ::close(fd);
 
     if (mapped == MAP_FAILED) {
-        throw std::runtime_error("MmapFile: mmap failed for file: " + path);
+        size_ = 0;
+        return;
     }
 
+    ::madvise(mapped, size_, MADV_SEQUENTIAL);
     data_ = static_cast<const uint8_t*>(mapped);
 }
 
@@ -72,7 +73,7 @@ std::span<const uint8_t> MmapFile::span() const {
 
 std::span<const uint8_t> MmapFile::span(size_t offset, size_t length) const {
     if (offset + length > size_) {
-        throw std::runtime_error("MmapFile::span: offset+length exceeds file size");
+        return {};
     }
     return {data_ + offset, length};
 }
