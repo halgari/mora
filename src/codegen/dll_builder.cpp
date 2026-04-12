@@ -58,8 +58,9 @@ void DLLBuilder::optimize(llvm::Module& mod) {
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-    // O2 optimization level — good balance of speed and compile time
-    auto mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2);
+    // O1 — the generated IR is sequential function calls with constants.
+    // O2 adds ~1s but provides minimal benefit for this pattern.
+    auto mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
     mpm.run(mod, mam);
 }
 
