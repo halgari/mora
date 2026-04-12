@@ -8,3 +8,5 @@ build/
 *.pdb
 MoraCache/
 SkyPatcher
+.superpowers/
+docs/site/
