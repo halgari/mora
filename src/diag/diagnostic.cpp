@@ -25,10 +25,13 @@ void DiagBag::warning(const std::string& code, const std::string& msg,
 }
 
 void DiagBag::add(Diagnostic diag) {
+    std::lock_guard lock(mu_);
     if (diag.level == DiagLevel::Error) {
         ++error_count_;
+        if (error_count_ > kMaxErrors) return;
     } else if (diag.level == DiagLevel::Warning) {
         ++warning_count_;
+        if (warning_count_ > kMaxWarnings) return;
     }
     diags_.push_back(std::move(diag));
 }

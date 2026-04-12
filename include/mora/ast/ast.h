@@ -106,8 +106,16 @@ struct Module {
     std::vector<FactDecl> fact_decls;
     std::vector<Rule> rules;
 
-    // Extract a source line (1-indexed) for diagnostic display
+    // Extract a source line (1-indexed) for diagnostic display.
+    // Uses a precomputed line offset table for O(1) lookup.
     std::string get_line(uint32_t line) const;
+
+    // Build the line offset table from source. Called automatically by
+    // get_line on first use, but can be called explicitly after setting source.
+    void build_line_index() const;
+
+private:
+    mutable std::vector<size_t> line_offsets_; // byte offset of each line start
 };
 
 } // namespace mora

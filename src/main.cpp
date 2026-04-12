@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -81,6 +82,22 @@ static std::vector<fs::path> find_mora_files(const fs::path& dir) {
     }
     for (auto& entry : fs::recursive_directory_iterator(dir)) {
         if (entry.path().extension() == ".mora") {
+            files.push_back(entry.path());
+        }
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+static std::vector<fs::path> find_files_by_suffix(const std::string& dir, const std::string& suffix) {
+    std::vector<fs::path> files;
+    fs::path base(dir);
+    if (!fs::exists(base)) return files;
+    for (auto& entry : fs::recursive_directory_iterator(base)) {
+        if (!entry.is_regular_file()) continue;
+        std::string fname = entry.path().filename().string();
+        if (fname.size() >= suffix.size() &&
+            fname.compare(fname.size() - suffix.size(), suffix.size(), suffix) == 0) {
             files.push_back(entry.path());
         }
     }
@@ -223,6 +240,55 @@ struct CheckResult {
     size_t rule_count = 0;
 };
 
+// Import INI files (SPID + KID) into a synthetic Module.
+static mora::Module import_ini_files(
+    const std::string& target_path,
+    mora::StringPool& pool,
+    mora::DiagBag& diags,
+    size_t& ini_count)
+{
+    mora::Module mod;
+    mod.filename = "<imported INI rules>";
+
+    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
+    auto kid_files  = find_files_by_suffix(target_path, "_KID.ini");
+
+    ini_count = spid_files.size() + kid_files.size();
+    if (ini_count == 0) return mod;
+
+    // Parse all INI files in parallel. StringPool and DiagBag are thread-safe,
+    // and each parser instance carries no shared state between files.
+    std::vector<fs::path> all_ini;
+    all_ini.reserve(ini_count);
+    all_ini.insert(all_ini.end(), spid_files.begin(), spid_files.end());
+    all_ini.insert(all_ini.end(), kid_files.begin(), kid_files.end());
+
+    std::vector<std::future<std::vector<mora::Rule>>> futures;
+    futures.reserve(all_ini.size());
+
+    for (auto& p : all_ini) {
+        futures.push_back(std::async(std::launch::async,
+            [&pool, &diags, path = p.string()]() -> std::vector<mora::Rule> {
+                bool is_spid = path.size() >= 10 &&
+                    path.compare(path.size() - 10, 10, "_DISTR.ini") == 0;
+                if (is_spid) {
+                    mora::SpidParser parser(pool, diags);
+                    return parser.parse_file(path);
+                } else {
+                    mora::KidParser parser(pool, diags);
+                    return parser.parse_file(path);
+                }
+            }));
+    }
+
+    for (auto& fut : futures) {
+        auto rules = fut.get();
+        for (auto& r : rules) mod.rules.push_back(std::move(r));
+    }
+
+    return mod;
+}
+
 static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
@@ -230,12 +296,8 @@ static bool run_check_pipeline(
     bool use_color)
 {
     result.files = find_mora_files(target_path);
-    if (result.files.empty()) {
-        std::fprintf(stderr, "  No .mora files found in %s\n", target_path.c_str());
-        return false;
-    }
 
-    // Parse
+    // Parse .mora files
     progress.start_phase("Parsing");
     result.sources.reserve(result.files.size());
     for (auto& file : result.files) {
@@ -249,9 +311,26 @@ static bool run_check_pipeline(
         mod.source = source;
         result.modules.push_back(std::move(mod));
     }
-    progress.finish_phase(
-        "Parsing " + std::to_string(result.files.size()) + " files",
-        "done");
+
+    // Import INI files (SPID + KID) directly
+    size_t ini_count = 0;
+    auto ini_mod = import_ini_files(target_path, result.pool, result.diags, ini_count);
+    if (!ini_mod.rules.empty()) {
+        result.modules.push_back(std::move(ini_mod));
+    }
+
+    if (result.modules.empty()) {
+        std::fprintf(stderr, "  No .mora or INI files found in %s\n", target_path.c_str());
+        return false;
+    }
+
+    {
+        std::string summary = std::to_string(result.files.size()) + " .mora files";
+        if (ini_count > 0) {
+            summary += ", " + std::to_string(ini_count) + " INI files";
+        }
+        progress.finish_phase("Parsing " + summary, "done");
+    }
 
     // Resolve
     progress.start_phase("Resolving");
@@ -279,6 +358,16 @@ static bool run_check_pipeline(
         mora::DiagRenderer renderer(use_color);
         std::printf("\n");
         std::printf("%s", renderer.render_all(result.diags).c_str());
+        if (result.diags.error_count() > mora::DiagBag::kMaxErrors) {
+            std::printf("\n  ... and %zu more errors (showing first %zu)\n",
+                        result.diags.error_count() - mora::DiagBag::kMaxErrors,
+                        mora::DiagBag::kMaxErrors);
+        }
+        if (result.diags.warning_count() > mora::DiagBag::kMaxWarnings) {
+            std::printf("\n  ... and %zu more warnings (showing first %zu)\n",
+                        result.diags.warning_count() - mora::DiagBag::kMaxWarnings,
+                        mora::DiagBag::kMaxWarnings);
+        }
     }
 
     return true;
@@ -627,22 +716,6 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     }
 
     return 0;
-}
-
-static std::vector<fs::path> find_files_by_suffix(const std::string& dir, const std::string& suffix) {
-    std::vector<fs::path> files;
-    fs::path base(dir);
-    if (!fs::exists(base)) return files;
-    for (auto& entry : fs::recursive_directory_iterator(base)) {
-        if (!entry.is_regular_file()) continue;
-        std::string fname = entry.path().filename().string();
-        if (fname.size() >= suffix.size() &&
-            fname.compare(fname.size() - suffix.size(), suffix.size(), suffix) == 0) {
-            files.push_back(entry.path());
-        }
-    }
-    std::sort(files.begin(), files.end());
-    return files;
 }
 
 static void print_file_header(const std::string& filename, size_t rule_count, bool use_color) {

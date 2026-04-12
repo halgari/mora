@@ -192,7 +192,11 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
     std::vector<Rule> result;
 
     // ── Build main patch rule ──
-    std::string rule_name = type_lower + "_" + target_clean + "_L" + std::to_string(line_num);
+    std::string file_stem = sanitize_name(
+        std::string(std::string_view(filename).substr(
+            filename.find_last_of("/\\") == std::string::npos
+                ? 0 : filename.find_last_of("/\\") + 1)));
+    std::string rule_name = file_stem + "_" + type_lower + "_" + target_clean + "_L" + std::to_string(line_num);
 
     Rule rule;
     rule.name = pool_.intern(rule_name);

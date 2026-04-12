@@ -18,6 +18,7 @@ TypeChecker::TypeChecker(StringPool& pool, DiagBag& diags,
 void TypeChecker::check(Module& mod) {
     current_mod_ = &mod;
     for (Rule& rule : mod.rules) {
+        if (diags_.at_error_limit()) break;
         check_rule(rule);
     }
     current_mod_ = nullptr;

@@ -44,6 +44,20 @@ void NameResolver::register_builtins() {
     reg("faction",      { t(T::FactionID)});
     reg("race",         { t(T::RaceID)   });
     reg("leveled_list", { t(T::FormID)   });
+    reg("ammo",         { t(T::FormID)   });
+    reg("book",         { t(T::FormID)   });
+    reg("potion",       { t(T::FormID)   });
+    reg("misc_item",    { t(T::FormID)   });
+    reg("magic_effect", { t(T::FormID)   });
+    reg("ingredient",   { t(T::FormID)   });
+    reg("activator",    { t(T::FormID)   });
+    reg("flora",        { t(T::FormID)   });
+    reg("scroll",       { t(T::FormID)   });
+    reg("soul_gem",     { t(T::FormID)   });
+    reg("location",     { t(T::FormID)   });
+    reg("key",          { t(T::FormID)   });
+    reg("furniture",    { t(T::FormID)   });
+    reg("enchantment",  { t(T::FormID)   });
 
     // ── Property facts ──
     reg("has_keyword",   { t(T::FormID), t(T::KeywordID) });
@@ -61,6 +75,7 @@ void NameResolver::register_builtins() {
     reg("armor_rating",  { t(T::FormID), t(T::Int)       });
 
     // ── Relationships ──
+    reg("has_form",      { t(T::FormID), t(T::FormID) });
     reg("template_of",   { t(T::FormID), t(T::FormID) });
     reg("leveled_entry", { t(T::FormID), t(T::FormID), t(T::Int) });
     reg("outfit_has",    { t(T::FormID), t(T::FormID) });
@@ -104,11 +119,13 @@ void NameResolver::resolve(Module& mod) {
 
     // Pass 1: register every rule head as a derived fact, detect duplicates.
     for (const Rule& rule : mod.rules) {
+        if (diags_.at_error_limit()) break;
         register_rule_as_fact(rule);
     }
 
     // Pass 2: resolve the body and effects of every rule.
     for (Rule& rule : mod.rules) {
+        if (diags_.at_error_limit()) break;
         resolve_rule(rule);
     }
 

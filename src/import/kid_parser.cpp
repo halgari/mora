@@ -60,6 +60,19 @@ static std::string item_type_to_relation(const std::string& item_type) {
         lower == "potion" || lower == "book") {
         return lower;
     }
+    if (lower == "spell")        return "spell";
+    if (lower == "race")         return "race";
+    if (lower == "misc item")    return "misc_item";
+    if (lower == "magic effect") return "magic_effect";
+    if (lower == "ingredient")   return "ingredient";
+    if (lower == "activator")    return "activator";
+    if (lower == "flora")        return "flora";
+    if (lower == "scroll")       return "scroll";
+    if (lower == "soul gem")     return "soul_gem";
+    if (lower == "location")     return "location";
+    if (lower == "key")          return "key";
+    if (lower == "furniture")    return "furniture";
+    if (lower == "enchantment")  return "enchantment";
     return {};
 }
 
@@ -150,7 +163,11 @@ std::vector<Rule> KidParser::parse_line(const std::string& line,
         return r.empty() ? std::string("unknown") : r;
     };
     std::string keyword_clean = sanitize(keyword_name);
-    std::string rule_name = "add_" + keyword_clean + "_to_" + relation
+    std::string file_stem = sanitize(
+        std::string(std::string_view(filename).substr(
+            filename.find_last_of("/\\") == std::string::npos
+                ? 0 : filename.find_last_of("/\\") + 1)));
+    std::string rule_name = file_stem + "_" + keyword_clean + "_to_" + relation
                             + "_L" + std::to_string(line_num);
 
     SourceSpan span{filename, static_cast<uint32_t>(line_num), 0,
