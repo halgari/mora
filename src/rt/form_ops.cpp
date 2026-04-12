@@ -491,3 +491,91 @@ extern "C" void mora_rt_add_faction(void* skyrim_base, void* form, void* faction
         mm.deallocate(mm.mgr, old_data, false);
     }
 }
+
+// ── Spell remove (NPC only) ────────────────────────────────────────
+// Removes a spell from the TESSpellList by compacting the array.
+
+extern "C" void mora_rt_remove_spell(void* skyrim_base, void* form, void* spell_form,
+                                      uint64_t singleton_off,
+                                      uint64_t allocate_off,
+                                      uint64_t deallocate_off) {
+    using namespace mora::rt;
+    if (!form || !spell_form) return;
+    if (get_form_type(form) != form_type::kNPC) return;
+
+    void** spelldata_slot = reinterpret_cast<void**>(
+        reinterpret_cast<char*>(form) + npc_layout::kSpellList + 0x08);
+    void* spelldata = *spelldata_slot;
+    if (!spelldata) return;
+
+    void*** spells_slot = reinterpret_cast<void***>(
+        reinterpret_cast<char*>(spelldata) + 0x00);
+    uint32_t* num_spells_ptr = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<char*>(spelldata) + 0x18);
+
+    void** old_spells = *spells_slot;
+    uint32_t old_count = *num_spells_ptr;
+
+    // Find the spell to remove
+    uint32_t found = UINT32_MAX;
+    for (uint32_t i = 0; i < old_count; i++) {
+        if (old_spells[i] == spell_form) { found = i; break; }
+    }
+    if (found == UINT32_MAX) return; // not present
+
+    // Compact: shift remaining entries down
+    for (uint32_t i = found; i + 1 < old_count; i++) {
+        old_spells[i] = old_spells[i + 1];
+    }
+    *num_spells_ptr = old_count - 1;
+}
+
+// ── Shout add (NPC only) ───────────────────────────────────────────
+// TESSpellList also holds shouts. Shouts are stored similarly to spells
+// in a separate array within the SpellData struct:
+//   SpellData + 0x08: TESShout** shouts
+//   SpellData + 0x1C: uint32_t   numShouts
+
+extern "C" void mora_rt_add_shout(void* skyrim_base, void* form, void* shout_form,
+                                   uint64_t singleton_off,
+                                   uint64_t allocate_off,
+                                   uint64_t deallocate_off) {
+    using namespace mora::rt;
+    if (!form || !shout_form) return;
+    if (get_form_type(form) != form_type::kNPC) return;
+
+    void** spelldata_slot = reinterpret_cast<void**>(
+        reinterpret_cast<char*>(form) + npc_layout::kSpellList + 0x08);
+    void* spelldata = *spelldata_slot;
+    if (!spelldata) return;
+
+    void*** shouts_slot = reinterpret_cast<void***>(
+        reinterpret_cast<char*>(spelldata) + 0x08);
+    uint32_t* num_shouts_ptr = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<char*>(spelldata) + 0x1C);
+
+    void** old_shouts = *shouts_slot;
+    uint32_t old_count = *num_shouts_ptr;
+
+    // Idempotent add
+    for (uint32_t i = 0; i < old_count; i++) {
+        if (old_shouts[i] == shout_form) return;
+    }
+
+    MemMgrFns mm;
+    if (!resolve_memmgr(skyrim_base, singleton_off, allocate_off, deallocate_off, mm)) {
+        return;
+    }
+
+    uint32_t new_count = old_count + 1;
+    void** fresh = realloc_ptr_array(mm, old_shouts, old_count, new_count);
+    if (!fresh) return;
+
+    fresh[old_count] = shout_form;
+    *shouts_slot = fresh;
+    *num_shouts_ptr = new_count;
+
+    if (old_shouts) {
+        mm.deallocate(mm.mgr, old_shouts, false);
+    }
+}

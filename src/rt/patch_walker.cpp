@@ -56,56 +56,78 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             mora_rt_write_name(skyrim_base, form, buf, bs_ctor8, bs_release8);
             break;
         }
-        case 2: { // Damage
-            uint64_t off = get_field_offset(ft, 2);
-            if (off) { uint16_t v = static_cast<uint16_t>(e.value); std::memcpy((char*)form + off, &v, 2); }
+        // ── Scalar fields: uint16_t ──
+        case 2:  // Damage
+        case 25: // CritDamage
+        case 11: // Level
+        case 41: // CalcLevelMin
+        case 42: // CalcLevelMax
+        {
+            uint64_t off = get_field_offset(ft, e.field_id);
+            if (!off) break;
+            if (e.op == 3) { // Multiply
+                uint16_t cur; std::memcpy(&cur, (char*)form + off, 2);
+                double d; std::memcpy(&d, &e.value, 8);
+                uint16_t v = static_cast<uint16_t>(cur * d);
+                std::memcpy((char*)form + off, &v, 2);
+            } else {
+                uint16_t v = static_cast<uint16_t>(e.value);
+                std::memcpy((char*)form + off, &v, 2);
+            }
             break;
         }
-        case 3: { // ArmorRating
-            uint64_t off = get_field_offset(ft, 3);
-            if (off) { uint32_t v = static_cast<uint32_t>(e.value); std::memcpy((char*)form + off, &v, 4); }
-            break;
-        }
-        case 4: { // GoldValue
-            uint64_t off = get_field_offset(ft, 4);
-            if (off) { int32_t v = static_cast<int32_t>(e.value); std::memcpy((char*)form + off, &v, 4); }
-            break;
-        }
-        case 5: { // Weight
-            uint64_t off = get_field_offset(ft, 5);
-            if (off) {
-                double d;
-                std::memcpy(&d, &e.value, 8);
-                float v = static_cast<float>(d);
+        // ── Scalar fields: uint32_t ──
+        case 3:  // ArmorRating
+        case 30: // Health
+        {
+            uint64_t off = get_field_offset(ft, e.field_id);
+            if (!off) break;
+            if (e.op == 3) { // Multiply
+                uint32_t cur; std::memcpy(&cur, (char*)form + off, 4);
+                double d; std::memcpy(&d, &e.value, 8);
+                uint32_t v = static_cast<uint32_t>(cur * d);
+                std::memcpy((char*)form + off, &v, 4);
+            } else {
+                uint32_t v = static_cast<uint32_t>(e.value);
                 std::memcpy((char*)form + off, &v, 4);
             }
             break;
         }
-        // Weapon scalar fields
-        case 20: case 21: case 22: case 23: case 24: { // Speed/Reach/Stagger/RangeMin/RangeMax (float)
+        // ── Scalar fields: int32_t ──
+        case 4: // GoldValue
+        {
             uint64_t off = get_field_offset(ft, e.field_id);
-            if (off) {
-                double d;
-                std::memcpy(&d, &e.value, 8);
-                float v = static_cast<float>(d);
+            if (!off) break;
+            if (e.op == 3) { // Multiply
+                int32_t cur; std::memcpy(&cur, (char*)form + off, 4);
+                double d; std::memcpy(&d, &e.value, 8);
+                int32_t v = static_cast<int32_t>(cur * d);
+                std::memcpy((char*)form + off, &v, 4);
+            } else {
+                int32_t v = static_cast<int32_t>(e.value);
                 std::memcpy((char*)form + off, &v, 4);
             }
             break;
         }
-        case 25: { // CritDamage (uint16_t)
-            uint64_t off = get_field_offset(ft, 25);
-            if (off) { uint16_t v = static_cast<uint16_t>(e.value); std::memcpy((char*)form + off, &v, 2); }
-            break;
-        }
-        case 30: { // Health (uint32_t)
-            uint64_t off = get_field_offset(ft, 30);
-            if (off) { uint32_t v = static_cast<uint32_t>(e.value); std::memcpy((char*)form + off, &v, 4); }
-            break;
-        }
-        // NPC level fields (uint16_t)
-        case 11: case 41: case 42: {
+        // ── Scalar fields: float ──
+        case 5:  // Weight
+        case 20: // Speed
+        case 21: // Reach
+        case 22: // Stagger
+        case 23: // RangeMin
+        case 24: // RangeMax
+        {
             uint64_t off = get_field_offset(ft, e.field_id);
-            if (off) { uint16_t v = static_cast<uint16_t>(e.value); std::memcpy((char*)form + off, &v, 2); }
+            if (!off) break;
+            double d; std::memcpy(&d, &e.value, 8);
+            if (e.op == 3) { // Multiply
+                float cur; std::memcpy(&cur, (char*)form + off, 4);
+                float v = cur * static_cast<float>(d);
+                std::memcpy((char*)form + off, &v, 4);
+            } else {
+                float v = static_cast<float>(d);
+                std::memcpy((char*)form + off, &v, 4);
+            }
             break;
         }
         // Form reference fields — write a form pointer
@@ -132,8 +154,18 @@ static void apply_patch_entry(void* skyrim_base, void* form,
         case 9: { // Spells
             if (e.value_type != 0) break;
             void* spell_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
-            if (spell_form)
+            if (!spell_form) break;
+            if (e.op == 1) // Add
                 mora_rt_add_spell(skyrim_base, form, spell_form, mm_singleton, mm_alloc, mm_dealloc);
+            else if (e.op == 2) // Remove
+                mora_rt_remove_spell(skyrim_base, form, spell_form, mm_singleton, mm_alloc, mm_dealloc);
+            break;
+        }
+        case 14: { // Shouts
+            if (e.value_type != 0) break;
+            void* shout_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
+            if (shout_form)
+                mora_rt_add_shout(skyrim_base, form, shout_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
         case 8: { // Perks

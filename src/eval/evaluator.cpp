@@ -500,17 +500,62 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
 
 std::pair<FieldId, FieldOp> Evaluator::action_to_field(StringId action) const {
     auto name = pool_.get(action);
-    if (name == "add_keyword")     return {FieldId::Keywords,    FieldOp::Add};
-    if (name == "add_item")        return {FieldId::Items,       FieldOp::Add};
-    if (name == "add_spell")       return {FieldId::Spells,      FieldOp::Add};
-    if (name == "add_perk")        return {FieldId::Perks,       FieldOp::Add};
-    if (name == "remove_keyword")  return {FieldId::Keywords,    FieldOp::Remove};
-    if (name == "set_damage")      return {FieldId::Damage,      FieldOp::Set};
-    if (name == "set_armor_rating") return {FieldId::ArmorRating, FieldOp::Set};
-    if (name == "set_gold_value")  return {FieldId::GoldValue,   FieldOp::Set};
-    if (name == "set_weight")      return {FieldId::Weight,      FieldOp::Set};
-    if (name == "set_name")        return {FieldId::Name,        FieldOp::Set};
-    if (name == "set_game_setting") return {FieldId::GoldValue,  FieldOp::Set};
+
+    // Form list add/remove
+    if (name == "add_keyword")      return {FieldId::Keywords,    FieldOp::Add};
+    if (name == "remove_keyword")   return {FieldId::Keywords,    FieldOp::Remove};
+    if (name == "add_spell")        return {FieldId::Spells,      FieldOp::Add};
+    if (name == "remove_spell")     return {FieldId::Spells,      FieldOp::Remove};
+    if (name == "add_perk")         return {FieldId::Perks,       FieldOp::Add};
+    if (name == "add_faction")      return {FieldId::Factions,    FieldOp::Add};
+    if (name == "remove_faction")   return {FieldId::Factions,    FieldOp::Remove};
+    if (name == "add_shout")        return {FieldId::Shouts,      FieldOp::Add};
+    if (name == "remove_shout")     return {FieldId::Shouts,      FieldOp::Remove};
+    if (name == "add_item")         return {FieldId::Items,       FieldOp::Add};
+    if (name == "add_lev_spell")    return {FieldId::LevSpells,   FieldOp::Add};
+
+    // Scalar set
+    if (name == "set_name")          return {FieldId::Name,         FieldOp::Set};
+    if (name == "set_damage")        return {FieldId::Damage,       FieldOp::Set};
+    if (name == "set_armor_rating")  return {FieldId::ArmorRating,  FieldOp::Set};
+    if (name == "set_gold_value")    return {FieldId::GoldValue,    FieldOp::Set};
+    if (name == "set_weight")        return {FieldId::Weight,       FieldOp::Set};
+    if (name == "set_speed")         return {FieldId::Speed,        FieldOp::Set};
+    if (name == "set_reach")         return {FieldId::Reach,        FieldOp::Set};
+    if (name == "set_stagger")       return {FieldId::Stagger,      FieldOp::Set};
+    if (name == "set_range_min")     return {FieldId::RangeMin,     FieldOp::Set};
+    if (name == "set_range_max")     return {FieldId::RangeMax,     FieldOp::Set};
+    if (name == "set_crit_damage")   return {FieldId::CritDamage,   FieldOp::Set};
+    if (name == "set_crit_percent")  return {FieldId::CritPercent,  FieldOp::Set};
+    if (name == "set_health")        return {FieldId::Health,       FieldOp::Set};
+    if (name == "set_level")         return {FieldId::Level,        FieldOp::Set};
+    if (name == "set_calc_level_min") return {FieldId::CalcLevelMin, FieldOp::Set};
+    if (name == "set_calc_level_max") return {FieldId::CalcLevelMax, FieldOp::Set};
+    if (name == "set_speed_mult")    return {FieldId::SpeedMult,    FieldOp::Set};
+    if (name == "set_game_setting")  return {FieldId::GoldValue,    FieldOp::Set};
+
+    // Scalar multiply
+    if (name == "mul_damage")        return {FieldId::Damage,       FieldOp::Multiply};
+    if (name == "mul_armor_rating")  return {FieldId::ArmorRating,  FieldOp::Multiply};
+    if (name == "mul_gold_value")    return {FieldId::GoldValue,    FieldOp::Multiply};
+    if (name == "mul_weight")        return {FieldId::Weight,       FieldOp::Multiply};
+    if (name == "mul_speed")         return {FieldId::Speed,        FieldOp::Multiply};
+    if (name == "mul_crit_percent")  return {FieldId::CritPercent,  FieldOp::Multiply};
+
+    // Form references
+    if (name == "set_race")          return {FieldId::RaceForm,        FieldOp::Set};
+    if (name == "set_class")         return {FieldId::ClassForm,       FieldOp::Set};
+    if (name == "set_skin")          return {FieldId::SkinForm,        FieldOp::Set};
+    if (name == "set_outfit")        return {FieldId::OutfitForm,      FieldOp::Set};
+    if (name == "set_enchantment")   return {FieldId::EnchantmentForm, FieldOp::Set};
+    if (name == "set_voice_type")    return {FieldId::VoiceTypeForm,   FieldOp::Set};
+
+    // Boolean flags
+    if (name == "set_essential")       return {FieldId::Essential,      FieldOp::Set};
+    if (name == "set_protected")       return {FieldId::Protected,      FieldOp::Set};
+    if (name == "set_auto_calc_stats") return {FieldId::AutoCalcStats,  FieldOp::Set};
+    if (name == "clear_all")           return {FieldId::ClearAll,       FieldOp::Set};
+
     // Default fallback
     return {FieldId::Keywords, FieldOp::Add};
 }

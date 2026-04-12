@@ -354,12 +354,22 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         rule.effects.push_back(std::move(eff));
         break;
     }
-    case OpKind::AddInt:
-    case OpKind::MulFloat: {
-        // For multipliers/additions, emit as set with a note
-        // (full multiplicative/additive logic needs runtime support)
+    case OpKind::AddInt: {
+        // Additive: treated as set (adding to base requires knowing base at compile time)
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
+        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        eff.args.push_back(var(v));
+        eff.args.push_back(intlit(std::stoi(value)));
+        rule.effects.push_back(std::move(eff));
+        break;
+    }
+    case OpKind::MulFloat: {
+        // Multiplicative: emit as mul_* action → FieldOp::Multiply at runtime
+        std::string set_action = sky_field_to_action(field, OpKind::SetFloat);
+        if (set_action.empty()) break;
+        // Convert "set_damage" → "mul_damage"
+        std::string action = "mul_" + set_action.substr(4); // strip "set_"
         Effect eff; eff.action = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(floatlit(std::stof(value)));

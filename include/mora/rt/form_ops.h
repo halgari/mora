@@ -102,4 +102,16 @@ void mora_rt_add_faction(void* skyrim_base, void* form, void* faction_form,
                           uint64_t allocate_off,
                           uint64_t deallocate_off);
 
+// Remove a spell from an NPC's TESSpellList. Compacts the array in-place.
+void mora_rt_remove_spell(void* skyrim_base, void* form, void* spell_form,
+                           uint64_t singleton_off,
+                           uint64_t allocate_off,
+                           uint64_t deallocate_off);
+
+// Add a shout to an NPC's TESSpellList shout array.
+void mora_rt_add_shout(void* skyrim_base, void* form, void* shout_form,
+                        uint64_t singleton_off,
+                        uint64_t allocate_off,
+                        uint64_t deallocate_off);
+
 } // extern "C"
