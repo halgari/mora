@@ -72,11 +72,12 @@ static const uint32_t crc32_table[256] = {
 
 uint32_t bst_crc32(const void* data, size_t len) {
     auto bytes = static_cast<const uint8_t*>(data);
-    uint32_t crc = 0xFFFFFFFF;
+    // Matches Skyrim's BSCRC32: init=0, no final XOR
+    uint32_t crc = 0;
     for (size_t i = 0; i < len; ++i) {
         crc = (crc >> 8) ^ crc32_table[(crc ^ bytes[i]) & 0xFF];
     }
-    return crc ^ 0xFFFFFFFF;
+    return crc;
 }
 
 } // namespace mora::rt
