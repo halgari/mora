@@ -1,4 +1,5 @@
 #include "mora/import/ini_common.h"
+#include <fmt/format.h>
 #include <algorithm>
 #include <charconv>
 #include <sstream>
@@ -13,13 +14,8 @@ std::string_view trim(std::string_view s) {
 }
 
 std::string FormRef::to_mora_symbol() const {
-    if (is_editor_id()) {
-        return ":" + editor_id;
-    }
-    // Format form_id as 0x padded to 8 hex digits
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "0x%08X", form_id);
-    return ":" + plugin + "|" + buf;
+    if (is_editor_id()) return ":" + editor_id;
+    return fmt::format(":{}|0x{:08X}", plugin, form_id);
 }
 
 FormRef parse_form_ref(std::string_view text) {
@@ -195,6 +191,81 @@ std::string FormIdResolver::resolve_ref(const FormRef& ref) const {
         if (!edid.empty()) return edid;
     }
     return "";
+}
+
+// ── Shared AST helpers ──────────────────────────────────────────────
+
+Expr make_var(StringPool& pool, const char* name) {
+    Expr e;
+    e.data = VariableExpr{pool.intern(name), {}, {}};
+    return e;
+}
+
+Expr make_sym(StringPool& pool, std::string_view name) {
+    Expr e;
+    e.data = SymbolExpr{pool.intern(name), {}, {}};
+    return e;
+}
+
+Expr make_int(int64_t value) {
+    Expr e;
+    e.data = IntLiteral{value, {}};
+    return e;
+}
+
+Expr make_float(double value) {
+    Expr e;
+    e.data = FloatLiteral{value, {}};
+    return e;
+}
+
+Clause make_fact(StringPool& pool, std::string_view fact_name,
+                 std::vector<Expr> args, bool negated) {
+    FactPattern fp;
+    fp.name = pool.intern(fact_name);
+    fp.args = std::move(args);
+    fp.negated = negated;
+    Clause c;
+    c.data = std::move(fp);
+    return c;
+}
+
+Clause make_guard(BinaryExpr::Op op, Expr left, Expr right) {
+    BinaryExpr bin;
+    bin.op = op;
+    bin.left = std::make_unique<Expr>(std::move(left));
+    bin.right = std::make_unique<Expr>(std::move(right));
+    Expr guard_expr;
+    guard_expr.data = std::move(bin);
+    GuardClause gc;
+    gc.expr = std::make_unique<Expr>(std::move(guard_expr));
+    Clause c;
+    c.data = std::move(gc);
+    return c;
+}
+
+std::string resolve_symbol(const FormRef& ref, const FormIdResolver* resolver) {
+    if (ref.is_editor_id()) return ref.editor_id;
+    if (resolver && resolver->has_data()) {
+        auto edid = resolver->resolve_ref(ref);
+        if (!edid.empty()) return edid;
+    }
+    if (!ref.plugin.empty()) return fmt::format("{}|0x{:08X}", ref.plugin, ref.form_id);
+    return fmt::format("0x{:08X}", ref.form_id);
+}
+
+std::string sanitize_name(std::string_view s) {
+    std::string result;
+    for (char c : s) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        } else if (c == '.' || c == '|' || c == '/' || c == ' ' || c == '-') {
+            if (!result.empty() && result.back() != '_') result += '_';
+        }
+    }
+    while (!result.empty() && result.back() == '_') result.pop_back();
+    if (result.empty()) result = "unknown";
+    return result;
 }
 
 } // namespace mora

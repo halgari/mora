@@ -86,12 +86,7 @@ FormRef SkyPatcherParser::parse_formref(const std::string& text) const {
 }
 
 std::string SkyPatcherParser::resolve_sym(const FormRef& ref) const {
-    if (ref.is_editor_id()) return ref.editor_id;
-    if (resolver_ && resolver_->has_data()) {
-        auto edid = resolver_->resolve_ref(ref);
-        if (!edid.empty()) return edid;
-    }
-    return ref.to_mora_symbol().substr(1); // strip leading ':'
+    return mora::resolve_symbol(ref, resolver_);
 }
 
 std::string SkyPatcherParser::type_from_path(const std::string& path) {
@@ -103,27 +98,7 @@ std::string SkyPatcherParser::type_from_path(const std::string& path) {
     return parent;
 }
 
-// ── AST Helpers ──────────────────────────────────────────────────────
-
-Expr SkyPatcherParser::var(const std::string& name) {
-    Expr e; e.data = VariableExpr{pool_.intern(name), {}, {}}; return e;
-}
-Expr SkyPatcherParser::sym(const std::string& name) {
-    Expr e; e.data = SymbolExpr{pool_.intern(name), {}, {}}; return e;
-}
-Expr SkyPatcherParser::intlit(int64_t v) {
-    Expr e; e.data = IntLiteral{v, {}}; return e;
-}
-Expr SkyPatcherParser::floatlit(double v) {
-    Expr e; e.data = FloatLiteral{v, {}}; return e;
-}
-Clause SkyPatcherParser::fact(const std::string& name, std::vector<Expr> args, bool neg) {
-    FactPattern fp;
-    fp.name = pool_.intern(name);
-    fp.args = std::move(args);
-    fp.negated = neg;
-    Clause c; c.data = std::move(fp); return c;
-}
+// AST helpers are now inline in the header, delegating to ini_common
 
 // ── Generic Filter Dispatch ──────────────────────────────────────────
 
@@ -422,17 +397,7 @@ std::vector<Rule> SkyPatcherParser::parse_line(const std::string& line,
     else if (schema.type_name == "weapon") v = "Weapon";
     else if (schema.type_name == "armor") v = "Armor";
 
-    // Sanitize for rule name
-    auto sanitize = [](const std::string& s) {
-        std::string r;
-        for (char c : s) {
-            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
-                r += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-        return r.empty() ? std::string("patch") : r;
-    };
-
-    std::string rule_name = "skypatcher_" + sanitize(std::string(schema.type_name))
+    std::string rule_name = "skypatcher_" + sanitize_name(std::string(schema.type_name))
                             + "_L" + std::to_string(line_num);
 
     Rule rule;

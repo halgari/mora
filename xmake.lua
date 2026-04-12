@@ -11,6 +11,7 @@ if not is_plat("windows") then
 
 add_requires("gtest")
 add_requires("zlib")
+add_requires("fmt")
 
 -- Static library with all compiler sources
 target("mora_lib")
@@ -21,7 +22,7 @@ target("mora_lib")
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
               "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp",
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/harness/*.cpp")
-    add_packages("zlib")
+    add_packages("zlib", "fmt")
     add_cxflags("-fno-exceptions", {force = true})  -- LLVM headers require this
     add_syslinks("LLVM-22", "lldCOFF", "lldCommon")
 target_end()

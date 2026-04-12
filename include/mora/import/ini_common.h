@@ -1,9 +1,14 @@
 #pragma once
+#include "mora/ast/ast.h"
+#include "mora/core/string_pool.h"
+#include "mora/diag/diagnostic.h"
 #include <string>
 #include <string_view>
 #include <vector>
 #include <optional>
 #include <cstdint>
+#include <fstream>
+#include <sstream>
 #include <unordered_map>
 
 namespace mora {
@@ -63,5 +68,47 @@ TraitFilter parse_traits(std::string_view text);
 std::vector<std::string> split_pipes(std::string_view line);
 
 std::string_view trim(std::string_view s);
+
+// Shared AST construction helpers for INI parsers
+Expr make_var(StringPool& pool, const char* name);
+Expr make_sym(StringPool& pool, std::string_view name);
+Expr make_int(int64_t value);
+Expr make_float(double value);
+Clause make_fact(StringPool& pool, std::string_view fact_name,
+                 std::vector<Expr> args, bool negated = false);
+Clause make_guard(BinaryExpr::Op op, Expr left, Expr right);
+
+// Resolve a FormRef to a display string, using optional resolver for EditorID lookup
+std::string resolve_symbol(const FormRef& ref, const FormIdResolver* resolver);
+
+// Sanitize a string into a valid Mora identifier (lowercase, underscores)
+std::string sanitize_name(std::string_view s);
+
+// Parse an INI file line-by-line, calling parse_line for each non-empty, non-comment line.
+// Returns collected rules from all lines.
+template <typename ParseLine>
+std::vector<Rule> parse_ini_file_lines(const std::string& path, DiagBag& diags,
+                                        const char* diag_code, ParseLine parse_line) {
+    std::vector<Rule> all_rules;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        diags.add(Diagnostic{DiagLevel::Warning, diag_code,
+            "Could not open file: " + path, {}});
+        return all_rules;
+    }
+    std::string content((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+    std::istringstream stream(content);
+    std::string line;
+    int line_num = 0;
+    while (std::getline(stream, line)) {
+        line_num++;
+        auto trimmed = trim(line);
+        if (trimmed.empty() || trimmed[0] == ';') continue;
+        auto rules = parse_line(trimmed, line_num);
+        for (auto& r : rules) all_rules.push_back(std::move(r));
+    }
+    return all_rules;
+}
 
 } // namespace mora

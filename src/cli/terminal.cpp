@@ -14,35 +14,18 @@ namespace {
     constexpr const char* BOLD_SEQ   = "\033[1m";
     constexpr const char* DIM_SEQ    = "\033[2m";
 
-    std::string wrap(const std::string& s, const char* open, bool color) {
-        if (!color) return s;
-        return std::string(open) + s + RESET_SEQ;
+    std::string wrap(std::string_view s, const char* open, bool color) {
+        if (!color) return std::string(s);
+        return std::string(open) + std::string(s) + RESET_SEQ;
     }
 } // anonymous namespace
 
-std::string TermStyle::red(const std::string& s, bool color) {
-    return wrap(s, RED_SEQ, color);
-}
-
-std::string TermStyle::yellow(const std::string& s, bool color) {
-    return wrap(s, YELLOW_SEQ, color);
-}
-
-std::string TermStyle::cyan(const std::string& s, bool color) {
-    return wrap(s, CYAN_SEQ, color);
-}
-
-std::string TermStyle::green(const std::string& s, bool color) {
-    return wrap(s, GREEN_SEQ, color);
-}
-
-std::string TermStyle::bold(const std::string& s, bool color) {
-    return wrap(s, BOLD_SEQ, color);
-}
-
-std::string TermStyle::dim(const std::string& s, bool color) {
-    return wrap(s, DIM_SEQ, color);
-}
+std::string TermStyle::red(std::string_view s, bool color) { return wrap(s, RED_SEQ, color); }
+std::string TermStyle::yellow(std::string_view s, bool color) { return wrap(s, YELLOW_SEQ, color); }
+std::string TermStyle::cyan(std::string_view s, bool color) { return wrap(s, CYAN_SEQ, color); }
+std::string TermStyle::green(std::string_view s, bool color) { return wrap(s, GREEN_SEQ, color); }
+std::string TermStyle::bold(std::string_view s, bool color) { return wrap(s, BOLD_SEQ, color); }
+std::string TermStyle::dim(std::string_view s, bool color) { return wrap(s, DIM_SEQ, color); }
 
 std::string TermStyle::reset(bool color) {
     if (!color) return "";

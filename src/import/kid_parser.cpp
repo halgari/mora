@@ -10,70 +10,23 @@ KidParser::KidParser(StringPool& pool, DiagBag& diags,
                      const FormIdResolver* resolver)
     : pool_(pool), diags_(diags), resolver_(resolver) {}
 
-std::string KidParser::resolve_symbol(const FormRef& ref) const {
-    if (ref.is_editor_id()) return ref.editor_id;
-    if (resolver_ && resolver_->has_data()) {
-        auto edid = resolver_->resolve_ref(ref);
-        if (!edid.empty()) return edid;
-    }
-    if (!ref.plugin.empty()) {
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
-        return ref.plugin + "|" + buf;
-    }
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "0x%08X", ref.form_id);
-    return std::string(buf);
-}
-
-Expr KidParser::make_var(const char* name) {
-    Expr e;
-    e.data = VariableExpr{pool_.intern(name), {}, {}};
-    return e;
-}
-
-Expr KidParser::make_sym(const std::string& name) {
-    Expr e;
-    e.data = SymbolExpr{pool_.intern(name), {}, {}};
-    return e;
-}
-
-Clause KidParser::make_fact(const std::string& fact_name,
-                             std::vector<Expr> args, bool negated) {
-    FactPattern fp;
-    fp.name = pool_.intern(fact_name);
-    fp.args = std::move(args);
-    fp.negated = negated;
-    Clause c;
-    c.data = std::move(fp);
-    return c;
-}
-
 // Map KID item type string to a relation name.
 // Returns empty string for unknown types.
+static const std::unordered_map<std::string, std::string> kKidTypeMap = {
+    {"weapon", "weapon"}, {"armor", "armor"}, {"ammo", "ammo"},
+    {"potion", "potion"}, {"book", "book"}, {"spell", "spell"},
+    {"race", "race"}, {"misc item", "misc_item"}, {"magic effect", "magic_effect"},
+    {"ingredient", "ingredient"}, {"activator", "activator"}, {"flora", "flora"},
+    {"scroll", "scroll"}, {"soul gem", "soul_gem"}, {"location", "location"},
+    {"key", "key"}, {"furniture", "furniture"}, {"enchantment", "enchantment"},
+};
+
 static std::string item_type_to_relation(const std::string& item_type) {
     std::string lower = item_type;
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](unsigned char c) { return std::tolower(c); });
-    // All supported types map to their lowercase name
-    if (lower == "weapon" || lower == "armor" || lower == "ammo" ||
-        lower == "potion" || lower == "book") {
-        return lower;
-    }
-    if (lower == "spell")        return "spell";
-    if (lower == "race")         return "race";
-    if (lower == "misc item")    return "misc_item";
-    if (lower == "magic effect") return "magic_effect";
-    if (lower == "ingredient")   return "ingredient";
-    if (lower == "activator")    return "activator";
-    if (lower == "flora")        return "flora";
-    if (lower == "scroll")       return "scroll";
-    if (lower == "soul gem")     return "soul_gem";
-    if (lower == "location")     return "location";
-    if (lower == "key")          return "key";
-    if (lower == "furniture")    return "furniture";
-    if (lower == "enchantment")  return "enchantment";
-    return {};
+    auto it = kKidTypeMap.find(lower);
+    return it != kKidTypeMap.end() ? it->second : std::string{};
 }
 
 void KidParser::add_item_filters(const std::string& field,
@@ -183,20 +136,8 @@ std::vector<Rule> KidParser::parse_line(const std::string& line,
         return {};
     }
 
-    // Sanitize name for valid identifier
-    auto sanitize = [](const std::string& s) {
-        std::string r;
-        for (char c : s) {
-            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
-                r += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            else if (c == '.' || c == '|' || c == '/' || c == ' ' || c == '-')
-                if (!r.empty() && r.back() != '_') r += '_';
-        }
-        while (!r.empty() && r.back() == '_') r.pop_back();
-        return r.empty() ? std::string("unknown") : r;
-    };
-    std::string keyword_clean = sanitize(keyword_name);
-    std::string file_stem = sanitize(
+    std::string keyword_clean = sanitize_name(keyword_name);
+    std::string file_stem = sanitize_name(
         std::string(std::string_view(filename).substr(
             filename.find_last_of("/\\") == std::string::npos
                 ? 0 : filename.find_last_of("/\\") + 1)));

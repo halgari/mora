@@ -53,12 +53,14 @@ private:
                         const std::string& value, const std::string& var,
                         const SourceSpan& span);
 
-    // ── AST helpers ──────────────────────────────────────────────────
-    Expr var(const std::string& name);
-    Expr sym(const std::string& name);
-    Expr intlit(int64_t v);
-    Expr floatlit(double v);
-    Clause fact(const std::string& name, std::vector<Expr> args, bool neg = false);
+    // ── AST helpers (delegating to ini_common free functions) ────────
+    Expr var(const std::string& name) { return mora::make_var(pool_, name.c_str()); }
+    Expr sym(std::string_view name) { return mora::make_sym(pool_, name); }
+    Expr intlit(int64_t v) { return mora::make_int(v); }
+    Expr floatlit(double v) { return mora::make_float(v); }
+    Clause fact(std::string_view n, std::vector<Expr> a, bool neg = false) {
+        return mora::make_fact(pool_, n, std::move(a), neg);
+    }
 
     // Determine record type from directory path
     static std::string type_from_path(const std::string& path);

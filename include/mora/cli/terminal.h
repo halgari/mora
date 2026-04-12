@@ -1,15 +1,16 @@
 #pragma once
 #include <string>
+#include <string_view>
 
 namespace mora {
 
 struct TermStyle {
-    static std::string red(const std::string& s, bool color);
-    static std::string yellow(const std::string& s, bool color);
-    static std::string cyan(const std::string& s, bool color);
-    static std::string green(const std::string& s, bool color);
-    static std::string bold(const std::string& s, bool color);
-    static std::string dim(const std::string& s, bool color);
+    static std::string red(std::string_view s, bool color);
+    static std::string yellow(std::string_view s, bool color);
+    static std::string cyan(std::string_view s, bool color);
+    static std::string green(std::string_view s, bool color);
+    static std::string bold(std::string_view s, bool color);
+    static std::string dim(std::string_view s, bool color);
     static std::string reset(bool color);
 };
 
