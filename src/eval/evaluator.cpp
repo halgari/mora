@@ -1,6 +1,9 @@
 #include "mora/eval/evaluator.h"
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+
+static uint64_t g_clause_evals = 0;
 
 namespace mora {
 
@@ -53,11 +56,18 @@ PatchSet Evaluator::evaluate_static(const Module& mod,
         const Rule& rule = mod.rules[i];
         if (classifier.classify(rule) != Phase::Static) continue;
         if (!rule.effects.empty() || !rule.conditional_effects.empty()) {
-            std::fprintf(stderr, "\r  [%zu/%zu] %s (%zu clauses)                    ",
+            g_clause_evals = 0;
+            auto rule_start = std::chrono::steady_clock::now();
+            std::fprintf(stderr, "\r  [%zu/%zu] %s (%zu clauses)                    \n",
                          done + 1, total_static,
                          std::string(pool_.get(rule.name)).c_str(),
                          rule.body.size());
             evaluate_rule(rule, patches, static_cast<uint32_t>(i));
+            auto rule_end = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration<double, std::milli>(rule_end - rule_start).count();
+            std::fprintf(stderr, "\r  → %luM evals in %.0fms (%.1fM evals/sec)\n",
+                         g_clause_evals / 1000000, ms,
+                         (double)g_clause_evals / ms / 1000.0);
             report(rule);
         }
     }
@@ -138,6 +148,10 @@ void Evaluator::evaluate_rule(const Rule& rule, PatchSet& patches, uint32_t prio
 void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order,
                                size_t step, Bindings& bindings, PatchSet& patches,
                                uint32_t priority) {
+    ++g_clause_evals;
+    if (g_clause_evals % 10000000 == 0) {
+        std::fprintf(stderr, "\r  clause evals: %luM ...", g_clause_evals / 1000000);
+    }
     if (step >= order.size()) {
         // All clauses matched
         if (rule.effects.empty() && rule.conditional_effects.empty()) {

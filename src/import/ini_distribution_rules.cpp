@@ -112,27 +112,26 @@ static Rule build_spid_rule(StringPool& pool,
         make_string_lit(pool, filter_kind.c_str()),
         make_var(pool, "FilterList")));
 
-    // npc(NPC)
-    rule.body.push_back(make_fact1(pool, "npc",
-        make_var(pool, "NPC")));
+    // FilterVal in FilterList — iterates list, binds FilterVal
+    rule.body.push_back(make_in_clause(
+        make_var(pool, "FilterVal"),
+        make_var(pool, "FilterList")));
 
-    // Join clause depends on filter_kind
+    // Join clause: FilterVal is now bound → indexed lookup on column 1
+    // returns only the NPCs that have this specific keyword/race.
     if (filter_kind == "keyword") {
-        // has_keyword(NPC, FilterVal)
         rule.body.push_back(make_fact2(pool, "has_keyword",
             make_var(pool, "NPC"),
             make_var(pool, "FilterVal")));
     } else if (filter_kind == "form") {
-        // race_of(NPC, FilterVal) — most common form filter in SPID
         rule.body.push_back(make_fact2(pool, "race_of",
             make_var(pool, "NPC"),
             make_var(pool, "FilterVal")));
     }
 
-    // FilterVal in FilterList
-    rule.body.push_back(make_in_clause(
-        make_var(pool, "FilterVal"),
-        make_var(pool, "FilterList")));
+    // npc(NPC) — NPC is now bound from the join → existence check only
+    rule.body.push_back(make_fact1(pool, "npc",
+        make_var(pool, "NPC")));
 
     // Effect: {effect}(NPC, Target)
     rule.effects.push_back(make_effect2(pool, effect_for_dist_type(dist_type),
@@ -166,25 +165,25 @@ static Rule build_kid_rule(StringPool& pool, const std::string& item_type) {
         make_var(pool, "TargetKW"),
         make_string_lit(pool, item_type.c_str())));
 
-    // {item_type}(Item)
-    rule.body.push_back(make_fact1(pool, item_type.c_str(),
-        make_var(pool, "Item")));
-
     // kid_filter(RuleID, "keyword", KWList)
     rule.body.push_back(make_fact3(pool, "kid_filter",
         make_var(pool, "RuleID"),
         make_string_lit(pool, "keyword"),
         make_var(pool, "KWList")));
 
-    // has_keyword(Item, KW)
+    // KW in KWList — iterates list, binds KW
+    rule.body.push_back(make_in_clause(
+        make_var(pool, "KW"),
+        make_var(pool, "KWList")));
+
+    // has_keyword(Item, KW) — KW bound → indexed column-1 lookup
     rule.body.push_back(make_fact2(pool, "has_keyword",
         make_var(pool, "Item"),
         make_var(pool, "KW")));
 
-    // KW in KWList
-    rule.body.push_back(make_in_clause(
-        make_var(pool, "KW"),
-        make_var(pool, "KWList")));
+    // {item_type}(Item) — Item bound → existence check
+    rule.body.push_back(make_fact1(pool, item_type.c_str(),
+        make_var(pool, "Item")));
 
     // Effect: add_keyword(Item, TargetKW)
     rule.effects.push_back(make_effect2(pool, "add_keyword",

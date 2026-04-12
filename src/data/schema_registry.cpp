@@ -215,7 +215,7 @@ void SchemaRegistry::register_defaults() {
         RelationSchema s;
         s.name = id("race_of");
         s.column_types = {formid_type, MoraType::make(TypeKind::RaceID)};
-        s.indexed_columns = {0};
+        s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "RNAM", EspSource::Kind::Subrecord, 0, 0, ReadType::FormID});
         register_schema(std::move(s));
