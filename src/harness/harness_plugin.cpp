@@ -215,6 +215,19 @@ static std::string handle_lookup(const std::string& cmd) {
         uint32_t actual_id;
         std::memcpy(&actual_id, static_cast<const char*>(form) + 0x14, sizeof(actual_id));
         ss << R"(,"actual_formid":"0x)" << std::hex << std::setw(8) << actual_id << "\"";
+
+        // Read TESFullName if this is an NPC (0x2B) or Weapon (0x29) or Armor (0x1A)
+        size_t name_offset = 0;
+        if (form_type == 0x2B) name_offset = 0x0D8 + 0x08;  // NPC
+        else if (form_type == 0x29) name_offset = 0x030 + 0x08;  // Weapon
+        else if (form_type == 0x1A) name_offset = 0x030 + 0x08;  // Armor
+        if (name_offset > 0) {
+            const char* name_ptr = nullptr;
+            std::memcpy(&name_ptr, static_cast<const char*>(form) + name_offset, sizeof(name_ptr));
+            if (name_ptr) {
+                ss << R"(,"name":")" << name_ptr << "\"";
+            }
+        }
     }
     ss << "}";
     return ss.str();

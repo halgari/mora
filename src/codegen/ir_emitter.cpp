@@ -128,8 +128,12 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
             // Name writes need the string pool to resolve StringId → const char*
             if (fp.field == FieldId::Name && fp.op == FieldOp::Set) {
                 auto str = pool.get(fp.value.as_string());
-                emit_name_write(builder, map_ptr, rp.target_formid,
-                                std::string(str).c_str());
+                // Strip surrounding quotes if present (lexer includes them)
+                std::string s(str);
+                if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+                    s = s.substr(1, s.size() - 2);
+                }
+                emit_name_write(builder, map_ptr, rp.target_formid, s.c_str());
                 continue;
             }
             emit_patch(builder, map_ptr, rp, fp);
