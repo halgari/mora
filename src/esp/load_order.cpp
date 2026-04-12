@@ -29,14 +29,44 @@ LoadOrder LoadOrder::from_directory(const std::filesystem::path& data_dir) {
         }
     }
 
-    std::sort(esms.begin(), esms.end(), [](const std::filesystem::path& a, const std::filesystem::path& b) {
+    // Bethesda's hardcoded master order — these always load first in this order
+    static const std::string bethesda_masters[] = {
+        "Skyrim.esm", "Update.esm", "Dawnguard.esm",
+        "HearthFires.esm", "Dragonborn.esm"
+    };
+
+    // Partition ESMs into Bethesda masters (in fixed order) and others (alphabetical)
+    std::vector<std::filesystem::path> beth_esms;
+    std::vector<std::filesystem::path> other_esms;
+    for (auto& p : esms) {
+        bool is_beth = false;
+        for (auto& m : bethesda_masters) {
+            if (p.filename().string() == m) { is_beth = true; break; }
+        }
+        if (is_beth) beth_esms.push_back(p);
+        else other_esms.push_back(p);
+    }
+
+    // Sort Bethesda masters into the canonical order
+    std::sort(beth_esms.begin(), beth_esms.end(),
+        [&](const std::filesystem::path& a, const std::filesystem::path& b) {
+            int ai = 99, bi = 99;
+            for (int i = 0; i < 5; i++) {
+                if (a.filename().string() == bethesda_masters[i]) ai = i;
+                if (b.filename().string() == bethesda_masters[i]) bi = i;
+            }
+            return ai < bi;
+        });
+
+    std::sort(other_esms.begin(), other_esms.end(), [](const std::filesystem::path& a, const std::filesystem::path& b) {
         return a.filename() < b.filename();
     });
     std::sort(esps.begin(), esps.end(), [](const std::filesystem::path& a, const std::filesystem::path& b) {
         return a.filename() < b.filename();
     });
 
-    lo.plugins.insert(lo.plugins.end(), esms.begin(), esms.end());
+    lo.plugins.insert(lo.plugins.end(), beth_esms.begin(), beth_esms.end());
+    lo.plugins.insert(lo.plugins.end(), other_esms.begin(), other_esms.end());
     lo.plugins.insert(lo.plugins.end(), esps.begin(), esps.end());
 
     return lo;
