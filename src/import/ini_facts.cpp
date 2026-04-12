@@ -6,6 +6,13 @@
 
 namespace mora {
 
+static std::string to_lower(const std::string& s) {
+    std::string r = s;
+    std::transform(r.begin(), r.end(), r.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return r;
+}
+
 // Map KID item type string to a relation name.
 // Returns empty string for unknown types.
 static std::string kid_item_type_to_relation(const std::string& item_type) {
@@ -41,7 +48,7 @@ static std::optional<Value> resolve_filter_entry(
         const PluginSet& loaded_plugins,
         IniLoadStats& stats) {
     if (entry.ref.is_editor_id()) {
-        auto it = editor_id_map.find(entry.ref.editor_id);
+        auto it = editor_id_map.find(to_lower(entry.ref.editor_id));
         if (it != editor_id_map.end()) {
             return Value::make_formid(it->second);
         }
@@ -158,7 +165,7 @@ static size_t emit_spid_line(const std::string& line,
 
     Value target_val;
     if (target_ref.is_editor_id()) {
-        auto it = editor_id_map.find(target_ref.editor_id);
+        auto it = editor_id_map.find(to_lower(target_ref.editor_id));
         if (it != editor_id_map.end()) {
             target_val = Value::make_formid(it->second);
         } else {
@@ -319,7 +326,7 @@ static size_t emit_kid_line(const std::string& line,
 
     Value keyword_val;
     if (keyword_ref.is_editor_id()) {
-        auto it = editor_id_map.find(keyword_ref.editor_id);
+        auto it = editor_id_map.find(to_lower(keyword_ref.editor_id));
         if (it != editor_id_map.end()) {
             keyword_val = Value::make_formid(it->second);
         } else {

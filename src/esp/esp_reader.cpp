@@ -65,7 +65,10 @@ const std::unordered_map<std::string, uint32_t>& EspReader::editor_id_map() cons
 }
 
 uint32_t EspReader::resolve_symbol(const std::string& editor_id) const {
-    auto it = editor_ids_.find(editor_id);
+    std::string lower = editor_id;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    auto it = editor_ids_.find(lower);
     if (it == editor_ids_.end()) return 0;
     return it->second;
 }
@@ -85,13 +88,15 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
     uint32_t global_fid = make_global_formid(loc.form_id, info);
     records_processed_++;
 
-    // Extract EDID for the editor_ids_ map
+    // Extract EDID for the editor_ids_ map (case-insensitive — Skyrim
+    // treats editor IDs as case-insensitive, so we lowercase all keys).
     {
         auto edid_data = reader.find("EDID");
         if (!edid_data.empty()) {
-            // Null-terminated string
             std::string edid(reinterpret_cast<const char*>(edid_data.data()));
             if (!edid.empty()) {
+                std::transform(edid.begin(), edid.end(), edid.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
                 editor_ids_[edid] = global_fid;
             }
         }
