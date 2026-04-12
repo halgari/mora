@@ -83,7 +83,7 @@ void SchemaRegistry::register_defaults() {
         RelationSchema s;
         s.name = id("has_keyword");
         s.column_types = {formid_type, MoraType::make(TypeKind::KeywordID)};
-        s.indexed_columns = {0};
+        s.indexed_columns = {0, 1};
         const char* kw_records[] = {"NPC_", "WEAP", "ARMO", "ALCH", "BOOK", "AMMO", "CONT", "MGEF"};
         for (auto* rec : kw_records) {
             s.esp_sources.push_back(EspSource{
@@ -97,7 +97,7 @@ void SchemaRegistry::register_defaults() {
         RelationSchema s;
         s.name = id("has_faction");
         s.column_types = {formid_type, MoraType::make(TypeKind::FactionID)};
-        s.indexed_columns = {0};
+        s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "SNAM", EspSource::Kind::ListField, 0, 8, ReadType::FormID});
         register_schema(std::move(s));
@@ -108,7 +108,7 @@ void SchemaRegistry::register_defaults() {
         RelationSchema s;
         s.name = id("has_spell");
         s.column_types = {formid_type, MoraType::make(TypeKind::SpellID)};
-        s.indexed_columns = {0};
+        s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "SPLO", EspSource::Kind::ListField, 0, 4, ReadType::FormID});
         register_schema(std::move(s));
@@ -119,7 +119,7 @@ void SchemaRegistry::register_defaults() {
         RelationSchema s;
         s.name = id("has_perk");
         s.column_types = {formid_type, MoraType::make(TypeKind::PerkID)};
-        s.indexed_columns = {0};
+        s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "PRKR", EspSource::Kind::ListField, 0, 8, ReadType::FormID});
         register_schema(std::move(s));

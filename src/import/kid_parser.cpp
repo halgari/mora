@@ -81,23 +81,56 @@ void KidParser::add_item_filters(const std::string& field,
                                   std::vector<Clause>& body) {
     if (field.empty()) return;
     auto entries = parse_filter_entries(field);
+
+    // KID semantics: multiple non-negated entries = match ANY (OR).
+    std::vector<FactPattern> or_branches;
+    std::vector<Clause> negated_clauses;
+
     for (const auto& entry : entries) {
         bool negated = (entry.mode == FilterEntry::Mode::Exclude);
         const auto& ref = entry.ref;
 
-        std::vector<Expr> args;
-        args.push_back(make_var(item_var.c_str()));
+        FactPattern fp;
+        fp.negated = negated;
+        fp.args.push_back(make_var(item_var.c_str()));
 
         if (ref.is_editor_id()) {
-            args.push_back(make_sym(ref.editor_id));
-            body.push_back(make_fact("has_keyword", std::move(args), negated));
+            fp.name = pool_.intern("has_keyword");
+            fp.args.push_back(make_sym(ref.editor_id));
         } else {
-            // Form reference with plugin: use to_mora_symbol() stripping leading ':'
+            fp.name = pool_.intern("has_form");
             std::string sym = ref.to_mora_symbol();
             if (!sym.empty() && sym[0] == ':') sym = sym.substr(1);
-            args.push_back(make_sym(sym));
-            body.push_back(make_fact("has_form", std::move(args), negated));
+            fp.args.push_back(make_sym(sym));
         }
+
+        if (negated) {
+            Clause c;
+            c.data = std::move(fp);
+            negated_clauses.push_back(std::move(c));
+        } else {
+            or_branches.push_back(std::move(fp));
+        }
+    }
+
+    if (or_branches.size() == 1) {
+        Clause c;
+        c.data = std::move(or_branches[0]);
+        body.push_back(std::move(c));
+    } else if (or_branches.size() > 1) {
+        OrClause oc;
+        for (auto& fp : or_branches) {
+            std::vector<FactPattern> branch;
+            branch.push_back(std::move(fp));
+            oc.branches.push_back(std::move(branch));
+        }
+        Clause c;
+        c.data = std::move(oc);
+        body.push_back(std::move(c));
+    }
+
+    for (auto& nc : negated_clauses) {
+        body.push_back(std::move(nc));
     }
 }
 

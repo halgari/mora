@@ -110,24 +110,62 @@ void SpidParser::add_string_filters(const std::string& field,
                                     std::vector<Clause>& body) {
     if (field.empty()) return;
     auto entries = parse_filter_entries(field);
+
+    // Separate positive (OR'd) and negative (AND'd) entries.
+    // SPID semantics: multiple non-negated entries = match ANY.
+    std::vector<FactPattern> or_branches;
+    std::vector<Clause> negated_clauses;
+
     for (const auto& entry : entries) {
         bool negated = (entry.mode == FilterEntry::Mode::Exclude);
         const std::string& name = entry.ref.editor_id;
         if (name.empty()) continue;
 
+        FactPattern fp;
+        fp.negated = negated;
+
         if (looks_like_keyword(name)) {
-            std::vector<Expr> args;
-            args.push_back(make_var("NPC"));
-            args.push_back(make_sym(name));
-            body.push_back(make_fact("has_keyword", std::move(args), negated));
+            fp.name = pool_.intern("has_keyword");
+            fp.args.push_back(make_var("NPC"));
+            fp.args.push_back(make_sym(name));
         } else {
-            std::vector<Expr> args;
-            args.push_back(make_var("NPC"));
+            fp.name = pool_.intern("editor_id");
+            fp.args.push_back(make_var("NPC"));
             Expr str_expr;
             str_expr.data = StringLiteral{pool_.intern(name), {}};
-            args.push_back(std::move(str_expr));
-            body.push_back(make_fact("editor_id", std::move(args), negated));
+            fp.args.push_back(std::move(str_expr));
         }
+
+        if (negated) {
+            Clause c;
+            c.data = std::move(fp);
+            negated_clauses.push_back(std::move(c));
+        } else {
+            or_branches.push_back(std::move(fp));
+        }
+    }
+
+    // Single positive entry: just add directly (no OR wrapper needed)
+    if (or_branches.size() == 1) {
+        Clause c;
+        c.data = std::move(or_branches[0]);
+        body.push_back(std::move(c));
+    } else if (or_branches.size() > 1) {
+        // Multiple positive entries: wrap in OR clause
+        OrClause oc;
+        for (auto& fp : or_branches) {
+            std::vector<FactPattern> branch;
+            branch.push_back(std::move(fp));
+            oc.branches.push_back(std::move(branch));
+        }
+        Clause c;
+        c.data = std::move(oc);
+        body.push_back(std::move(c));
+    }
+
+    // Negated entries are always AND'd
+    for (auto& nc : negated_clauses) {
+        body.push_back(std::move(nc));
     }
 }
 

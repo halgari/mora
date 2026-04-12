@@ -1,4 +1,5 @@
 #include "mora/eval/evaluator.h"
+#include <algorithm>
 #include <cassert>
 
 namespace mora {
@@ -14,7 +15,8 @@ void Evaluator::set_symbol_formid(StringId symbol_name, uint32_t formid) {
     symbol_formids_[colon_id.index] = formid;
 }
 
-PatchSet Evaluator::evaluate_static(const Module& mod) {
+PatchSet Evaluator::evaluate_static(const Module& mod,
+                                     ProgressCallback progress) {
     PatchSet patches;
     PhaseClassifier classifier(pool_);
 
@@ -24,13 +26,25 @@ PatchSet Evaluator::evaluate_static(const Module& mod) {
         current_mod_name_ = pool_.intern("anonymous");
     }
 
+    // Count static rules for progress reporting
+    size_t total_static = 0;
+    for (const Rule& rule : mod.rules) {
+        if (classifier.classify(rule) == Phase::Static) total_static++;
+    }
+
+    size_t done = 0;
+    auto report = [&](const Rule& rule) {
+        ++done;
+        if (progress) progress(done, total_static, pool_.get(rule.name));
+    };
+
     // First pass: evaluate derived rules (no effects) to populate derived_facts_
     for (size_t i = 0; i < mod.rules.size(); ++i) {
         const Rule& rule = mod.rules[i];
         if (classifier.classify(rule) != Phase::Static) continue;
         if (rule.effects.empty() && rule.conditional_effects.empty()) {
-            // Derived rule: produces facts, not patches
             evaluate_rule(rule, patches, static_cast<uint32_t>(i));
+            report(rule);
         }
     }
 
@@ -39,21 +53,89 @@ PatchSet Evaluator::evaluate_static(const Module& mod) {
         const Rule& rule = mod.rules[i];
         if (classifier.classify(rule) != Phase::Static) continue;
         if (!rule.effects.empty() || !rule.conditional_effects.empty()) {
+            std::fprintf(stderr, "\r  [%zu/%zu] %s (%zu clauses)                    ",
+                         done + 1, total_static,
+                         std::string(pool_.get(rule.name)).c_str(),
+                         rule.body.size());
             evaluate_rule(rule, patches, static_cast<uint32_t>(i));
+            report(rule);
         }
     }
 
     return patches;
 }
 
-void Evaluator::evaluate_rule(const Rule& rule, PatchSet& patches, uint32_t priority) {
-    Bindings bindings;
-    match_clauses(rule, 0, bindings, patches, priority);
+// Score a clause for ordering. Lower = more selective = should run first.
+// Clauses with more constants/symbols drive indexed lookups and produce
+// smaller intermediate result sets.
+std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) const {
+    struct ClauseScore {
+        size_t index;
+        int score; // lower is better
+    };
+
+    std::vector<ClauseScore> scored;
+    scored.reserve(rule.body.size());
+
+    for (size_t i = 0; i < rule.body.size(); i++) {
+        int score = 0;
+        const auto& clause = rule.body[i];
+        std::visit([&](const auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, FactPattern>) {
+                int constants = 0;
+                int variables = 0;
+                for (const Expr& arg : c.args) {
+                    if (std::get_if<SymbolExpr>(&arg.data) ||
+                        std::get_if<IntLiteral>(&arg.data) ||
+                        std::get_if<FloatLiteral>(&arg.data) ||
+                        std::get_if<StringLiteral>(&arg.data)) {
+                        constants++;
+                    } else {
+                        variables++;
+                    }
+                }
+                if (constants > 0 && variables == 0) {
+                    score = 0; // all constants — existence check
+                } else if (constants > 0) {
+                    score = 1; // mixed — indexed lookup
+                } else if (c.negated) {
+                    score = 10; // negated all-var — must run after binding
+                } else {
+                    score = 5; // all variables — full scan
+                }
+            } else if constexpr (std::is_same_v<T, GuardClause>) {
+                score = 8; // guards depend on bound variables
+            } else if constexpr (std::is_same_v<T, InClause>) {
+                score = 8;
+            } else {
+                score = 9;
+            }
+        }, clause.data);
+        scored.push_back({i, score});
+    }
+
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const ClauseScore& a, const ClauseScore& b) {
+                         return a.score < b.score;
+                     });
+
+    std::vector<size_t> order;
+    order.reserve(scored.size());
+    for (auto& s : scored) order.push_back(s.index);
+    return order;
 }
 
-void Evaluator::match_clauses(const Rule& rule, size_t clause_idx,
-                               Bindings& bindings, PatchSet& patches, uint32_t priority) {
-    if (clause_idx >= rule.body.size()) {
+void Evaluator::evaluate_rule(const Rule& rule, PatchSet& patches, uint32_t priority) {
+    Bindings bindings;
+    auto order = compute_clause_order(rule);
+    match_clauses(rule, order, 0, bindings, patches, priority);
+}
+
+void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order,
+                               size_t step, Bindings& bindings, PatchSet& patches,
+                               uint32_t priority) {
+    if (step >= order.size()) {
         // All clauses matched
         if (rule.effects.empty() && rule.conditional_effects.empty()) {
             // Derived rule: add derived fact using the rule's head args as the tuple
@@ -68,7 +150,7 @@ void Evaluator::match_clauses(const Rule& rule, size_t clause_idx,
         return;
     }
 
-    const Clause& clause = rule.body[clause_idx];
+    const Clause& clause = rule.body[order[step]];
     std::visit([&](const auto& c) {
         using T = std::decay_t<decltype(c)>;
         if constexpr (std::is_same_v<T, FactPattern>) {
@@ -96,36 +178,35 @@ void Evaluator::match_clauses(const Rule& rule, size_t clause_idx,
                     }
                 }
 
-                auto results_db = db_.query(c.name, query_tuple);
-                auto results_derived = derived_facts_.query(c.name, query_tuple);
-                if (results_db.empty() && results_derived.empty()) {
+                const auto& neg_results = cached_query(c.name, query_tuple);
+                if (neg_results.empty()) {
                     // No match found, negation succeeds
-                    match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, bindings, patches, priority);
                 }
             } else {
                 // Positive pattern: find all matches and recurse for each
                 auto all_bindings = match_fact_pattern(c, bindings);
                 for (auto& new_bindings : all_bindings) {
-                    match_clauses(rule, clause_idx + 1, new_bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, new_bindings, patches, priority);
                 }
             }
         } else if constexpr (std::is_same_v<T, GuardClause>) {
             if (evaluate_guard(*c.expr, bindings)) {
-                match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+                match_clauses(rule, order, step + 1, bindings, patches, priority);
             }
         } else if constexpr (std::is_same_v<T, Effect>) {
             // Effects in body are handled separately; skip
-            match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+            match_clauses(rule, order, step + 1, bindings, patches, priority);
         } else if constexpr (std::is_same_v<T, ConditionalEffect>) {
             // Conditional effects in body are handled separately; skip
-            match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+            match_clauses(rule, order, step + 1, bindings, patches, priority);
         } else if constexpr (std::is_same_v<T, InClause>) {
             // In clause: variable must match one of the listed values
             Value var_val = resolve_expr(*c.variable, bindings);
             for (const auto& val_expr : c.values) {
                 Value v = resolve_expr(val_expr, bindings);
                 if (var_val.matches(v)) {
-                    match_clauses(rule, clause_idx + 1, bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, bindings, patches, priority);
                     return; // first match suffices
                 }
             }
@@ -137,12 +218,33 @@ void Evaluator::match_clauses(const Rule& rule, size_t clause_idx,
                 if (branch.size() == 1) {
                     auto matches = match_fact_pattern(branch[0], bindings);
                     for (auto& new_bindings : matches) {
-                        match_clauses(rule, clause_idx + 1, new_bindings, patches, priority);
+                        match_clauses(rule, order, step + 1, new_bindings, patches, priority);
                     }
                 }
             }
         }
     }, clause.data);
+}
+
+const std::vector<Tuple>& Evaluator::cached_query(StringId relation, const Tuple& pattern) {
+    CacheKey key{relation.index, pattern};
+    auto it = query_cache_.find(key);
+    if (it != query_cache_.end()) {
+        return it->second;
+    }
+
+    auto results_db = db_.query(relation, pattern);
+    auto results_derived = derived_facts_.query(relation, pattern);
+
+    std::vector<Tuple> merged;
+    merged.reserve(results_db.size() + results_derived.size());
+    merged.insert(merged.end(), std::make_move_iterator(results_db.begin()),
+                                std::make_move_iterator(results_db.end()));
+    merged.insert(merged.end(), std::make_move_iterator(results_derived.begin()),
+                                std::make_move_iterator(results_derived.end()));
+
+    auto [ins, _] = query_cache_.emplace(std::move(key), std::move(merged));
+    return ins->second;
 }
 
 std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
@@ -178,15 +280,8 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
         }
     }
 
-    // Query both databases
-    auto results_db = db_.query(pattern.name, query_tuple);
-    auto results_derived = derived_facts_.query(pattern.name, query_tuple);
-
-    // Merge results
-    std::vector<Tuple> all_results;
-    all_results.reserve(results_db.size() + results_derived.size());
-    all_results.insert(all_results.end(), results_db.begin(), results_db.end());
-    all_results.insert(all_results.end(), results_derived.begin(), results_derived.end());
+    // Query with caching — identical queries across rules return the same result
+    const auto& all_results = cached_query(pattern.name, query_tuple);
 
     // For each matching tuple, create new bindings
     std::vector<Bindings> result;

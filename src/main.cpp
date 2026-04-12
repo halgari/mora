@@ -476,8 +476,25 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
     mora::PatchSet all_patches;
 
+    // Progress callback: print rule counter on TTY
+    bool is_tty = mora::stdout_is_tty();
+    auto rule_start = std::chrono::steady_clock::now();
+    auto eval_progress = [&](size_t current, size_t total, std::string_view name) {
+        auto now = std::chrono::steady_clock::now();
+        auto rule_ms = std::chrono::duration<double, std::milli>(now - rule_start).count();
+        rule_start = now;
+        if (rule_ms > 200) {
+            std::fprintf(stderr, "\r  Rule %zu / %zu took %.0fms: %.*s\n",
+                         current, total, rule_ms,
+                         static_cast<int>(name.size()), name.data());
+        }
+        if (is_tty && (current % 50 == 0 || current == total)) {
+            std::fprintf(stderr, "\r  Evaluating rule %zu / %zu ...", current, total);
+        }
+    };
+
     for (auto& mod : cr.modules) {
-        auto mod_patches = evaluator.evaluate_static(mod);
+        auto mod_patches = evaluator.evaluate_static(mod, eval_progress);
         // Merge by resolving and re-adding
         auto resolved = mod_patches.resolve();
         for (auto& rp : resolved.all_patches_sorted()) {
@@ -486,6 +503,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             }
         }
     }
+    if (is_tty) std::fprintf(stderr, "\r%60s\r", ""); // clear progress line
 
     auto final_resolved = all_patches.resolve();
     progress.finish_phase(
