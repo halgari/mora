@@ -12,7 +12,7 @@ Mora gives you a single language for all three use cases:
 
 **One format instead of three.** Spell distribution, keyword injection, and record patching all live in `.mora` files with the same syntax and the same toolchain.
 
-**Compile-time evaluation.** Mora resolves constant expressions, record lookups, and predicate logic at compile time. The generated DLL does the minimum work at game load — there is no interpreter running at runtime.
+**Compile-time evaluation.** Mora resolves constant expressions, record lookups, and predicate logic at compile time. The generated DLL does the minimum work at game load, with no interpreter running at runtime.
 
 **Typed error messages.** The compiler tells you which rule is wrong, which predicate failed to resolve, and what type it expected. INI parsers are silent about most mistakes.
 
@@ -28,9 +28,9 @@ mora import /path/to/Skyrim/Data
 
 The importer walks the directory tree under the path you provide and looks for:
 
-- Files ending in `_DISTR.ini` — treated as SPID distributor configs
-- Files ending in `_KID.ini` — treated as KID keyword configs
-- Directories named `SkyPatcher` or subdirectories containing a `patches` layout — treated as SkyPatcher configs
+- Files ending in `_DISTR.ini`, treated as SPID distributor configs
+- Files ending in `_KID.ini`, treated as KID keyword configs
+- Directories named `SkyPatcher` or subdirectories containing a `patches` layout, treated as SkyPatcher configs
 
 For each file it finds, the importer prints the equivalent Mora rules to stdout. Redirect to a file to capture them:
 
@@ -38,7 +38,7 @@ For each file it finds, the importer prints the equivalent Mora rules to stdout.
 mora import /path/to/Skyrim/Data > my_patches.mora
 ```
 
-The output is valid Mora source that you can compile immediately, though you should review it before deploying — see [Migration Workflow](#migration-workflow) and [Limitations](#limitations) below.
+The output is valid Mora source that you can compile immediately, though you should review it before deploying. See [Migration Workflow](#migration-workflow) and [Limitations](#limitations) below.
 
 ---
 
@@ -46,13 +46,13 @@ The output is valid Mora source that you can compile immediately, though you sho
 
 SPID distributes spells, perks, items, and other records to NPCs by matching against keywords, factions, race, and similar filters.
 
-**Before — `MyMod_DISTR.ini`:**
+**Before (`MyMod_DISTR.ini`):**
 
 ```ini
 Spell = 0x12345~MyMod.esp | ActorTypeNPC
 ```
 
-**After — Mora equivalent:**
+**After (Mora equivalent):**
 
 ```mora
 distribute_spell(NPC):
@@ -63,7 +63,7 @@ distribute_spell(NPC):
 
 The SPID line reads: "add the spell `0x12345` from `MyMod.esp` to every actor that has the `ActorTypeNPC` keyword." The Mora rule says the same thing explicitly: define a predicate `distribute_spell` that matches any `NPC` actor carrying that keyword, then fire `add_spell`.
 
-The explicit predicate name matters — it becomes the unit of error reporting and the hook point for further composition. If you later want to exclude a specific faction you add one line to the predicate body rather than hunting for the right filter column in the INI.
+The explicit predicate name matters: it becomes the unit of error reporting and the hook point for further composition. If you later want to exclude a specific faction you add one line to the predicate body rather than hunting for the right filter column in the INI.
 
 ---
 
@@ -71,13 +71,13 @@ The explicit predicate name matters — it becomes the unit of error reporting a
 
 KID injects keywords onto records that do not have them in the base game or in the distributing mod.
 
-**Before — `MyMod_KID.ini`:**
+**Before (`MyMod_KID.ini`):**
 
 ```ini
 Keyword = 0xABC~MyMod.esp | WeapMaterialIron
 ```
 
-**After — Mora equivalent:**
+**After (Mora equivalent):**
 
 ```mora
 add_kw(Weapon):
@@ -92,16 +92,16 @@ The KID line reads: "add keyword `0xABC` from `MyMod.esp` to every weapon that a
 
 ## SkyPatcher to Mora
 
-SkyPatcher edits record fields directly — damage values, weight, price, speed, and so on — using a section-based INI format.
+SkyPatcher edits record fields directly (damage values, weight, price, speed, and so on) using a section-based INI format.
 
-**Before — `SkyPatcher/weapon/balance.ini`:**
+**Before (`SkyPatcher/weapon/balance.ini`):**
 
 ```ini
 [Weapon]
 filterByKeyword=WeapMaterialIron:damage=99
 ```
 
-**After — Mora equivalent:**
+**After (Mora equivalent):**
 
 ```mora
 iron_damage(Weapon):
@@ -118,11 +118,11 @@ SkyPatcher encodes the filter and the assignment on the same line, separated by 
 
 1. **Run the importer.** Point `mora import` at your Data folder and redirect the output to a `.mora` file.
 
-2. **Review the output.** Open the generated file and read through each rule. The importer adds a comment above any rule it could not translate fully — look for lines starting with `# WARN:` or `# UNSUPPORTED:`.
+2. **Review the output.** Open the generated file and read through each rule. The importer adds a comment above any rule it could not translate fully. Look for lines starting with `# WARN:` or `# UNSUPPORTED:`.
 
 3. **Save and adjust.** Move the file into your project, rename predicates to match your conventions, and manually fill in any rules the importer left as stubs.
 
-4. **Compile.** Run `mora compile` against your `.mora` file. Fix any errors the compiler reports — type mismatches and unresolved record references are the most common.
+4. **Compile.** Run `mora compile` against your `.mora` file. Fix any errors the compiler reports. Type mismatches and unresolved record references are the most common.
 
 5. **Test with the original patcher disabled.** Disable the SPID/KID/SkyPatcher version of your mod in your load order, enable the compiled Mora DLL, and verify the results in-game. Having both active at the same time will double-apply effects.
 
@@ -134,11 +134,11 @@ The importer handles the common cases well but cannot translate everything autom
 
 **Complex filter combinations.** SPID supports combining multiple filter columns (race AND faction AND keyword, for example) in a single line. The importer generates the Mora equivalent when the combination is straightforward, but deeply nested NOT and OR logic across multiple columns may be emitted as a stub with a `# UNSUPPORTED:` comment for you to complete by hand.
 
-**Regex string filters.** SPID and SkyPatcher allow filtering by name with a regex. Mora does not have a built-in regex predicate — the importer will emit a comment noting what the original pattern was so you can decide whether to approximate it with discrete keyword checks or handle it another way.
+**Regex string filters.** SPID and SkyPatcher allow filtering by name with a regex. Mora does not have a built-in regex predicate. The importer will emit a comment noting what the original pattern was so you can decide whether to approximate it with discrete keyword checks or handle it another way.
 
 **Leveled list manipulation.** Some SPID configurations distribute to leveled lists rather than directly to actors. The importer will flag these with `# UNSUPPORTED: leveled list target` because Mora's distribution model currently operates on actor instances, not list definitions.
 
-**Conditional probability.** SPID supports a chance column that randomly skips distribution. Mora's rule model is deterministic — if the conditions match, the action fires. Probabilistic distribution is not expressible in the current language and will be flagged.
+**Conditional probability.** SPID supports a chance column that randomly skips distribution. Mora's rule model is deterministic: if the conditions match, the action fires. Probabilistic distribution is not expressible in the current language and will be flagged.
 
 **SkyPatcher script calls.** SkyPatcher can invoke Papyrus scripts as a side effect. Mora does not generate Papyrus calls and these entries will be skipped with a warning.
 

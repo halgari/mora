@@ -6,7 +6,7 @@ Annotated real-world `.mora` files. Each example includes the full source, a lin
 
 ## 1. Tag Bandits with a Keyword
 
-This example introduces **derived rules** — rules without effects that name a concept for reuse.
+This example introduces **derived rules**, which are rules without effects that name a concept for reuse.
 
 ```mora
 namespace my_mod.bandits
@@ -24,7 +24,7 @@ tag_bandits(NPC):
 
 ### What it does
 
-`bandit(NPC)` defines a reusable predicate: any NPC that belongs to the `BanditFaction`. This rule has no `=>` effects, so it patches nothing on its own — it just names a concept.
+`bandit(NPC)` defines a reusable predicate: any NPC that belongs to the `BanditFaction`. This rule has no `=>` effects, so it patches nothing on its own. It just names a concept.
 
 `tag_bandits(NPC)` uses `bandit(NPC)` as a clause, exactly like a built-in relation, and applies a keyword to every NPC it matches.
 
@@ -34,7 +34,7 @@ tag_bandits(NPC):
 : Declares the namespace. Every `.mora` file must start with one.
 
 `requires mod("Skyrim.esm")`
-: Guards compilation — Mora will refuse to compile if `Skyrim.esm` is not in the Data directory. Both `:BanditFaction` and `:ActorTypeNPC` live in that plugin.
+: Guards compilation. Mora will refuse to compile if `Skyrim.esm` is not in the Data directory. Both `:BanditFaction` and `:ActorTypeNPC` live in that plugin.
 
 `bandit(NPC):`
 : Head of the derived rule. `NPC` is a logic variable that will be bound to each matching form.
@@ -43,7 +43,7 @@ tag_bandits(NPC):
 : Constrains `NPC` to base NPC records only.
 
 `has_faction(NPC, :BanditFaction)`
-: Further constrains `NPC` to those that belong to the `BanditFaction`. `:BanditFaction` is a form reference — the leading colon means "look this EditorID up in the loaded plugins."
+: Further constrains `NPC` to those that belong to the `BanditFaction`. `:BanditFaction` is a form reference; the leading colon means "look this EditorID up in the loaded plugins."
 
 `tag_bandits(NPC):`
 : Head of the patching rule.
@@ -69,7 +69,7 @@ tag_bandits(NPC):
 ```
 
 !!! tip
-    Derived rules are free at runtime — they are fully inlined during compilation. Define as many as you like. Small, named predicates make rules read like plain English and are trivial to update if the definition ever changes.
+    Derived rules are free at runtime. They are fully inlined during compilation. Define as many as you like. Small, named predicates make rules read like plain English and are trivial to update if the definition ever changes.
 
 ---
 
@@ -140,7 +140,7 @@ Finds every NPC base record and sets its display name to the string `"Nazeem"`. 
 ### Line by line
 
 `npc(NPC)`
-: Matches all NPC base records — no keyword or faction filter, so every NPC in the load order qualifies.
+: Matches all NPC base records with no keyword or faction filter, so every NPC in the load order qualifies.
 
 `=> set_name(NPC, "Nazeem")`
 : Sets the display name. The value is a quoted string literal. Mora stores it as a `BSFixedString` in the compiled DLL; no heap allocation occurs at runtime.
@@ -160,7 +160,7 @@ Finds every NPC base record and sets its display name to the string `"Nazeem"`. 
 ```
 
 !!! tip
-    The DLL grows slightly with each unique string stored. For mods that set hundreds of distinct names, this is still negligible — the compiler deduplicates identical strings automatically.
+    The DLL grows slightly with each unique string stored. For mods that set hundreds of distinct names, this is still negligible; the compiler deduplicates identical strings automatically.
 
 ---
 
@@ -193,7 +193,7 @@ Finds all silver weapons that are **not** greatswords, then adds the `WeapMateri
 : Excludes weapons that also have the greatsword type keyword. The `not` applies to the single clause that immediately follows it. `Weapon` is already bound by the earlier clauses, so negation is safe here.
 
 `=> add_keyword(Weapon, :WeapMaterialDaedric)`
-: Adds the Daedric material keyword to each matched weapon — without removing the silver keyword. A weapon can carry multiple material keywords simultaneously.
+: Adds the Daedric material keyword to each matched weapon without removing the silver keyword. A weapon can carry multiple material keywords simultaneously.
 
 ### Expected output
 
@@ -237,12 +237,12 @@ elite_bandits(NPC):
 
 ### What it does
 
-Defines bandits as in Example 1, then further filters to those with a base level of 20 or higher. Every elite bandit receives a keyword and a flame cloak spell — two effects applied to the same matched form.
+Defines bandits as in Example 1, then further filters to those with a base level of 20 or higher. Every elite bandit receives a keyword and a flame cloak spell, two effects applied to the same matched form.
 
 ### Line by line
 
 `base_level(NPC, Level)`
-: Binds the variable `Level` to each NPC's base level. The clause does not filter by itself — it only makes the value available to the next clause.
+: Binds the variable `Level` to each NPC's base level. The clause does not filter by itself; it only makes the value available to the next clause.
 
 `Level >= 20`
 : Filters: only NPCs where the bound level is 20 or more pass. Comparison operators (`>=`, `<=`, `>`, `<`, `==`, `!=`) never bind variables; they only accept or reject already-bound values.
@@ -251,7 +251,7 @@ Defines bandits as in Example 1, then further filters to those with a base level
 : First effect. Adds the keyword to each matched NPC.
 
 `=> add_spell(NPC, :FlameCloak)`
-: Second effect. Gives each matched NPC the Flame Cloak spell. Multiple `=>` lines all apply to the same `NPC` — they are not alternatives.
+: Second effect. Gives each matched NPC the Flame Cloak spell. Multiple `=>` lines all apply to the same `NPC`; they are not alternatives.
 
 ### Expected output
 
@@ -272,7 +272,7 @@ Defines bandits as in Example 1, then further filters to those with a base level
 
 ---
 
-## 6. Complete Mod — Weapon Rebalance
+## 6. Complete Mod: Weapon Rebalance
 
 A realistic multi-rule file combining derived rules, multiple effects, and negation. This is the kind of `.mora` file you might ship as a balance mod.
 
@@ -304,7 +304,7 @@ steel_rebalance(W):
 
 ### What it does
 
-Defines a base predicate `common_weapon` that excludes staves and Daedric artifacts — weapons that should not be touched by a material balance pass. The two patching rules then each select a material tier and apply both a damage value and a gold value.
+Defines a base predicate `common_weapon` that excludes staves and Daedric artifacts (weapons that should not be touched by a material balance pass). The two patching rules then each select a material tier and apply both a damage value and a gold value.
 
 ### Line by line
 
@@ -318,13 +318,13 @@ Defines a base predicate `common_weapon` that excludes staves and Daedric artifa
 : Excludes unique Daedric artifacts. Daedric artifacts are handcrafted and should not be flattened by a balance pass.
 
 `iron_rebalance(W):`
-: Patching rule for iron-tier weapons. Calling `common_weapon(W)` here expands to all three clauses from the derived rule — the exclusions are inherited automatically.
+: Patching rule for iron-tier weapons. Calling `common_weapon(W)` here expands to all three clauses from the derived rule; the exclusions are inherited automatically.
 
 `=> set_damage(W, 12)` and `=> set_gold_value(W, 15)`
 : Two effects applied in order to the same matched weapon. Both patch the same form; neither depends on the other.
 
 `steel_rebalance(W):`
-: Identical structure to `iron_rebalance` but targets a different material tier and sets higher values. Adding a new tier — say, Orcish — means writing one more rule of the same shape.
+: Identical structure to `iron_rebalance` but targets a different material tier and sets higher values. Adding a new tier (say, Orcish) means writing one more rule of the same shape.
 
 ### Expected output
 
@@ -346,4 +346,4 @@ Defines a base predicate `common_weapon` that excludes staves and Daedric artifa
 
 **Rules do not interact.** `iron_rebalance` and `steel_rebalance` run independently. A weapon with both `WeapMaterialIron` and `WeapMaterialSteel` keywords (unusual but possible from a mod) would receive patches from both rules. If you want mutual exclusion, add a `not has_keyword` guard.
 
-**Multiple effects per rule.** Listing several `=>` lines in one rule is more efficient than writing separate single-effect rules for the same condition — Mora evaluates the conditions once and applies all effects to each matched form.
+**Multiple effects per rule.** Listing several `=>` lines in one rule is more efficient than writing separate single-effect rules for the same condition. Mora evaluates the conditions once and applies all effects to each matched form.

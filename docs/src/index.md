@@ -31,14 +31,14 @@ Drop the DLL in `Data/SKSE/Plugins/` and launch the game. That's it.
 
 ## Why Mora?
 
-- **Fast** — patches apply in under 2ms, not minutes
-- **Declarative** — say what you want, not how to do it
-- **Compiled** — rules are evaluated once, results baked into a native DLL
-- **Unified** — one language replaces SPID, KID, SkyPatcher, and custom SKSE plugins
+- **Fast**: patches apply in under 2ms, not minutes
+- **Declarative**: say what you want, not how to do it
+- **Compiled**: rules are evaluated once, results baked into a native DLL
+- **Unified**: one language replaces SPID, KID, SkyPatcher, and custom SKSE plugins
 
 ## Get Started
 
-- [Getting Started](getting-started.md) — install Mora and write your first rule
-- [How Mora Works](how-mora-works.md) — understand the design and why it's fast
-- [Language Guide](language-guide.md) — learn the syntax
-- [Examples](examples.md) — real-world `.mora` files
+- [Getting Started](getting-started.md): install Mora and write your first rule
+- [How Mora Works](how-mora-works.md): understand the design and why it's fast
+- [Language Guide](language-guide.md): learn the syntax
+- [Examples](examples.md): real-world `.mora` files

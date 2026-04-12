@@ -1,6 +1,6 @@
 # Language Guide
 
-This guide walks you through writing `.mora` files — from the basic structure of a file all the way to composing reusable rules and applying effects. Each concept builds on the ones before it.
+This guide walks you through writing `.mora` files, from the basic structure of a file all the way to composing reusable rules and applying effects. Each concept builds on the ones before it.
 
 ---
 
@@ -15,7 +15,7 @@ requires mod("Skyrim.esm")
 requires mod("Dawnguard.esm")
 ```
 
-The **namespace** gives your rules a unique identity so they don't collide with rules from other mods. Use a dotted name based on your mod and the file's purpose — for example `my_mod.weapons`, `my_mod.npcs`, or `my_mod.leveled_lists`.
+The **namespace** gives your rules a unique identity so they don't collide with rules from other mods. Use a dotted name based on your mod and the file's purpose, for example `my_mod.weapons`, `my_mod.npcs`, or `my_mod.leveled_lists`.
 
 The **requires** directives tell Mora which plugins your rules depend on. Mora will refuse to compile if any required plugin is missing from the load order, which prevents silent failures.
 
@@ -29,8 +29,8 @@ A **rule** is the core building block of Mora. A rule says: *"find every form ma
 
 A rule has two parts:
 
-- The **head** — the rule's name and its primary variable, written on its own line ending with a colon.
-- The **body** — indented lines beneath the head, each describing a condition the form must satisfy.
+- The **head**: the rule's name and its primary variable, written on its own line ending with a colon.
+- The **body**: indented lines beneath the head, each describing a condition the form must satisfy.
 
 ```mora
 my_rule(NPC):
@@ -42,7 +42,7 @@ This rule is named `my_rule`. It matches every NPC that has the `Bandit` keyword
 
 The indentation is significant, just like Python. Each line of the body must be indented by at least one level relative to the head.
 
-> **Common mistake:** Forgetting the colon at the end of the rule head. `my_rule(NPC):` — don't leave off the `:`.
+> **Common mistake:** Forgetting the colon at the end of the rule head. Write `my_rule(NPC):` and don't leave off the `:`.
 
 ---
 
@@ -61,7 +61,7 @@ Here, `Weapon` first binds to each weapon record in turn. `W` then binds to that
 
 Variables are local to the rule they appear in. `Weapon` in one rule has nothing to do with `Weapon` in another.
 
-> **Tip:** Use descriptive variable names — `NPC`, `Weapon`, `Level`, `Faction` — to make rules read like plain English.
+> **Tip:** Use descriptive variable names like `NPC`, `Weapon`, `Level`, and `Faction` to make rules read like plain English.
 
 ---
 
@@ -73,7 +73,7 @@ A **form reference** written as `:EditorID` refers to a specific record from you
 has_keyword(Weapon, :WeapMaterialIron)
 ```
 
-This matches weapons that have the `WeapMaterialIron` keyword — the same keyword the Creation Kit uses to tag iron weapons.
+This matches weapons that have the `WeapMaterialIron` keyword, the same keyword the Creation Kit uses to tag iron weapons.
 
 Form references can refer to keywords, factions, spells, perks, NPCs, weapons, or any other record type. If you mistype an Editor ID, Mora will report an error at compile time and suggest similar names.
 
@@ -81,7 +81,7 @@ Form references can refer to keywords, factions, spells, perks, NPCs, weapons, o
 
 ---
 
-## Clauses — Querying Facts
+## Clauses: Querying Facts
 
 The lines inside a rule body are called **clauses**. Each clause is a query against the plugin data. A form must satisfy every clause in the body to be matched by the rule.
 
@@ -98,7 +98,7 @@ Mora provides built-in relations for the most common queries:
 | `weight(Form, W)` | Form's weight (binds `W` to a number) |
 | `gold_value(Form, Val)` | Form's gold value (binds `Val` to a number) |
 
-Multiple clauses in the same rule body are implicitly combined with AND — a form must satisfy all of them.
+Multiple clauses in the same rule body are implicitly combined with AND. A form must satisfy all of them.
 
 ```mora
 armed_bandits(NPC):
@@ -126,7 +126,7 @@ This matches every weapon that does **not** have the `DaedricArtifact` keyword.
 
 Negation always applies to the single clause that immediately follows it. The form must still match every other clause in the rule.
 
-> **Tip:** Negation is useful for exclusions — "all weapons except Daedric ones", "all NPCs except essential characters", etc.
+> **Tip:** Negation is useful for exclusions: "all weapons except Daedric ones", "all NPCs except essential characters", etc.
 
 > **Common mistake:** Putting `not` before a clause that binds a variable for the first time. If `W` has never been bound before `not weight(Weapon, W)`, the rule won't work as expected. Use negation on clauses whose variables are already bound by earlier clauses.
 
@@ -136,7 +136,7 @@ Negation always applies to the single clause that immediately follows it. The fo
 
 Use comparison operators to filter based on numeric values. Mora supports `>=`, `<=`, `>`, `<`, `==`, and `!=`.
 
-The variable on the left must already be bound by an earlier clause — comparisons don't bind variables, they just filter.
+The variable on the left must already be bound by an earlier clause. Comparisons don't bind variables; they just filter.
 
 ```mora
 elite_bandits(NPC):
@@ -148,16 +148,16 @@ elite_bandits(NPC):
 
 Breaking this down step by step:
 
-1. `npc(NPC)` — iterate over every NPC.
-2. `has_faction(NPC, :BanditFaction)` — keep only those in the Bandit faction.
-3. `base_level(NPC, Level)` — bind `Level` to each NPC's base level.
-4. `Level >= 20` — keep only NPCs where that level is 20 or more.
+1. `npc(NPC)`: iterate over every NPC.
+2. `has_faction(NPC, :BanditFaction)`: keep only those in the Bandit faction.
+3. `base_level(NPC, Level)`: bind `Level` to each NPC's base level.
+4. `Level >= 20`: keep only NPCs where that level is 20 or more.
 
 ---
 
 ## Disjunction (or)
 
-By default, every clause in a rule body must match (AND). The `or:` keyword lets you express alternatives — the form must match one of the alternatives, but not necessarily all of them.
+By default, every clause in a rule body must match (AND). The `or:` keyword lets you express alternatives. The form must match one of the alternatives, but not necessarily all of them.
 
 ```mora
 valuable_items(Item):
@@ -172,7 +172,7 @@ This matches any item that is either a weapon or armor, and has a gold value of 
 
 The `or:` block can contain any number of alternative clauses, one per line, each indented beneath it. Clauses outside the `or:` block apply to all alternatives as usual.
 
-> **Tip:** Think of `or:` like a fork — the rule tries each branch and accepts a form if any branch succeeds. Everything before and after the `or:` block still applies unconditionally.
+> **Tip:** Think of `or:` like a fork. The rule tries each branch and accepts a form if any branch succeeds. Everything before and after the `or:` block still applies unconditionally.
 
 ---
 
@@ -188,7 +188,7 @@ iron_boost(Weapon):
     => add_keyword(Weapon, :WeapMaterialDaedric)
 ```
 
-Each `=>` line is an **effect** — an action applied to every form that matched the rule's conditions. A rule can have multiple effects; they all apply to the same matched form.
+Each `=>` line is an **effect**, an action applied to every form that matched the rule's conditions. A rule can have multiple effects; they all apply to the same matched form.
 
 Available effects:
 
@@ -212,7 +212,7 @@ Available effects:
 
 ## Derived Rules
 
-A rule without any `=>` effects doesn't patch anything — instead, it creates a **derived rule** (sometimes called a predicate). Derived rules let you name a concept once and reuse it in other rules.
+A rule without any `=>` effects doesn't patch anything. Instead, it creates a **derived rule** (sometimes called a predicate). Derived rules let you name a concept once and reuse it in other rules.
 
 ```mora
 bandit(NPC):
@@ -274,7 +274,7 @@ iron_weapons(Weapon):  # inline comment on the rule head
     => set_damage(Weapon, 99)
 ```
 
-Use comments to explain the intent of your rules — especially when the conditions are non-obvious. Future you (and other mod authors building on your work) will thank present you.
+Use comments to explain the intent of your rules, especially when the conditions are non-obvious. Future you (and other mod authors building on your work) will thank present you.
 
 ---
 

@@ -16,9 +16,9 @@ This page is a comprehensive reference for all built-in types, relations, and ef
 | `KeywordID` | Keyword record | `:WeapMaterialIron` |
 | `FactionID` | Faction record | `:BanditFaction` |
 | `RaceID` | Race record | `:NordRace` |
-| `LocationID` | Location record | — |
-| `CellID` | Cell record | — |
-| `QuestID` | Quest record | — |
+| `LocationID` | Location record | |
+| `CellID` | Cell record | |
+| `QuestID` | Quest record | |
 | `String` | Text value | `"Nazeem"` |
 | `Int` | Integer | `42` |
 | `Float` | Decimal | `9.5` |
@@ -72,14 +72,14 @@ Relationship relations describe structural connections between records.
 | Relation | Signature | Description |
 |----------|-----------|-------------|
 | `template_of` | `(FormID, FormID)` | NPC template relationship |
-| `leveled_entry` | `(FormID, FormID, Int)` | Leveled list entry — list, item, minimum level |
+| `leveled_entry` | `(FormID, FormID, Int)` | Leveled list entry: list, item, minimum level |
 | `outfit_has` | `(FormID, FormID)` | Outfit contains item |
 
 ---
 
 ## Instance Relations
 
-Instance relations reflect the **runtime state** of the game world. They are only available in dynamic rules — rules that are evaluated at runtime rather than compiled into a static patch.
+Instance relations reflect the **runtime state** of the game world. They are only available in dynamic rules, which are evaluated at runtime rather than compiled into a static patch.
 
 > **Note:** Using any instance relation makes a rule dynamic. Dynamic rules cannot be frozen at compile time because their truth value depends on live game state (the player's level, location, active quests, etc.) rather than static load order data.
 

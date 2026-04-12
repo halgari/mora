@@ -28,7 +28,7 @@ These options are accepted by all commands.
 
 ### mora compile
 
-Compiles one or more `.mora` files to a native SKSE DLL. This is the primary command — it runs the full pipeline: parsing, type checking, plugin loading, Datalog evaluation, code generation, and linking.
+Compiles one or more `.mora` files to a native SKSE DLL. This is the primary command. It runs the full pipeline: parsing, type checking, plugin loading, Datalog evaluation, code generation, and linking.
 
 ```bash
 mora compile my_rules.mora --data-dir /path/to/Skyrim/Data
@@ -38,7 +38,7 @@ mora compile my_rules.mora --data-dir /path/to/Skyrim/Data --output /path/to/out
 **Options**
 
 `--data-dir DIR`
-: Path to the Skyrim `Data/` directory. Mora loads `.esm` and `.esp` files from this location to resolve form references and evaluate rules against real plugin data. Required for a successful compilation — without it, form lookups cannot be resolved.
+: Path to the Skyrim `Data/` directory. Mora loads `.esm` and `.esp` files from this location to resolve form references and evaluate rules against real plugin data. Required for a successful compilation; without it, form lookups cannot be resolved.
 
 `--output DIR`
 : Directory where the compiled DLL is written. Defaults to `MoraCache/` in the current working directory.
@@ -127,7 +127,7 @@ If there are errors:
 
 ```
 ✗ Type checking 1 rules
-  my_rules.mora:8: set_damage expects (Weapon, Int) — got (Armor, Int)
+  my_rules.mora:8: set_damage expects (Weapon, Int), got (Armor, Int)
 ```
 
 !!! tip
@@ -147,7 +147,7 @@ mora inspect my_rules.mora --data-dir /path/to/Skyrim/Data --conflicts
 **Options**
 
 `--data-dir DIR`
-: Path to the Skyrim `Data/` directory. Required — inspect evaluates rules against real plugin data.
+: Path to the Skyrim `Data/` directory. Required; inspect evaluates rules against real plugin data.
 
 `--conflicts`
 : Show only forms where two or more rules emit contradictory effects on the same field. Hides all non-conflicting patches.
@@ -161,7 +161,7 @@ mora inspect my_rules.mora --data-dir /path/to/Skyrim/Data --conflicts
 **Example output (default)**
 
 ```
-Patch set — 200 patches across 1 rule
+Patch set: 200 patches across 1 rule
 
 [my_mod.balance] iron_weapons
   IronSword         set_damage(99)
@@ -173,7 +173,7 @@ Patch set — 200 patches across 1 rule
 **Example output (--conflicts)**
 
 ```
-Conflicts — 2 forms with contradictory patches
+Conflicts: 2 forms with contradictory patches
 
   IronSword
     my_mod.balance::iron_weapons   set_damage(99)
@@ -229,7 +229,7 @@ Project overview
 
 ### mora import
 
-Scans a directory for SPID, KID, and SkyPatcher INI files and prints them as equivalent Mora rules. Nothing is written to disk — output is printed to stdout. Use this as a starting point when migrating an existing INI-based setup to Mora.
+Scans a directory for SPID, KID, and SkyPatcher INI files and prints them as equivalent Mora rules. Nothing is written to disk; output is printed to stdout. Use this as a starting point when migrating an existing INI-based setup to Mora.
 
 ```bash
 mora import /path/to/Skyrim/Data
@@ -273,4 +273,4 @@ armorkeywords_0(Armor):
 ```
 
 !!! tip
-    The imported rules are a mechanical translation. Review them before use — some SPID/KID patterns have runtime conditions (level checks, chance rolls) that Mora cannot yet express, and those lines will be flagged with a comment.
+    The imported rules are a mechanical translation. Review them before use. Some SPID/KID patterns have runtime conditions (level checks, chance rolls) that Mora cannot yet express, and those lines will be flagged with a comment.

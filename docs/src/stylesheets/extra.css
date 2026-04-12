@@ -1,6 +1,6 @@
 /* Dark Scholar theme for Mora docs */
 
-@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
 
 :root {
   --md-primary-fg-color: #58a691;
@@ -21,7 +21,7 @@
 .md-typeset h2,
 .md-typeset h3,
 .md-typeset h4 {
-  font-family: 'MedievalSharp', serif;
+  font-family: 'Cinzel', serif;
   color: #c9d1d9;
 }
 
@@ -31,7 +31,7 @@
 }
 
 .md-header__title {
-  font-family: 'MedievalSharp', serif;
+  font-family: 'Cinzel', serif;
   letter-spacing: 2px;
 }
 
