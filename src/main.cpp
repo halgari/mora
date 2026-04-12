@@ -23,6 +23,8 @@
 #include "mora/import/mora_printer.h"
 #include "mora/import/ini_facts.h"
 #include "mora/import/ini_distribution_rules.h"
+#include "mora/eval/pipeline_evaluator.h"
+#include "mora/data/chunk_pool.h"
 
 #include <cctype>
 #include <chrono>
@@ -576,32 +578,128 @@ static int cmd_compile(const std::string& target_path, const std::string& output
                         ini_stats.unresolved_editor_ids);
         }
 
-        // Add generic distribution rules
-        auto ini_mod = mora::build_ini_distribution_rules(cr.pool);
-        cr.modules.push_back(std::move(ini_mod));
+        // (Old Datalog distribution rules no longer added — columnar path handles them)
     }
 
     mora::PatchSet all_patches;
 
-    // Progress callback: print rule counter on TTY
-    bool is_tty = mora::stdout_is_tty();
-    auto eval_progress = [&](size_t current, size_t total, std::string_view name) {
-        if (is_tty) {
-            std::fprintf(stderr, "\r  Evaluating rule %zu / %zu ...%60s", current, total, "");
-        }
-    };
+    // ── Columnar evaluation for INI distributions (fast path) ──
+    if (next_rule_id > 1) {
+        mora::ChunkPool chunk_pool;
+        mora::ColumnarFactStore col_store(chunk_pool);
 
-    for (auto& mod : cr.modules) {
-        auto mod_patches = evaluator.evaluate_static(mod, eval_progress);
-        // Merge by resolving and re-adding
-        auto resolved = mod_patches.resolve();
-        for (auto& rp : resolved.all_patches_sorted()) {
-            for (auto& fp : rp.fields) {
-                all_patches.add_patch(rp.target_formid, fp.field, fp.op, fp.value, fp.source_mod, fp.priority);
+        // Copy ESP relations into columnar format
+        auto copy_relation = [&](const char* name, std::vector<mora::ColType> types) {
+            auto rel_id = cr.pool.intern(name);
+            auto& old_rel = db.get_relation(rel_id);
+            if (old_rel.empty()) return;
+            auto& col_rel = col_store.get_or_create(rel_id, types);
+            for (auto& tuple : old_rel) {
+                uint64_t vals[8];
+                for (size_t i = 0; i < tuple.size() && i < 8; i++) {
+                    switch (tuple[i].kind()) {
+                        case mora::Value::Kind::FormID: vals[i] = tuple[i].as_formid(); break;
+                        case mora::Value::Kind::Int:    vals[i] = static_cast<uint64_t>(tuple[i].as_int()); break;
+                        case mora::Value::Kind::String: vals[i] = tuple[i].as_string().index; break;
+                        default: vals[i] = 0; break;
+                    }
+                }
+                col_rel.append_row(vals);
+            }
+        };
+
+        copy_relation("npc", {mora::ColType::U32});
+        copy_relation("weapon", {mora::ColType::U32});
+        copy_relation("armor", {mora::ColType::U32});
+        copy_relation("ammo", {mora::ColType::U32});
+        copy_relation("potion", {mora::ColType::U32});
+        copy_relation("book", {mora::ColType::U32});
+        copy_relation("spell", {mora::ColType::U32});
+        copy_relation("misc_item", {mora::ColType::U32});
+        copy_relation("magic_effect", {mora::ColType::U32});
+        copy_relation("ingredient", {mora::ColType::U32});
+        copy_relation("scroll", {mora::ColType::U32});
+        copy_relation("soul_gem", {mora::ColType::U32});
+        copy_relation("has_keyword", {mora::ColType::U32, mora::ColType::U32});
+        copy_relation("race_of", {mora::ColType::U32, mora::ColType::U32});
+        copy_relation("has_faction", {mora::ColType::U32, mora::ColType::U32});
+
+        // Expand filter lists into flat columnar relations
+        auto expand_filters = [&](const char* filter_rel_name,
+                                   const char* kw_out_name,
+                                   const char* form_out_name,
+                                   const char* none_out_name) {
+            auto filter_id = cr.pool.intern(filter_rel_name);
+            auto& filter_tuples = db.get_relation(filter_id);
+            auto keyword_sid = cr.pool.intern("keyword");
+            auto none_sid = cr.pool.intern("none");
+
+            auto& kw_out = col_store.get_or_create(cr.pool.intern(kw_out_name),
+                                                     {mora::ColType::U32, mora::ColType::U32});
+            auto& form_out = col_store.get_or_create(cr.pool.intern(form_out_name),
+                                                       {mora::ColType::U32, mora::ColType::U32});
+            auto& none_out = col_store.get_or_create(cr.pool.intern(none_out_name),
+                                                       {mora::ColType::U32});
+
+            for (auto& tuple : filter_tuples) {
+                uint32_t rule_id = static_cast<uint32_t>(tuple[0].as_int());
+                auto filter_kind = tuple[1].as_string();
+
+                if (filter_kind == none_sid) {
+                    uint64_t v = rule_id;
+                    none_out.append_row(&v);
+                } else if (tuple.size() > 2 && tuple[2].kind() == mora::Value::Kind::List) {
+                    auto& list = tuple[2].as_list();
+                    bool is_keyword = (filter_kind == keyword_sid);
+                    auto& target = is_keyword ? kw_out : form_out;
+                    for (auto& item : list) {
+                        if (item.kind() == mora::Value::Kind::FormID) {
+                            uint64_t vals[2] = {rule_id, item.as_formid()};
+                            target.append_row(vals);
+                        }
+                    }
+                }
+            }
+        };
+
+        expand_filters("spid_filter", "spid_kw_filter", "spid_form_filter", "spid_no_filter");
+        expand_filters("kid_filter", "kid_kw_filter", "kid_form_filter", "kid_no_filter");
+
+        // Copy distribution relations
+        copy_relation("spid_dist", {mora::ColType::U32, mora::ColType::U32, mora::ColType::U32});
+        copy_relation("kid_dist", {mora::ColType::U32, mora::ColType::U32, mora::ColType::U32});
+
+        col_store.build_all_indexes();
+
+        progress.start_phase("Evaluating (columnar)");
+        mora::evaluate_distributions_columnar(col_store, cr.pool, all_patches);
+        auto col_resolved = all_patches.resolve();
+        progress.finish_phase(
+            std::to_string(col_resolved.patch_count()) + " patches generated", "done");
+    }
+
+    // ── Datalog evaluation for .mora file rules (if any) ──
+    bool is_tty = mora::stdout_is_tty();
+    if (!cr.modules.empty()) {
+        progress.start_phase("Evaluating (.mora rules)");
+        auto eval_progress = [&](size_t current, size_t total, std::string_view name) {
+            if (is_tty) {
+                std::fprintf(stderr, "\r  Evaluating rule %zu / %zu ...%60s", current, total, "");
+            }
+        };
+
+        for (auto& mod : cr.modules) {
+            auto mod_patches = evaluator.evaluate_static(mod, eval_progress);
+            auto resolved = mod_patches.resolve();
+            for (auto& rp : resolved.all_patches_sorted()) {
+                for (auto& fp : rp.fields) {
+                    all_patches.add_patch(rp.target_formid, fp.field, fp.op, fp.value, fp.source_mod, fp.priority);
+                }
             }
         }
+        if (is_tty) std::fprintf(stderr, "\r%60s\r", ""); // clear progress line
+        progress.finish_phase("done", "done");
     }
-    if (is_tty) std::fprintf(stderr, "\r%60s\r", ""); // clear progress line
 
     auto final_resolved = all_patches.resolve();
     progress.finish_phase(
