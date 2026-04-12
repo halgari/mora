@@ -137,14 +137,68 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
 
     // Emit patch count as a global constant for runtime introspection (Phase 2).
     auto* i32_ty = llvm::Type::getInt32Ty(ctx_);
-    auto sorted_preview = patches.all_patches_sorted();
+    auto sorted = patches.all_patches_sorted();
     uint32_t total_patches = 0;
-    for (const auto& rp : sorted_preview) total_patches += rp.fields.size();
+    for (const auto& rp : sorted) total_patches += rp.fields.size();
     new llvm::GlobalVariable(
         mod_, i32_ty, true, llvm::GlobalValue::ExternalLinkage,
         llvm::ConstantInt::get(i32_ty, total_patches), "mora_patch_count");
 
-    // void apply_all_patches(void* skyrim_base)
+    // Flatten into a list of (ResolvedPatch*, FieldPatch*) pairs
+    struct PatchEntry { const ResolvedPatch* rp; const FieldPatch* fp; };
+    std::vector<PatchEntry> all_entries;
+    all_entries.reserve(total_patches);
+    for (const auto& rp : sorted) {
+        for (const auto& fp : rp.fields) {
+            all_entries.push_back({&rp, &fp});
+        }
+    }
+
+    // Split into chunks of ~1000 patches.
+    // Each chunk is a separate internal function: _mora_chunk_N(skyrim_base, map_ptr)
+    // LLVM's backend is super-linear on basic block size, so 57 small functions
+    // compile orders of magnitude faster than 1 giant function.
+    constexpr size_t kChunkSize = 1000;
+    auto* chunk_fn_ty = llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false);
+
+    std::vector<llvm::Function*> chunk_fns;
+    for (size_t start = 0; start < all_entries.size(); start += kChunkSize) {
+        size_t end = std::min(start + kChunkSize, all_entries.size());
+        std::string name = "_mora_chunk_" + std::to_string(chunk_fns.size());
+
+        auto* chunk_fn = llvm::Function::Create(chunk_fn_ty,
+            llvm::GlobalValue::InternalLinkage, name, mod_);
+        chunk_fn->setDoesNotThrow();
+
+        auto* bb = llvm::BasicBlock::Create(ctx_, "entry", chunk_fn);
+        llvm::IRBuilder<> cb(bb);
+
+        llvm::Value* chunk_skyrim_base = chunk_fn->getArg(0);
+        llvm::Value* chunk_map_ptr = chunk_fn->getArg(1);
+        (void)chunk_skyrim_base; // used implicitly via emit_patch → emit_memmgr_call
+
+        for (size_t i = start; i < end; i++) {
+            auto& [rp, fp] = all_entries[i];
+            if (fp->field == FieldId::Name && fp->op == FieldOp::Set) {
+                if (fp->value.kind() == Value::Kind::String) {
+                    auto str = pool.get(fp->value.as_string());
+                    std::string s(str);
+                    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+                        s = s.substr(1, s.size() - 2);
+                    }
+                    emit_name_write(cb, chunk_map_ptr, rp->target_formid, s.c_str());
+                }
+                continue;
+            }
+            emit_patch(cb, chunk_map_ptr, *rp, *fp);
+        }
+
+        cb.CreateRetVoid();
+        chunk_fns.push_back(chunk_fn);
+    }
+
+    // Entry function: apply_all_patches(skyrim_base)
+    // Loads map_ptr once, calls each chunk.
     auto* fn_ty = llvm::FunctionType::get(void_ty, {ptr_ty}, false);
     auto* func = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
                                          "apply_all_patches", mod_);
@@ -155,29 +209,16 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
 
     llvm::Value* skyrim_base = func->getArg(0);
 
-    // Load the form map pointer: *(skyrim_base + map_offset)
+    // Load the form map pointer once
     uint64_t map_offset = resolve_ae_or_se(addrlib_, kFormMapAddrLibId_AE, kFormMapAddrLibId_SE);
-
     auto* i8_ty = llvm::Type::getInt8Ty(ctx_);
     auto* offset_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), map_offset);
     auto* map_addr = builder.CreateGEP(i8_ty, skyrim_base, offset_val, "map_addr");
     auto* map_ptr = builder.CreateLoad(ptr_ty, map_addr, "map_ptr");
 
-    auto sorted = patches.all_patches_sorted();
-    for (const auto& rp : sorted) {
-        for (const auto& fp : rp.fields) {
-            // Name writes need the string pool to resolve StringId → const char*.
-            if (fp.field == FieldId::Name && fp.op == FieldOp::Set) {
-                auto str = pool.get(fp.value.as_string());
-                std::string s(str);
-                if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
-                    s = s.substr(1, s.size() - 2);
-                }
-                emit_name_write(builder, map_ptr, rp.target_formid, s.c_str());
-                continue;
-            }
-            emit_patch(builder, map_ptr, rp, fp);
-        }
+    // Call each chunk
+    for (auto* chunk_fn : chunk_fns) {
+        builder.CreateCall(chunk_fn, {skyrim_base, map_ptr});
     }
 
     builder.CreateRetVoid();
