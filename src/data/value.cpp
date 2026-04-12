@@ -1,6 +1,7 @@
 #include "mora/data/value.h"
 #include <cassert>
 #include <functional>
+#include <memory>
 
 namespace mora {
 
@@ -49,6 +50,13 @@ Value Value::make_bool(bool b) {
     return v;
 }
 
+Value Value::make_list(std::vector<Value> items) {
+    Value v;
+    v.kind_ = Kind::List;
+    v.list_ = std::make_shared<std::vector<Value>>(std::move(items));
+    return v;
+}
+
 // ---------------------------------------------------------------------------
 // Value accessors
 // ---------------------------------------------------------------------------
@@ -78,6 +86,19 @@ bool Value::as_bool() const {
     return data_.boolean;
 }
 
+const std::vector<Value>& Value::as_list() const {
+    assert(kind_ == Kind::List);
+    return *list_;
+}
+
+bool Value::list_contains(const Value& needle) const {
+    assert(kind_ == Kind::List);
+    for (const Value& v : *list_) {
+        if (v == needle) return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Value equality and matching
 // ---------------------------------------------------------------------------
@@ -91,6 +112,7 @@ bool Value::operator==(const Value& other) const {
         case Kind::Float:  return data_.floating      == other.data_.floating;
         case Kind::String: return data_.string_index  == other.data_.string_index;
         case Kind::Bool:   return data_.boolean       == other.data_.boolean;
+        case Kind::List:   return *list_              == *other.list_;
     }
     return false;
 }
@@ -111,6 +133,15 @@ uint64_t Value::hash() const {
         case Kind::Float:  return std::hash<double>{}(data_.floating);
         case Kind::String: return std::hash<uint32_t>{}(data_.string_index);
         case Kind::Bool:   return std::hash<bool>{}(data_.boolean);
+        case Kind::List: {
+            // FNV-style mixing of element hashes
+            uint64_t h = 14695981039346656037ULL; // FNV offset basis
+            for (const Value& v : *list_) {
+                h ^= v.hash();
+                h *= 1099511628211ULL; // FNV prime
+            }
+            return h;
+        }
         default:           return 0;
     }
 }
