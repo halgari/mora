@@ -140,29 +140,54 @@ static fs::path find_address_library(const std::string& data_dir) {
 
 static std::string field_name(mora::FieldId id) {
     switch (id) {
-        case mora::FieldId::Name:        return "Name";
-        case mora::FieldId::Damage:      return "Damage";
-        case mora::FieldId::ArmorRating: return "ArmorRating";
-        case mora::FieldId::GoldValue:   return "GoldValue";
-        case mora::FieldId::Weight:      return "Weight";
-        case mora::FieldId::Keywords:    return "Keywords";
-        case mora::FieldId::Factions:    return "Factions";
-        case mora::FieldId::Perks:       return "Perks";
-        case mora::FieldId::Spells:      return "Spells";
-        case mora::FieldId::Items:       return "Items";
-        case mora::FieldId::Level:       return "Level";
-        case mora::FieldId::Race:        return "Race";
-        case mora::FieldId::EditorId:    return "EditorId";
-        default:                         return "Field(" + std::to_string(static_cast<uint16_t>(id)) + ")";
+        case mora::FieldId::Name:            return "Name";
+        case mora::FieldId::Damage:          return "Damage";
+        case mora::FieldId::ArmorRating:     return "ArmorRating";
+        case mora::FieldId::GoldValue:       return "GoldValue";
+        case mora::FieldId::Weight:          return "Weight";
+        case mora::FieldId::Keywords:        return "Keywords";
+        case mora::FieldId::Factions:        return "Factions";
+        case mora::FieldId::Perks:           return "Perks";
+        case mora::FieldId::Spells:          return "Spells";
+        case mora::FieldId::Items:           return "Items";
+        case mora::FieldId::Level:           return "Level";
+        case mora::FieldId::Race:            return "Race";
+        case mora::FieldId::EditorId:        return "EditorId";
+        case mora::FieldId::Shouts:          return "Shouts";
+        case mora::FieldId::LevSpells:       return "LevSpells";
+        case mora::FieldId::Speed:           return "Speed";
+        case mora::FieldId::Reach:           return "Reach";
+        case mora::FieldId::Stagger:         return "Stagger";
+        case mora::FieldId::RangeMin:        return "RangeMin";
+        case mora::FieldId::RangeMax:        return "RangeMax";
+        case mora::FieldId::CritDamage:      return "CritDamage";
+        case mora::FieldId::CritPercent:     return "CritPercent";
+        case mora::FieldId::Health:          return "Health";
+        case mora::FieldId::CalcLevelMin:    return "CalcLevelMin";
+        case mora::FieldId::CalcLevelMax:    return "CalcLevelMax";
+        case mora::FieldId::SpeedMult:       return "SpeedMult";
+        case mora::FieldId::RaceForm:        return "Race(form)";
+        case mora::FieldId::ClassForm:       return "Class";
+        case mora::FieldId::SkinForm:        return "Skin";
+        case mora::FieldId::OutfitForm:      return "Outfit";
+        case mora::FieldId::EnchantmentForm: return "Enchantment";
+        case mora::FieldId::VoiceTypeForm:   return "VoiceType";
+        case mora::FieldId::LeveledEntries:  return "LeveledEntries";
+        case mora::FieldId::ClearAll:        return "ClearAll";
+        case mora::FieldId::AutoCalcStats:   return "AutoCalcStats";
+        case mora::FieldId::Essential:       return "Essential";
+        case mora::FieldId::Protected:       return "Protected";
+        default:                             return fmt::format("Field({})", static_cast<uint16_t>(id));
     }
 }
 
 static std::string op_prefix(mora::FieldOp op) {
     switch (op) {
-        case mora::FieldOp::Set:    return "set";
-        case mora::FieldOp::Add:    return "+";
-        case mora::FieldOp::Remove: return "-";
-        default:                    return "?";
+        case mora::FieldOp::Set:      return "set";
+        case mora::FieldOp::Add:      return "+";
+        case mora::FieldOp::Remove:   return "-";
+        case mora::FieldOp::Multiply: return "*";
+        default:                      return "?";
     }
 }
 
@@ -737,6 +762,45 @@ static int codegen_and_link(
     return 0;
 }
 
+// Scan for SkyPatcher INI directories and parse into a Module
+static mora::Module load_skypatcher_rules(
+    const std::string& target_path, mora::StringPool& pool,
+    mora::DiagBag& diags, mora::Output& out,
+    const mora::FormIdResolver* resolver)
+{
+    mora::Module mod;
+    mod.filename = "<imported SkyPatcher rules>";
+
+    // Same directory scanning logic as cmd_import
+    fs::path skypatcher_dir;
+    for (auto& candidate : {
+        fs::path(target_path) / "SKSE" / "Plugins" / "SkyPatcher",
+        fs::path(target_path) / "SkyPatcher",
+        fs::path(target_path),
+    }) {
+        if (!fs::exists(candidate) || !fs::is_directory(candidate)) continue;
+        for (auto& sub : fs::directory_iterator(candidate)) {
+            auto name = sub.path().filename().string();
+            if (name == "weapon" || name == "armor" || name == "npc" ||
+                name == "leveledList" || name == "magicEffect") {
+                skypatcher_dir = candidate;
+                break;
+            }
+        }
+        if (!skypatcher_dir.empty()) break;
+    }
+
+    if (skypatcher_dir.empty()) return mod;
+
+    out.phase_start("Loading SkyPatcher configs");
+    mora::SkyPatcherParser parser(pool, diags, resolver);
+    auto rules = parser.parse_directory(skypatcher_dir.string());
+    for (auto& r : rules) mod.rules.push_back(std::move(r));
+    out.phase_done(fmt::format("{} SkyPatcher rules from {}", mod.rules.size(), skypatcher_dir.string()));
+
+    return mod;
+}
+
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir,
                         mora::Output& out, bool use_color) {
@@ -781,6 +845,20 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     uint32_t next_rule_id = load_ini_distributions(
         target_path, cr, db, out, editor_id_map, loaded_plugins);
+
+    // Load SkyPatcher INI configs as Datalog rules
+    {
+        mora::FormIdResolver resolver;
+        if (!editor_id_map.empty()) {
+            resolver.build_from_editor_ids(editor_id_map);
+        }
+        const mora::FormIdResolver* resolver_ptr = resolver.has_data() ? &resolver : nullptr;
+        auto sky_mod = load_skypatcher_rules(target_path, cr.pool, cr.diags, out, resolver_ptr);
+        if (!sky_mod.rules.empty()) {
+            cr.rule_count += sky_mod.rules.size();
+            cr.modules.push_back(std::move(sky_mod));
+        }
+    }
 
     mora::PatchBuffer patch_buf;
 

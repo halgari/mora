@@ -264,33 +264,70 @@ static std::string sky_field_to_action(SkyField field, OpKind kind) {
     // Map (field, kind) to a Mora action name
     if (kind == OpKind::AddFormList) {
         switch (field) {
-            case SkyField::Keywords: return "add_keyword";
-            case SkyField::Spells:   return "add_spell";
-            case SkyField::Perks:    return "add_perk";
-            case SkyField::Shouts:   return "add_shout";
+            case SkyField::Keywords:  return "add_keyword";
+            case SkyField::Spells:    return "add_spell";
+            case SkyField::Perks:     return "add_perk";
+            case SkyField::Shouts:    return "add_shout";
+            case SkyField::Factions:  return "add_faction";
+            case SkyField::Items:     return "add_item";
+            case SkyField::LevSpells: return "add_lev_spell";
             default: return "";
         }
     }
     if (kind == OpKind::RemoveFormList) {
         switch (field) {
-            case SkyField::Keywords: return "remove_keyword";
-            case SkyField::Spells:   return "remove_spell";
+            case SkyField::Keywords:  return "remove_keyword";
+            case SkyField::Spells:    return "remove_spell";
+            case SkyField::Shouts:    return "remove_shout";
+            case SkyField::Factions:  return "remove_faction";
             default: return "";
         }
     }
-    if (kind == OpKind::SetInt || kind == OpKind::SetFloat || kind == OpKind::AddInt || kind == OpKind::MulFloat) {
+    if (kind == OpKind::SetInt || kind == OpKind::SetFloat ||
+        kind == OpKind::AddInt || kind == OpKind::MulFloat) {
         switch (field) {
-            case SkyField::Damage:      return "set_damage";
-            case SkyField::ArmorRating: return "set_armor_rating";
-            case SkyField::GoldValue:   return "set_gold_value";
-            case SkyField::Weight:      return "set_weight";
-            case SkyField::Speed:       return "set_speed";
-            case SkyField::Level:       return "set_level";
+            case SkyField::Damage:       return "set_damage";
+            case SkyField::ArmorRating:  return "set_armor_rating";
+            case SkyField::GoldValue:    return "set_gold_value";
+            case SkyField::Weight:       return "set_weight";
+            case SkyField::Speed:        return "set_speed";
+            case SkyField::Level:        return "set_level";
+            case SkyField::Reach:        return "set_reach";
+            case SkyField::Stagger:      return "set_stagger";
+            case SkyField::RangeMin:     return "set_range_min";
+            case SkyField::RangeMax:     return "set_range_max";
+            case SkyField::CritDamage:   return "set_crit_damage";
+            case SkyField::CritPercent:  return "set_crit_percent";
+            case SkyField::Health:       return "set_health";
+            case SkyField::CalcLevelMin: return "set_calc_level_min";
+            case SkyField::CalcLevelMax: return "set_calc_level_max";
+            case SkyField::SpeedMult:    return "set_speed_mult";
             default: return "";
         }
     }
     if (kind == OpKind::SetName) return "set_name";
-    if (kind == OpKind::SetForm) return "set_form";
+    if (kind == OpKind::SetForm) {
+        switch (field) {
+            case SkyField::Race:           return "set_race";
+            case SkyField::Class:          return "set_class";
+            case SkyField::Skin:           return "set_skin";
+            case SkyField::OutfitDefault:  return "set_outfit";
+            case SkyField::Enchantment:    return "set_enchantment";
+            case SkyField::VoiceType:      return "set_voice_type";
+            default: return "set_form";
+        }
+    }
+    if (kind == OpKind::SetBool) {
+        switch (field) {
+            case SkyField::Essential:     return "set_essential";
+            case SkyField::Protected:     return "set_protected";
+            case SkyField::AutoCalcStats: return "set_auto_calc_stats";
+            default: return "";
+        }
+    }
+    if (kind == OpKind::ClearFlag) return "clear_all";
+    if (kind == OpKind::AddToLeveledList) return "add_to_leveled_list";
+    if (kind == OpKind::RemoveFromLeveledList) return "remove_from_leveled_list";
     return "";
 }
 
@@ -364,12 +401,35 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         }
         break;
     }
-    case OpKind::SetForm:
-    case OpKind::ClearFlag:
-    case OpKind::SetBool:
+    case OpKind::SetForm: {
+        std::string action = sky_field_to_action(field, kind);
+        if (action.empty()) break;
+        auto ref = parse_formref(value);
+        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        eff.args.push_back(var(v));
+        eff.args.push_back(sym(resolve_sym(ref)));
+        rule.effects.push_back(std::move(eff));
+        break;
+    }
+    case OpKind::SetBool: {
+        std::string action = sky_field_to_action(field, kind);
+        if (action.empty()) break;
+        bool val = (value == "true" || value == "1" || value == "yes");
+        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        eff.args.push_back(var(v));
+        eff.args.push_back(intlit(val ? 1 : 0));
+        rule.effects.push_back(std::move(eff));
+        break;
+    }
+    case OpKind::ClearFlag: {
+        Effect eff; eff.action = pool_.intern("clear_all"); eff.span = span;
+        eff.args.push_back(var(v));
+        rule.effects.push_back(std::move(eff));
+        break;
+    }
     case OpKind::AddToLeveledList:
     case OpKind::RemoveFromLeveledList:
-        // Not yet mapped to Mora effects — skip
+        // Leveled list manipulation requires deeper runtime support — skip for now
         break;
     }
 }

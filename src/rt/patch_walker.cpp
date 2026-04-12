@@ -81,6 +81,44 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             }
             break;
         }
+        // Weapon scalar fields
+        case 20: case 21: case 22: case 23: case 24: { // Speed/Reach/Stagger/RangeMin/RangeMax (float)
+            uint64_t off = get_field_offset(ft, e.field_id);
+            if (off) {
+                double d;
+                std::memcpy(&d, &e.value, 8);
+                float v = static_cast<float>(d);
+                std::memcpy((char*)form + off, &v, 4);
+            }
+            break;
+        }
+        case 25: { // CritDamage (uint16_t)
+            uint64_t off = get_field_offset(ft, 25);
+            if (off) { uint16_t v = static_cast<uint16_t>(e.value); std::memcpy((char*)form + off, &v, 2); }
+            break;
+        }
+        case 30: { // Health (uint32_t)
+            uint64_t off = get_field_offset(ft, 30);
+            if (off) { uint32_t v = static_cast<uint32_t>(e.value); std::memcpy((char*)form + off, &v, 4); }
+            break;
+        }
+        // NPC level fields (uint16_t)
+        case 11: case 41: case 42: {
+            uint64_t off = get_field_offset(ft, e.field_id);
+            if (off) { uint16_t v = static_cast<uint16_t>(e.value); std::memcpy((char*)form + off, &v, 2); }
+            break;
+        }
+        // Form reference fields — write a form pointer
+        case 50: case 51: case 52: case 53: case 54: case 55: {
+            if (e.value_type != 0) break; // must be FormID
+            uint64_t off = get_field_offset(ft, e.field_id);
+            if (!off) break;
+            void* ref_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
+            if (ref_form) {
+                std::memcpy((char*)form + off, &ref_form, sizeof(void*));
+            }
+            break;
+        }
         case 6: { // Keywords
             if (e.value_type != 0) break; // must be FormID
             void* kw_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));

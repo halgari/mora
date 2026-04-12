@@ -12,6 +12,25 @@ constexpr uint16_t kDamage      = 2;
 constexpr uint16_t kArmorRating = 3;
 constexpr uint16_t kGoldValue   = 4;
 constexpr uint16_t kWeight      = 5;
+constexpr uint16_t kSpeed       = 20;
+constexpr uint16_t kReach       = 21;
+constexpr uint16_t kStagger     = 22;
+constexpr uint16_t kRangeMin    = 23;
+constexpr uint16_t kRangeMax    = 24;
+constexpr uint16_t kCritDamage  = 25;
+constexpr uint16_t kHealth      = 30;
+constexpr uint16_t kLevel       = 11;
+constexpr uint16_t kCalcLevelMin = 41;
+constexpr uint16_t kCalcLevelMax = 42;
+constexpr uint16_t kRaceForm     = 50;
+constexpr uint16_t kClassForm    = 51;
+constexpr uint16_t kSkinForm     = 52;
+constexpr uint16_t kOutfitForm   = 53;
+constexpr uint16_t kEnchForm     = 54;
+constexpr uint16_t kVoiceForm    = 55;
+constexpr uint16_t kEssential    = 72;
+constexpr uint16_t kProtected    = 73;
+constexpr uint16_t kAutoCalc     = 71;
 
 // BGSKeywordForm layout (shared across NPC/Weapon/Armor — offset varies by form type)
 //   +0x00: vtable
@@ -30,6 +49,13 @@ uint64_t get_field_offset(uint8_t ft, uint16_t field_id) {
             case kDamage:    return weapon_layout::kAttackDamage + kComponentMember;  // uint16_t
             case kGoldValue: return weapon_layout::kValueForm    + kComponentMember;  // int32_t
             case kWeight:    return weapon_layout::kWeightForm   + kComponentMember;  // float
+            case kSpeed:     return weapon_layout::kSpeed;                            // float
+            case kReach:     return weapon_layout::kReach;                            // float
+            case kStagger:   return weapon_layout::kStagger;                          // float
+            case kRangeMin:  return weapon_layout::kRangeMin;                         // float
+            case kRangeMax:  return weapon_layout::kRangeMax;                         // float
+            case kCritDamage:return weapon_layout::kCritDamage;                       // uint16_t
+            case kEnchForm:  return weapon_layout::kEnchantment;                      // ptr
             default:         return 0;
         }
     }
@@ -38,7 +64,22 @@ uint64_t get_field_offset(uint8_t ft, uint16_t field_id) {
             case kArmorRating: return armor_layout::kArmorRating;                      // uint32_t
             case kGoldValue:   return armor_layout::kValueForm   + kComponentMember;   // int32_t
             case kWeight:      return armor_layout::kWeightForm  + kComponentMember;   // float
+            case kHealth:      return armor_layout::kHealth;                            // uint32_t
+            case kEnchForm:    return armor_layout::kEnchantment;                       // ptr
             default:           return 0;
+        }
+    }
+    if (ft == form_type::kNPC) {
+        switch (field_id) {
+            case kLevel:        return npc_layout::kLevel;         // uint16_t
+            case kCalcLevelMin: return npc_layout::kCalcLevelMin;  // uint16_t
+            case kCalcLevelMax: return npc_layout::kCalcLevelMax;  // uint16_t
+            case kRaceForm:     return npc_layout::kRaceForm;      // ptr
+            case kClassForm:    return npc_layout::kClassForm;     // ptr
+            case kSkinForm:     return npc_layout::kSkinForm;      // ptr
+            case kOutfitForm:   return npc_layout::kOutfitForm;    // ptr
+            case kVoiceForm:    return npc_layout::kVoiceType;     // ptr
+            default:            return 0;
         }
     }
     return 0;
