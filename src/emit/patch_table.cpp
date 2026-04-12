@@ -127,4 +127,27 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
     return result;
 }
 
+std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
+                                            const AddressLibrary& addrlib) {
+    PatchTableHeader hdr;
+    hdr.patch_count = static_cast<uint32_t>(entries.size());
+    hdr.string_table_size = 0; // no string table in fast path
+    hdr.map_offset = resolve_ae_or_se(addrlib, kFormMapAddrLibId_AE, kFormMapAddrLibId_SE);
+    hdr.mm_singleton_off = resolve_ae_or_se(addrlib, kMemMgr_GetSingleton_AE, kMemMgr_GetSingleton_SE);
+    hdr.mm_allocate_off = resolve_ae_or_se(addrlib, kMemMgr_Allocate_AE, kMemMgr_Allocate_SE);
+    hdr.mm_deallocate_off = resolve_ae_or_se(addrlib, kMemMgr_Deallocate_AE, kMemMgr_Deallocate_SE);
+    hdr.bs_ctor8_off = resolve_ae_or_se(addrlib, kBS_Ctor8_AE, kBS_Ctor8_SE);
+    hdr.bs_release8_off = resolve_ae_or_se(addrlib, kBS_Release8_AE, kBS_Release8_SE);
+
+    std::vector<uint8_t> result;
+    result.reserve(sizeof(PatchTableHeader) + entries.size() * sizeof(PatchEntry));
+
+    append_bytes(result, hdr);
+    for (const auto& e : entries) {
+        append_bytes(result, e);
+    }
+
+    return result;
+}
+
 } // namespace mora

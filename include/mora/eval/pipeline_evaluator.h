@@ -2,6 +2,7 @@
 #include "mora/data/columnar_relation.h"
 #include "mora/data/chunk_pool.h"
 #include "mora/eval/patch_set.h"
+#include "mora/eval/patch_buffer.h"
 #include "mora/core/string_pool.h"
 #include <unordered_map>
 
@@ -44,5 +45,12 @@ void evaluate_distributions_columnar(
     const ColumnarFactStore& store,
     StringPool& pool,
     PatchSet& patches);
+
+// Fast path: emit directly to PatchBuffer (no PatchSet overhead).
+// After calling, use patch_buf.sort_and_dedup() to finalize.
+void evaluate_distributions_columnar(
+    const ColumnarFactStore& store,
+    StringPool& pool,
+    PatchBuffer& patch_buf);
 
 } // namespace mora

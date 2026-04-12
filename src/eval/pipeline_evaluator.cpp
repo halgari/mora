@@ -1,5 +1,7 @@
 #include "mora/eval/pipeline_evaluator.h"
 #include "mora/eval/pipeline.h"
+#include "mora/eval/operators.h"
+#include "mora/eval/patch_buffer.h"
 #include <utility>
 
 namespace mora {
@@ -85,7 +87,119 @@ static void build_rule_target_map(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: emit keyword-filtered patches
+// PatchBuffer-based operator pipelines
+// ---------------------------------------------------------------------------
+
+static void emit_keyword_filtered_buf(
+    const std::unordered_map<uint32_t, uint32_t>& rule_to_target,
+    const ColumnarRelation& kw_filter_rel,
+    const ColumnarRelation* has_keyword_rel,
+    const ColumnarRelation* npc_rel,
+    FieldId field,
+    FieldOp op,
+    ChunkPool& pool,
+    PatchBuffer& patch_buf)
+{
+    if (!has_keyword_rel || !npc_rel) return;
+
+    // Pipeline: scan(kw_filter) -> hash_probe(has_keyword) -> semi_join(npc) -> emit
+    scan(kw_filter_rel, [&](const DataChunk& filter_chunk) {
+        // filter_chunk cols: (RuleID:0, KeywordFormID:1)
+        hash_probe(*has_keyword_rel, /*probe_col*/1, /*build_key_col*/1,
+                   filter_chunk, pool, [&](DataChunk& joined) {
+            // joined cols: (RuleID:0, KeywordFormID:1, NPC_FormID:2, KW_FormID:3)
+            semi_join(*npc_rel, /*key_col*/0, /*input_col*/2,
+                      joined, [&](DataChunk& verified) {
+                for (size_t i = 0; i < verified.sel.count; i++) {
+                    auto row = verified.sel.indices[i];
+                    uint32_t rule_id = verified.u32(0)->data[row];
+                    uint32_t npc_fid = verified.u32(2)->data[row];
+                    auto it = rule_to_target.find(rule_id);
+                    if (it == rule_to_target.end()) continue;
+                    patch_buf.emit(npc_fid,
+                                   static_cast<uint8_t>(field),
+                                   static_cast<uint8_t>(op),
+                                   static_cast<uint8_t>(PatchValueType::FormID),
+                                   it->second);
+                }
+            });
+        });
+    });
+}
+
+static void emit_form_filtered_buf(
+    const std::unordered_map<uint32_t, uint32_t>& rule_to_target,
+    const ColumnarRelation& form_filter_rel,
+    const ColumnarRelation* race_of_rel,
+    const ColumnarRelation* npc_rel,
+    FieldId field,
+    FieldOp op,
+    ChunkPool& pool,
+    PatchBuffer& patch_buf)
+{
+    if (!race_of_rel || !npc_rel) return;
+
+    // Pipeline: scan(form_filter) -> hash_probe(race_of) -> semi_join(npc) -> emit
+    scan(form_filter_rel, [&](const DataChunk& filter_chunk) {
+        // filter_chunk cols: (RuleID:0, FormID:1)
+        hash_probe(*race_of_rel, /*probe_col*/1, /*build_key_col*/1,
+                   filter_chunk, pool, [&](DataChunk& joined) {
+            // joined cols: (RuleID:0, FormID:1, NPC_FormID:2, Race_FormID:3)
+            semi_join(*npc_rel, /*key_col*/0, /*input_col*/2,
+                      joined, [&](DataChunk& verified) {
+                for (size_t i = 0; i < verified.sel.count; i++) {
+                    auto row = verified.sel.indices[i];
+                    uint32_t rule_id = verified.u32(0)->data[row];
+                    uint32_t npc_fid = verified.u32(2)->data[row];
+                    auto it = rule_to_target.find(rule_id);
+                    if (it == rule_to_target.end()) continue;
+                    patch_buf.emit(npc_fid,
+                                   static_cast<uint8_t>(field),
+                                   static_cast<uint8_t>(op),
+                                   static_cast<uint8_t>(PatchValueType::FormID),
+                                   it->second);
+                }
+            });
+        });
+    });
+}
+
+static void emit_no_filter_buf(
+    const std::unordered_map<uint32_t, uint32_t>& rule_to_target,
+    const ColumnarRelation& no_filter_rel,
+    const ColumnarRelation* npc_rel,
+    FieldId field,
+    FieldOp op,
+    PatchBuffer& patch_buf)
+{
+    if (!npc_rel) return;
+
+    scan(no_filter_rel, [&](const DataChunk& dc) {
+        for (size_t i = 0; i < dc.sel.count; i++) {
+            auto row = dc.sel.indices[i];
+            uint32_t rule_id = dc.u32(0)->data[row];
+
+            auto it = rule_to_target.find(rule_id);
+            if (it == rule_to_target.end()) continue;
+            uint32_t target = it->second;
+
+            // Distribute to ALL NPCs.
+            scan(*npc_rel, [&](const DataChunk& npc_dc) {
+                for (size_t ni = 0; ni < npc_dc.sel.count; ni++) {
+                    uint32_t npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
+                    patch_buf.emit(npc_fid,
+                                   static_cast<uint8_t>(field),
+                                   static_cast<uint8_t>(op),
+                                   static_cast<uint8_t>(PatchValueType::FormID),
+                                   target);
+                }
+            });
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Legacy PatchSet-based helpers (kept for backward compatibility)
 // ---------------------------------------------------------------------------
 
 static void emit_keyword_filtered(
@@ -100,7 +214,6 @@ static void emit_keyword_filtered(
 {
     if (!has_keyword_rel || !npc_rel) return;
 
-    // Iterate every (RuleID, KeywordFormID) in the kw_filter relation.
     scan(kw_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
@@ -111,13 +224,11 @@ static void emit_keyword_filtered(
             if (it == rule_to_target.end()) continue;
             uint32_t target = it->second;
 
-            // Probe has_keyword index: find all NPCs with this keyword.
             const auto& refs = has_keyword_rel->lookup(1, kw_fid);
             for (const auto& ref : refs) {
                 const auto* npc_col = has_keyword_rel->u32_chunk(0, ref.chunk_idx);
                 uint32_t npc_fid = npc_col->data[ref.row_idx];
 
-                // Verify the NPC exists in the npc relation.
                 const auto& npc_refs = npc_rel->lookup(0, npc_fid);
                 if (npc_refs.empty()) continue;
 
@@ -127,10 +238,6 @@ static void emit_keyword_filtered(
         }
     });
 }
-
-// ---------------------------------------------------------------------------
-// Helper: emit form-filtered patches (race filter)
-// ---------------------------------------------------------------------------
 
 static void emit_form_filtered(
     const std::unordered_map<uint32_t, uint32_t>& rule_to_target,
@@ -144,7 +251,6 @@ static void emit_form_filtered(
 {
     if (!race_of_rel || !npc_rel) return;
 
-    // Iterate every (RuleID, FormID) in the form_filter relation.
     scan(form_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
@@ -155,7 +261,6 @@ static void emit_form_filtered(
             if (it == rule_to_target.end()) continue;
             uint32_t target = it->second;
 
-            // Probe race_of index: find all NPCs with this race.
             const auto& refs = race_of_rel->lookup(1, form_id);
             for (const auto& ref : refs) {
                 const auto* npc_col = race_of_rel->u32_chunk(0, ref.chunk_idx);
@@ -171,10 +276,6 @@ static void emit_form_filtered(
     });
 }
 
-// ---------------------------------------------------------------------------
-// Helper: emit no-filter patches (all NPCs)
-// ---------------------------------------------------------------------------
-
 static void emit_no_filter(
     const std::unordered_map<uint32_t, uint32_t>& rule_to_target,
     const ColumnarRelation& no_filter_rel,
@@ -186,7 +287,6 @@ static void emit_no_filter(
 {
     if (!npc_rel) return;
 
-    // Collect all rule IDs that have no filter.
     scan(no_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
@@ -196,7 +296,6 @@ static void emit_no_filter(
             if (it == rule_to_target.end()) continue;
             uint32_t target = it->second;
 
-            // Distribute to ALL NPCs.
             scan(*npc_rel, [&](const DataChunk& npc_dc) {
                 for (size_t ni = 0; ni < npc_dc.sel.count; ni++) {
                     uint32_t npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
@@ -209,7 +308,7 @@ static void emit_no_filter(
 }
 
 // ---------------------------------------------------------------------------
-// evaluate_distributions_columnar
+// evaluate_distributions_columnar (PatchSet version - legacy)
 // ---------------------------------------------------------------------------
 
 void evaluate_distributions_columnar(
@@ -217,7 +316,6 @@ void evaluate_distributions_columnar(
     StringPool& pool,
     PatchSet& patches)
 {
-    // Intern relation names.
     auto npc_sid            = pool.intern("npc");
     auto has_keyword_sid    = pool.intern("has_keyword");
     auto race_of_sid        = pool.intern("race_of");
@@ -229,7 +327,6 @@ void evaluate_distributions_columnar(
     auto kid_kw_filter_sid  = pool.intern("kid_kw_filter");
     auto kid_no_filter_sid  = pool.intern("kid_no_filter");
 
-    // Look up shared relations.
     const auto* npc_rel         = store.get(npc_sid);
     const auto* has_keyword_rel = store.get(has_keyword_sid);
     const auto* race_of_rel     = store.get(race_of_sid);
@@ -238,9 +335,7 @@ void evaluate_distributions_columnar(
 
     std::unordered_map<uint32_t, uint32_t> rule_to_target;
 
-    // -----------------------------------------------------------------------
     // SPID distributions
-    // -----------------------------------------------------------------------
     const auto* spid_dist_rel      = store.get(spid_dist_sid);
     const auto* spid_kw_filter_rel = store.get(spid_kw_filter_sid);
     const auto* spid_form_filter_rel = store.get(spid_form_filter_sid);
@@ -269,9 +364,7 @@ void evaluate_distributions_columnar(
         }
     }
 
-    // -----------------------------------------------------------------------
     // KID distributions
-    // -----------------------------------------------------------------------
     const auto* kid_dist_rel      = store.get(kid_dist_sid);
     const auto* kid_kw_filter_rel = store.get(kid_kw_filter_sid);
     const auto* kid_no_filter_rel = store.get(kid_no_filter_sid);
@@ -290,6 +383,91 @@ void evaluate_distributions_columnar(
             if (kid_no_filter_rel) {
                 emit_no_filter(rule_to_target, *kid_no_filter_rel, npc_rel,
                                dt.field, dt.op, anon_mod, patches);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// evaluate_distributions_columnar (PatchBuffer version - fast path)
+// ---------------------------------------------------------------------------
+
+void evaluate_distributions_columnar(
+    const ColumnarFactStore& store,
+    StringPool& pool,
+    PatchBuffer& patch_buf)
+{
+    auto npc_sid            = pool.intern("npc");
+    auto has_keyword_sid    = pool.intern("has_keyword");
+    auto race_of_sid        = pool.intern("race_of");
+    auto spid_dist_sid      = pool.intern("spid_dist");
+    auto spid_kw_filter_sid = pool.intern("spid_kw_filter");
+    auto spid_form_filter_sid = pool.intern("spid_form_filter");
+    auto spid_no_filter_sid = pool.intern("spid_no_filter");
+    auto kid_dist_sid       = pool.intern("kid_dist");
+    auto kid_kw_filter_sid  = pool.intern("kid_kw_filter");
+    auto kid_no_filter_sid  = pool.intern("kid_no_filter");
+
+    const auto* npc_rel         = store.get(npc_sid);
+    const auto* has_keyword_rel = store.get(has_keyword_sid);
+    const auto* race_of_rel     = store.get(race_of_sid);
+
+    // We need a mutable pool for hash_probe output chunks.
+    // The store's pool is available via const_cast since ChunkPool is a shared resource.
+    // Better: the store exposes pool() but only on non-const. We cast away const for the
+    // pool since acquiring/releasing chunks is logically const w.r.t. the store's data.
+    ChunkPool& chunk_pool = const_cast<ColumnarFactStore&>(store).pool();
+
+    std::unordered_map<uint32_t, uint32_t> rule_to_target;
+
+    // SPID distributions
+    const auto* spid_dist_rel      = store.get(spid_dist_sid);
+    const auto* spid_kw_filter_rel = store.get(spid_kw_filter_sid);
+    const auto* spid_form_filter_rel = store.get(spid_form_filter_sid);
+    const auto* spid_no_filter_rel = store.get(spid_no_filter_sid);
+
+    if (spid_dist_rel) {
+        for (const auto& dt : SPID_DIST_TYPES) {
+            auto dist_type_sid = pool.intern(dt.name);
+            build_rule_target_map(*spid_dist_rel, dist_type_sid.index, rule_to_target);
+            if (rule_to_target.empty()) continue;
+
+            if (spid_kw_filter_rel) {
+                emit_keyword_filtered_buf(rule_to_target, *spid_kw_filter_rel,
+                                          has_keyword_rel, npc_rel,
+                                          dt.field, dt.op, chunk_pool, patch_buf);
+            }
+            if (spid_form_filter_rel) {
+                emit_form_filtered_buf(rule_to_target, *spid_form_filter_rel,
+                                       race_of_rel, npc_rel,
+                                       dt.field, dt.op, chunk_pool, patch_buf);
+            }
+            if (spid_no_filter_rel) {
+                emit_no_filter_buf(rule_to_target, *spid_no_filter_rel, npc_rel,
+                                   dt.field, dt.op, patch_buf);
+            }
+        }
+    }
+
+    // KID distributions
+    const auto* kid_dist_rel      = store.get(kid_dist_sid);
+    const auto* kid_kw_filter_rel = store.get(kid_kw_filter_sid);
+    const auto* kid_no_filter_rel = store.get(kid_no_filter_sid);
+
+    if (kid_dist_rel) {
+        for (const auto& dt : KID_DIST_TYPES) {
+            auto dist_type_sid = pool.intern(dt.name);
+            build_rule_target_map(*kid_dist_rel, dist_type_sid.index, rule_to_target);
+            if (rule_to_target.empty()) continue;
+
+            if (kid_kw_filter_rel) {
+                emit_keyword_filtered_buf(rule_to_target, *kid_kw_filter_rel,
+                                          has_keyword_rel, npc_rel,
+                                          dt.field, dt.op, chunk_pool, patch_buf);
+            }
+            if (kid_no_filter_rel) {
+                emit_no_filter_buf(rule_to_target, *kid_no_filter_rel, npc_rel,
+                                   dt.field, dt.op, patch_buf);
             }
         }
     }

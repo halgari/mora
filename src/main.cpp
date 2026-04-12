@@ -28,6 +28,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -582,6 +583,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
 
     mora::PatchSet all_patches;
+    mora::PatchBuffer patch_buf;
 
     // ── Columnar evaluation for INI distributions (fast path) ──
     if (next_rule_id > 1) {
@@ -672,10 +674,10 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         col_store.build_all_indexes();
 
         progress.start_phase("Evaluating (columnar)");
-        mora::evaluate_distributions_columnar(col_store, cr.pool, all_patches);
-        auto col_resolved = all_patches.resolve();
+        mora::evaluate_distributions_columnar(col_store, cr.pool, patch_buf);
+        patch_buf.sort_and_dedup();
         progress.finish_phase(
-            std::to_string(col_resolved.patch_count()) + " patches generated", "done");
+            std::to_string(patch_buf.size()) + " patches generated", "done");
     }
 
     // ── Datalog evaluation for .mora file rules (if any) ──
@@ -701,9 +703,44 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         progress.finish_phase("done", "done");
     }
 
-    auto final_resolved = all_patches.resolve();
+    // Merge .mora patches (if any) into the PatchBuffer
+    if (!cr.modules.empty()) {
+        auto mora_resolved = all_patches.resolve();
+        for (auto& rp : mora_resolved.all_patches_sorted()) {
+            for (auto& fp : rp.fields) {
+                uint8_t vtype = 0;
+                uint64_t val = 0;
+                switch (fp.value.kind()) {
+                    case mora::Value::Kind::FormID:
+                        vtype = static_cast<uint8_t>(mora::PatchValueType::FormID);
+                        val = fp.value.as_formid();
+                        break;
+                    case mora::Value::Kind::Int:
+                        vtype = static_cast<uint8_t>(mora::PatchValueType::Int);
+                        std::memcpy(&val, &fp.value, 8); // safe: int fits in 8 bytes
+                        val = static_cast<uint64_t>(fp.value.as_int());
+                        break;
+                    case mora::Value::Kind::Float: {
+                        vtype = static_cast<uint8_t>(mora::PatchValueType::Float);
+                        double d = fp.value.as_float();
+                        std::memcpy(&val, &d, 8);
+                        break;
+                    }
+                    default:
+                        continue; // skip unsupported value types
+                }
+                patch_buf.emit(rp.target_formid,
+                               static_cast<uint8_t>(fp.field),
+                               static_cast<uint8_t>(fp.op),
+                               vtype, val);
+            }
+        }
+        // Re-sort after merging .mora patches
+        patch_buf.sort_and_dedup();
+    }
+
     progress.finish_phase(
-        std::to_string(final_resolved.patch_count()) + " patches generated",
+        std::to_string(patch_buf.size()) + " total patches",
         "done");
 
     // ── LLVM Codegen ──
@@ -754,12 +791,12 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
 
     progress.start_phase("Serializing patches");
-    auto patch_data = mora::serialize_patch_table(final_resolved, cr.pool, addrlib);
+    auto patch_data = mora::serialize_patch_table(patch_buf.entries(), addrlib);
     progress.finish_phase(
-        std::to_string(final_resolved.patch_count()) + " patches \xe2\x86\x92 " +
+        std::to_string(patch_buf.size()) + " patches \xe2\x86\x92 " +
         format_bytes(patch_data.size()), "done");
 
-    auto build_result = builder.build_data_dll(patch_data, final_resolved.patch_count(),
+    auto build_result = builder.build_data_dll(patch_data, patch_buf.size(),
                                                 out_path, rt_lib_path);
     if (!build_result.success) {
         progress.print_failure("DLL build failed: " + build_result.error);
@@ -794,9 +831,9 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     auto dll_size = fs::file_size(build_result.output_path);
     progress.print_summary(
         static_count,
-        final_resolved.patch_count(),
+        patch_buf.size(),
         dynamic_count,
-        final_resolved.get_conflicts().size(),
+        0u,  // conflict detection not available with PatchBuffer fast path
         cr.diags.error_count(),
         cr.diags.warning_count(),
         format_bytes(dll_size));

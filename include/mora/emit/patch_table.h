@@ -44,4 +44,10 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool,
                                             const AddressLibrary& addrlib);
 
+// Serialize pre-built PatchEntry array directly (fast path for PatchBuffer).
+// Entries must already be sorted and deduped. No string table support (all
+// values are FormID/Int/Float).
+std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
+                                            const AddressLibrary& addrlib);
+
 } // namespace mora
