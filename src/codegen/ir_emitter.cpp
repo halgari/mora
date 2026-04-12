@@ -185,8 +185,10 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
 
 void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
                             const ResolvedPatch& rp, const FieldPatch& fp) {
-    // NPC-array mutations go through MemoryManager RT helpers.
+    // NPC-array mutations require the value to be a resolved FormID.
+    // Skip patches with unresolved string targets (editor IDs not found in ESPs).
     if (fp.field == FieldId::Keywords) {
+        if (fp.value.kind() != Value::Kind::FormID) return;
         if (fp.op == FieldOp::Add) {
             emit_memmgr_call(builder, map_ptr, rp.target_formid,
                              fp.value.as_formid(), add_keyword_fn_, "kw_add");
@@ -197,16 +199,19 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder, llvm::Value* map_ptr,
         return;
     }
     if (fp.field == FieldId::Spells && fp.op == FieldOp::Add) {
+        if (fp.value.kind() != Value::Kind::FormID) return;
         emit_memmgr_call(builder, map_ptr, rp.target_formid,
                          fp.value.as_formid(), add_spell_fn_, "spell_add");
         return;
     }
     if (fp.field == FieldId::Perks && fp.op == FieldOp::Add) {
+        if (fp.value.kind() != Value::Kind::FormID) return;
         emit_memmgr_call(builder, map_ptr, rp.target_formid,
                          fp.value.as_formid(), add_perk_fn_, "perk_add");
         return;
     }
     if (fp.field == FieldId::Factions && fp.op == FieldOp::Add) {
+        if (fp.value.kind() != Value::Kind::FormID) return;
         emit_memmgr_call(builder, map_ptr, rp.target_formid,
                          fp.value.as_formid(), add_faction_fn_, "faction_add");
         return;

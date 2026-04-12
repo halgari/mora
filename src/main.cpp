@@ -514,18 +514,9 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // Progress callback: print rule counter on TTY
     bool is_tty = mora::stdout_is_tty();
-    auto rule_start = std::chrono::steady_clock::now();
     auto eval_progress = [&](size_t current, size_t total, std::string_view name) {
-        auto now = std::chrono::steady_clock::now();
-        auto rule_ms = std::chrono::duration<double, std::milli>(now - rule_start).count();
-        rule_start = now;
-        if (rule_ms > 200) {
-            std::fprintf(stderr, "\r  Rule %zu / %zu took %.0fms: %.*s\n",
-                         current, total, rule_ms,
-                         static_cast<int>(name.size()), name.data());
-        }
-        if (is_tty && (current % 50 == 0 || current == total)) {
-            std::fprintf(stderr, "\r  Evaluating rule %zu / %zu ...", current, total);
+        if (is_tty) {
+            std::fprintf(stderr, "\r  Evaluating rule %zu / %zu ...%60s", current, total, "");
         }
     };
 
