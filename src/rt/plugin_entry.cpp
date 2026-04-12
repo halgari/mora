@@ -3,13 +3,20 @@
 // The IR defines apply_all_patches(); this file provides the SKSE glue.
 
 #ifdef _WIN32
+#include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 
-// Windows API import
+// Windows API imports
 extern "C" __declspec(dllimport) void* __stdcall GetModuleHandleW(const wchar_t*);
+extern "C" __declspec(dllimport) int __stdcall QueryPerformanceCounter(int64_t*);
+extern "C" __declspec(dllimport) int __stdcall QueryPerformanceFrequency(int64_t*);
 
 // Forward declaration -- defined by the IR emitter in the generated module
 extern "C" void apply_all_patches(void* skyrim_base);
+
+// Patch count -- defined by the IR emitter as a global constant
+extern "C" uint32_t mora_patch_count;
 
 // Get the base address of SkyrimSE.exe at runtime
 static void* get_skyrim_base() {
@@ -78,13 +85,39 @@ struct SKSEInterface {
 
 static uint32_t g_plugin_handle = 0;
 
+static void mora_log(const char* fmt, ...) {
+    FILE* f = std::fopen("Data/SKSE/Plugins/MoraRuntime.log", "a");
+    if (!f) return;
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(f, fmt, args);
+    va_end(args);
+    std::fclose(f);
+}
+
 static void message_handler(SKSEMessage* msg) {
     if (msg->type == kSKSE_DataLoaded && !g_applied) {
         g_applied = true;
         void* base = get_skyrim_base();
-        if (base) {
-            apply_all_patches(base);
+        if (!base) {
+            mora_log("[Mora] ERROR: could not resolve SkyrimSE.exe base address\n");
+            return;
         }
+
+        // Read patch count (may be 0 if symbol not found — weak reference)
+        uint32_t count = 0;
+        if (&mora_patch_count) count = mora_patch_count;
+
+        int64_t freq = 0, start = 0, end = 0;
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&start);
+
+        apply_all_patches(base);
+
+        QueryPerformanceCounter(&end);
+        double ms = (freq > 0) ? (double)(end - start) * 1000.0 / (double)freq : 0.0;
+
+        mora_log("[Mora] Applied %u patches in %.2f ms\n", count, ms);
     }
 }
 

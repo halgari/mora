@@ -100,6 +100,16 @@ void IREmitter::emit_apply_function(const ResolvedPatchSet& patches,
     auto* ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto* void_ty = llvm::Type::getVoidTy(ctx_);
 
+    // Emit patch count as a global constant for runtime logging
+    auto* i32_ty = llvm::Type::getInt32Ty(ctx_);
+    auto sorted_preview = patches.all_patches_sorted();
+    uint32_t total_patches = 0;
+    for (const auto& rp : sorted_preview) total_patches += rp.fields.size();
+    auto* patch_count_gv = new llvm::GlobalVariable(
+        mod_, i32_ty, true, llvm::GlobalValue::ExternalLinkage,
+        llvm::ConstantInt::get(i32_ty, total_patches), "mora_patch_count");
+    (void)patch_count_gv;
+
     // void apply_all_patches(void* skyrim_base)
     auto* fn_ty = llvm::FunctionType::get(void_ty, {ptr_ty}, false);
     auto* func = llvm::Function::Create(fn_ty, llvm::GlobalValue::ExternalLinkage,
