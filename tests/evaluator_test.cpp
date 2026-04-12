@@ -133,3 +133,125 @@ TEST_F(EvaluatorTest, RuleMatchCount) {
     auto resolved = patch_set.resolve();
     EXPECT_EQ(resolved.patch_count(), 2u); // 2 NPCs
 }
+
+// Test: KW in KWList where KWList is a list-typed Value from FactDB.
+// Programmatically constructs the rule AST to avoid needing to register
+// test_dist as a builtin in the parser's name resolver.
+//
+// Rule (conceptually):
+//   test_rule(NPC):
+//       test_dist(_, "keyword", KWList)
+//       npc(NPC)
+//       has_keyword(NPC, KW)
+//       KW in KWList
+//       => add_keyword(NPC, :Result)
+TEST_F(EvaluatorTest, ElementInListVar) {
+    // Build FactDB
+    mora::FactDB db(pool);
+
+    // test_dist(1, "keyword", [:kw_formid_A, :kw_formid_B])
+    mora::Value kw_list = mora::Value::make_list({
+        mora::Value::make_formid(0xA01),
+        mora::Value::make_formid(0xA02),
+    });
+    db.add_fact(pool.intern("test_dist"), {
+        mora::Value::make_int(1),
+        mora::Value::make_string(pool.intern("keyword")),
+        kw_list,
+    });
+
+    // has_keyword(0x100, kw_formid_A)  — NPC 1 has keyword A
+    db.add_fact(pool.intern("has_keyword"), {
+        mora::Value::make_formid(0x100),
+        mora::Value::make_formid(0xA01),
+    });
+    // has_keyword(0x200, kw_formid_B)  — NPC 2 has keyword B
+    db.add_fact(pool.intern("has_keyword"), {
+        mora::Value::make_formid(0x200),
+        mora::Value::make_formid(0xA02),
+    });
+
+    // npc(0x100), npc(0x200)
+    db.add_fact(pool.intern("npc"), {mora::Value::make_formid(0x100)});
+    db.add_fact(pool.intern("npc"), {mora::Value::make_formid(0x200)});
+
+    // Build Rule AST programmatically
+    // Variables: NPC, KWList, KW
+    mora::StringId v_npc    = pool.intern("NPC");
+    mora::StringId v_kwlist = pool.intern("KWList");
+    mora::StringId v_kw     = pool.intern("KW");
+
+    auto var_expr = [](mora::StringId name) -> mora::Expr {
+        return mora::Expr{mora::VariableExpr{name, {}, {}}, {}};
+    };
+    auto str_expr = [&](const std::string& s) -> mora::Expr {
+        return mora::Expr{mora::StringLiteral{pool.intern(s), {}}, {}};
+    };
+
+    mora::Rule rule;
+    rule.name = pool.intern("test_rule");
+    rule.head_args.push_back(var_expr(v_npc));
+
+    // Clause 1: test_dist(_, "keyword", KWList)
+    {
+        mora::FactPattern fp;
+        fp.name = pool.intern("test_dist");
+        fp.args.push_back(mora::Expr{mora::DiscardExpr{{}}, {}});
+        fp.args.push_back(str_expr("keyword"));
+        fp.args.push_back(var_expr(v_kwlist));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+
+    // Clause 2: npc(NPC)
+    {
+        mora::FactPattern fp;
+        fp.name = pool.intern("npc");
+        fp.args.push_back(var_expr(v_npc));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+
+    // Clause 3: has_keyword(NPC, KW)
+    {
+        mora::FactPattern fp;
+        fp.name = pool.intern("has_keyword");
+        fp.args.push_back(var_expr(v_npc));
+        fp.args.push_back(var_expr(v_kw));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+
+    // Clause 4: KW in KWList
+    {
+        mora::InClause ic;
+        ic.variable = std::make_unique<mora::Expr>(var_expr(v_kw));
+        ic.values.push_back(var_expr(v_kwlist));
+        rule.body.push_back(mora::Clause{std::move(ic), {}});
+    }
+
+    // Effect: add_keyword(NPC, :Result)
+    {
+        mora::Effect eff;
+        eff.action = pool.intern("add_keyword");
+        eff.args.push_back(var_expr(v_npc));
+        // :Result as a symbol expr — evaluator resolves it via set_symbol_formid
+        eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}, {}}, {}});
+        rule.effects.push_back(std::move(eff));
+    }
+
+    mora::Module mod;
+    mod.rules.push_back(std::move(rule));
+
+    mora::Evaluator evaluator(pool, diags, db);
+    evaluator.set_symbol_formid(pool.intern("Result"), 0xBEEF);
+
+    auto patch_set = evaluator.evaluate_static(mod);
+    auto resolved = patch_set.resolve();
+
+    // Both NPCs should receive :Result
+    EXPECT_EQ(resolved.patch_count(), 2u);
+    auto p1 = resolved.get_patches_for(0x100);
+    auto p2 = resolved.get_patches_for(0x200);
+    ASSERT_EQ(p1.size(), 1u);
+    ASSERT_EQ(p2.size(), 1u);
+    EXPECT_EQ(p1[0].value.as_formid(), 0xBEEFu);
+    EXPECT_EQ(p2[0].value.as_formid(), 0xBEEFu);
+}

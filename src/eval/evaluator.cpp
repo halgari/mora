@@ -203,6 +203,18 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
         } else if constexpr (std::is_same_v<T, InClause>) {
             // In clause: variable must match one of the listed values
             Value var_val = resolve_expr(*c.variable, bindings);
+            // If RHS is a single expression that resolves to a list Value,
+            // perform a membership check against the list.
+            if (c.values.size() == 1) {
+                Value rhs = resolve_expr(c.values[0], bindings);
+                if (rhs.kind() == Value::Kind::List) {
+                    if (rhs.list_contains(var_val)) {
+                        match_clauses(rule, order, step + 1, bindings, patches, priority);
+                    }
+                    return;
+                }
+            }
+            // Original path: literal value list
             for (const auto& val_expr : c.values) {
                 Value v = resolve_expr(val_expr, bindings);
                 if (var_val.matches(v)) {

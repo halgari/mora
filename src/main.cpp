@@ -20,6 +20,8 @@
 #include "mora/import/spid_parser.h"
 #include "mora/import/kid_parser.h"
 #include "mora/import/mora_printer.h"
+#include "mora/import/ini_facts.h"
+#include "mora/import/ini_distribution_rules.h"
 
 #include <cctype>
 #include <chrono>
@@ -293,7 +295,8 @@ static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
     mora::Progress& progress,
-    bool use_color)
+    bool use_color,
+    bool import_ini = true)
 {
     result.files = find_mora_files(target_path);
 
@@ -312,11 +315,14 @@ static bool run_check_pipeline(
         result.modules.push_back(std::move(mod));
     }
 
-    // Import INI files (SPID + KID) directly
+    // Import INI files (SPID + KID) directly — only for check/inspect paths.
+    // The compile path uses fact-based INI distribution instead.
     size_t ini_count = 0;
-    auto ini_mod = import_ini_files(target_path, result.pool, result.diags, ini_count);
-    if (!ini_mod.rules.empty()) {
-        result.modules.push_back(std::move(ini_mod));
+    if (import_ini) {
+        auto ini_mod = import_ini_files(target_path, result.pool, result.diags, ini_count);
+        if (!ini_mod.rules.empty()) {
+            result.modules.push_back(std::move(ini_mod));
+        }
     }
 
     if (result.modules.empty()) {
@@ -407,7 +413,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     progress.print_header("0.1.0");
 
     CheckResult cr;
-    if (!run_check_pipeline(cr, target_path, progress, use_color)) return 1;
+    if (!run_check_pipeline(cr, target_path, progress, use_color, /*import_ini=*/false)) return 1;
 
     // Abort if check found errors
     if (cr.diags.has_errors()) {
@@ -474,6 +480,32 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             std::to_string(needed.size()) + " relations → " +
             std::to_string(db.fact_count()) + " facts", "done");
     }
+
+    // Load INI distribution facts
+    mora::configure_ini_relations(db, cr.pool);
+    uint32_t next_rule_id = 1;
+
+    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
+    auto kid_files = find_files_by_suffix(target_path, "_KID.ini");
+
+    if (!spid_files.empty() || !kid_files.empty()) {
+        progress.start_phase("Loading INI distributions");
+        size_t spid_count = 0, kid_count = 0;
+        for (auto& path : spid_files) {
+            spid_count += mora::emit_spid_facts(path.string(), db, cr.pool, cr.diags, next_rule_id);
+        }
+        for (auto& path : kid_files) {
+            kid_count += mora::emit_kid_facts(path.string(), db, cr.pool, cr.diags, next_rule_id);
+        }
+        progress.finish_phase(
+            std::to_string(spid_count) + " SPID + " + std::to_string(kid_count) + " KID → " +
+            std::to_string(next_rule_id - 1) + " distribution facts", "done");
+
+        // Add generic distribution rules
+        auto ini_mod = mora::build_ini_distribution_rules(cr.pool);
+        cr.modules.push_back(std::move(ini_mod));
+    }
+
     mora::PatchSet all_patches;
 
     // Progress callback: print rule counter on TTY

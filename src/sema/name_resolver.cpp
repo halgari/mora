@@ -89,6 +89,17 @@ void NameResolver::register_builtins() {
     reg("quest_stage",      { t(T::QuestID), t(T::Int)       });
     reg("is_alive",         { t(T::FormID)                   });
 
+    // ── SPID distribution facts ──
+    reg("spid_dist",    { t(T::Int), t(T::String), t(T::FormID) });
+    reg("spid_filter",  { t(T::Int), t(T::String), t(T::FormID) });
+    reg("spid_exclude", { t(T::Int), t(T::String), t(T::FormID) });
+    reg("spid_level",   { t(T::Int), t(T::Int), t(T::Int) });
+
+    // ── KID distribution facts ──
+    reg("kid_dist",     { t(T::Int), t(T::FormID), t(T::String) });
+    reg("kid_filter",   { t(T::Int), t(T::String), t(T::FormID) });
+    reg("kid_exclude",  { t(T::Int), t(T::String), t(T::FormID) });
+
     // ── Effects / actions ──
     reg("add_keyword",       { t(T::FormID), t(T::KeywordID) });
     reg("add_item",          { t(T::FormID), t(T::FormID)    });
