@@ -562,7 +562,6 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
     progress.finish_phase(std::to_string(addrlib.entry_count()) + " entries", "done");
 
-    progress.start_phase("Generating native DLL");
     mora::DLLBuilder builder(addrlib);
 
     // Find mora_rt.lib — look next to the mora binary, then in data/
@@ -587,9 +586,29 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         progress.print_failure("DLL build failed: " + build_result.error);
         return 1;
     }
-    progress.finish_phase(
-        "MoraRuntime.dll (" + format_bytes(fs::file_size(build_result.output_path)) + ")",
-        "done");
+
+    // Show codegen phase breakdown using pre-recorded timings from build()
+    auto fmt_ms = [](double ms) -> std::string {
+        if (ms < 1.0) return "<1ms";
+        if (ms < 1000.0) return std::to_string(static_cast<int>(ms)) + "ms";
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(1) << (ms / 1000.0) << "s";
+        return ss.str();
+    };
+    std::printf("  ✓ %zu patches → LLVM IR %.*s%s\n",
+                final_resolved.patch_count(),
+                40, ". . . . . . . . . . . . . . . . . . . .",
+                fmt_ms(build_result.ir_gen_ms).c_str());
+    std::printf("  ✓ O2 optimization %.*s%s\n",
+                46, ". . . . . . . . . . . . . . . . . . . . . . .",
+                fmt_ms(build_result.lto_ms).c_str());
+    std::printf("  ✓ Compile to x86-64 COFF %.*s%s\n",
+                40, ". . . . . . . . . . . . . . . . . . . .",
+                fmt_ms(build_result.compile_ms).c_str());
+    std::printf("  ✓ Link MoraRuntime.dll (%s) %.*s%s\n",
+                format_bytes(fs::file_size(build_result.output_path)).c_str(),
+                34, ". . . . . . . . . . . . . . . . .",
+                fmt_ms(build_result.link_ms).c_str());
 
     // Summary
     auto dll_size = fs::file_size(build_result.output_path);

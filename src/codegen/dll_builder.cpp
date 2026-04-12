@@ -209,12 +209,12 @@ DLLBuilder::BuildResult DLLBuilder::build(
         return result;
     }
 
+    auto t4 = std::chrono::steady_clock::now();
+    result.link_ms = std::chrono::duration<double, std::milli>(t4 - t3).count();
+
     std::filesystem::remove(obj_path);
     auto lib_artifact = output_dir / "MoraRuntime.lib";
     if (std::filesystem::exists(lib_artifact)) std::filesystem::remove(lib_artifact);
-
-    auto t4 = std::chrono::steady_clock::now();
-    result.link_ms = std::chrono::duration<double, std::milli>(t4 - t3).count();
 
     result.success = true;
     result.output_path = dll_path;
