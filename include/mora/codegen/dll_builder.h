@@ -36,6 +36,18 @@ public:
                       const std::filesystem::path& output_dir,
                       const std::filesystem::path& rt_lib_path = {});
 
+    // Data-driven pipeline: serialize patches → data-only IR → DLL
+    BuildResult build_data_dll(const std::vector<uint8_t>& patch_data,
+                               size_t patch_count,
+                               const std::filesystem::path& output_dir,
+                               const std::filesystem::path& rt_lib_path = {});
+
+    // Generate an IR module containing only the patch data as a global constant.
+    // No functions are emitted — the walker lives in mora_rt.lib.
+    std::unique_ptr<llvm::Module> generate_data_ir(
+        const std::vector<uint8_t>& patch_data,
+        llvm::LLVMContext& ctx);
+
     // For testing: generate IR module only
     std::unique_ptr<llvm::Module> generate_ir(const ResolvedPatchSet& patches,
                                               StringPool& pool,

@@ -23,6 +23,7 @@ SOURCES=(
     src/rt/crc32.cpp
     src/rt/bst_hashmap.cpp
     src/rt/form_ops.cpp
+    src/rt/patch_walker.cpp
     src/rt/plugin_entry.cpp
 )
 

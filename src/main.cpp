@@ -13,6 +13,7 @@
 #include "mora/eval/patch_set.h"
 #include "mora/codegen/dll_builder.h"
 #include "mora/codegen/address_library.h"
+#include "mora/emit/patch_table.h"
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -654,7 +655,14 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         }
     }
 
-    auto build_result = builder.build(final_resolved, cr.pool, out_path, rt_lib_path);
+    progress.start_phase("Serializing patches");
+    auto patch_data = mora::serialize_patch_table(final_resolved, cr.pool, addrlib);
+    progress.finish_phase(
+        std::to_string(final_resolved.patch_count()) + " patches \xe2\x86\x92 " +
+        format_bytes(patch_data.size()), "done");
+
+    auto build_result = builder.build_data_dll(patch_data, final_resolved.patch_count(),
+                                                out_path, rt_lib_path);
     if (!build_result.success) {
         progress.print_failure("DLL build failed: " + build_result.error);
         return 1;
@@ -668,14 +676,11 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         ss << std::fixed << std::setprecision(1) << (ms / 1000.0) << "s";
         return ss.str();
     };
-    std::printf("  ✓ %zu patches → LLVM IR %.*s%s\n",
-                final_resolved.patch_count(),
-                40, ". . . . . . . . . . . . . . . . . . . .",
-                fmt_ms(build_result.ir_gen_ms).c_str());
-    std::printf("  ✓ O2 optimization %.*s%s\n",
+    std::printf("  \xe2\x9c\x93 Data IR (%s) %.*s%s\n",
+                format_bytes(patch_data.size()).c_str(),
                 46, ". . . . . . . . . . . . . . . . . . . . . . .",
-                fmt_ms(build_result.lto_ms).c_str());
-    std::printf("  ✓ Compile to x86-64 COFF %.*s%s\n",
+                fmt_ms(build_result.ir_gen_ms).c_str());
+    std::printf("  \xe2\x9c\x93 Compile to x86-64 COFF %.*s%s\n",
                 40, ". . . . . . . . . . . . . . . . . . . .",
                 fmt_ms(build_result.compile_ms).c_str());
     if (!fs::exists(build_result.output_path)) {

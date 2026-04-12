@@ -21,6 +21,7 @@ LLD_HAS_DRIVER(coff)
 
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 
 namespace mora {
 
@@ -161,6 +162,94 @@ bool DLLBuilder::link_dll_in_process(const std::filesystem::path& obj_path,
     }
 
     return true;
+}
+
+// ── Data-only IR Generation ───────────────────────────────────────
+
+std::unique_ptr<llvm::Module> DLLBuilder::generate_data_ir(
+        const std::vector<uint8_t>& patch_data,
+        llvm::LLVMContext& ctx) {
+    auto mod = std::make_unique<llvm::Module>("mora_patch_data", ctx);
+    mod->setTargetTriple(llvm::Triple("x86_64-pc-windows-msvc"));
+
+    auto* i8_ty = llvm::Type::getInt8Ty(ctx);
+    auto* i32_ty = llvm::Type::getInt32Ty(ctx);
+
+    // @mora_patch_data = constant [N x i8] c"..."
+    auto* arr_ty = llvm::ArrayType::get(i8_ty, patch_data.size());
+    auto* data_const = llvm::ConstantDataArray::get(ctx, patch_data);
+    auto* gv_data = new llvm::GlobalVariable(
+        *mod, arr_ty, true, llvm::GlobalValue::ExternalLinkage,
+        data_const, "mora_patch_data");
+    gv_data->setAlignment(llvm::Align(16));
+
+    // @mora_patch_data_size = constant i32 N
+    new llvm::GlobalVariable(
+        *mod, i32_ty, true, llvm::GlobalValue::ExternalLinkage,
+        llvm::ConstantInt::get(i32_ty, static_cast<uint32_t>(patch_data.size())),
+        "mora_patch_data_size");
+
+    // @mora_patch_count = constant i32 (for plugin_entry.cpp logging)
+    // Read the patch_count from the header bytes
+    uint32_t patch_count = 0;
+    if (patch_data.size() >= 12) {
+        std::memcpy(&patch_count, patch_data.data() + 8, 4);
+    }
+    new llvm::GlobalVariable(
+        *mod, i32_ty, true, llvm::GlobalValue::ExternalLinkage,
+        llvm::ConstantInt::get(i32_ty, patch_count),
+        "mora_patch_count");
+
+    return mod;
+}
+
+// ── Data-only DLL Pipeline ────────────────────────────────────────
+
+DLLBuilder::BuildResult DLLBuilder::build_data_dll(
+        const std::vector<uint8_t>& patch_data,
+        size_t patch_count,
+        const std::filesystem::path& output_dir,
+        const std::filesystem::path& rt_lib_path) {
+    BuildResult result;
+    std::filesystem::create_directories(output_dir);
+
+    // Step 1: Generate data-only IR
+    auto t0 = std::chrono::steady_clock::now();
+    llvm::LLVMContext ctx;
+    auto mod = generate_data_ir(patch_data, ctx);
+
+    auto t1 = std::chrono::steady_clock::now();
+    result.ir_gen_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    // No optimization needed for data-only module
+    result.lto_ms = 0;
+
+    // Step 2: Compile to object
+    auto obj_path = output_dir / "mora_patches.obj";
+    if (!compile_to_object(*mod, obj_path, result.error)) {
+        return result;
+    }
+
+    auto t2 = std::chrono::steady_clock::now();
+    result.compile_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+    // Step 3: Link DLL
+    auto dll_path = output_dir / "MoraRuntime.dll";
+    if (!link_dll_in_process(obj_path, dll_path, rt_lib_path, result.error)) {
+        return result;
+    }
+
+    auto t3 = std::chrono::steady_clock::now();
+    result.link_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+    std::filesystem::remove(obj_path);
+    auto lib_artifact = output_dir / "MoraRuntime.lib";
+    if (std::filesystem::exists(lib_artifact)) std::filesystem::remove(lib_artifact);
+
+    result.success = true;
+    result.output_path = dll_path;
+    result.patch_count = patch_count;
+    return result;
 }
 
 // ── Full Pipeline ──────────────────────────────────────────────────
