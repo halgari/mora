@@ -1,7 +1,6 @@
 #!/bin/bash
-# Build mora_rt.lib — static library for LTO linking into generated DLLs
-# Replaces build_rt_bitcode.sh. The .lib contains LTO bitcode objects,
-# so lld-link performs LTO at link time (same optimization wins).
+# Build mora_rt.lib — static library for linking into generated DLLs.
+# Uses MSVC under wine (msvc-wine) to compile with CommonLibSSE-NG headers.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -9,26 +8,26 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/rt"
 OUTPUT="$PROJECT_DIR/data/mora_rt.lib"
 
-XWIN="$HOME/.xwin"
+MSVC="/opt/msvc/bin/x64"
 
-[ -d "$XWIN" ] || { echo "Error: xwin SDK not found at $XWIN"; exit 1; }
-command -v clang-cl >/dev/null || { echo "Error: clang-cl not found"; exit 1; }
-command -v llvm-lib >/dev/null || { echo "Error: llvm-lib not found"; exit 1; }
+[ -x "$MSVC/cl" ] || { echo "Error: MSVC not found at $MSVC (need msvc-wine)"; exit 1; }
 
-CLANG_FLAGS=(
-    --target=x86_64-pc-windows-msvc
-    /std:c++20
+MSVC_FLAGS=(
+    /std:c++latest
     /O2
+    /EHsc
+    /utf-8
     /DWIN32
     /D_WIN32
     /DNOMINMAX
-    /EHsc
-    -flto
-    -imsvc "$XWIN/crt/include"
-    -imsvc "$XWIN/sdk/include/ucrt"
-    -imsvc "$XWIN/sdk/include/um"
-    -imsvc "$XWIN/sdk/include/shared"
-    -I "$PROJECT_DIR/include"
+    /DSPDLOG_COMPILED_LIB
+    /DENABLE_SKYRIM_SE=1
+    /DENABLE_SKYRIM_AE=1
+    /DSKSE_SUPPORT_XBYAK=0
+    /I"$PROJECT_DIR/include"
+    /I"$PROJECT_DIR/extern/CommonLibSSE-NG/include"
+    /I"$PROJECT_DIR/extern/spdlog-shim"
+    /FI"SKSE/Impl/PCH.h"
 )
 
 SOURCES=(
@@ -41,18 +40,18 @@ SOURCES=(
 
 mkdir -p "$BUILD_DIR" "$(dirname "$OUTPUT")"
 
-# Compile each source to .obj (with LTO bitcode embedded)
+# Compile each source to .obj
 OBJ_FILES=()
 for src in "${SOURCES[@]}"; do
     obj="$BUILD_DIR/$(basename "$src" .cpp).obj"
     echo "  CC $src"
-    clang-cl "${CLANG_FLAGS[@]}" /c "/Fo$obj" "$PROJECT_DIR/$src"
+    "$MSVC/cl" "${MSVC_FLAGS[@]}" /c "/Fo$obj" "$PROJECT_DIR/$src"
     OBJ_FILES+=("$obj")
 done
 
 # Archive into .lib
 echo "  LIB mora_rt.lib"
-llvm-lib /out:"$OUTPUT" "${OBJ_FILES[@]}"
+"$MSVC/lib" /out:"$OUTPUT" "${OBJ_FILES[@]}"
 
 echo ""
 echo "Done: $OUTPUT ($(du -h "$OUTPUT" | awk '{print $1}'))"

@@ -60,17 +60,16 @@ if is_plat("windows") then
 target("mora_runtime")
     set_kind("shared")
     set_filename("MoraRuntime.dll")
+    set_languages("c++23")
 
     -- Shared Mora core code (subset — no ESP parser, no CLI, no lexer/parser)
     add_files("src/core/*.cpp", "src/data/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp")
     add_files("src/runtime/*.cpp")
     add_includedirs("include", {public = true})
 
-    -- CommonLibSSE (powerof3)
-    local commonlib = path.join(os.getenv("HOME") or "", "oss/CommonLibSSE/include")
-    if os.isdir(commonlib) then
-        add_includedirs(commonlib)
-    end
+    -- CommonLibSSE-NG (alandtse/CommonLibVR ng branch)
+    add_includedirs("extern/CommonLibSSE-NG/include")
+    add_defines("SKYRIMSE", "SKSE_SUPPORT_XBYAK=0")
 
     -- Windows SDK via xwin
     local xwin = path.join(os.getenv("HOME") or "", ".xwin")
