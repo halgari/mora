@@ -20,7 +20,7 @@ constexpr uint16_t fid16(FieldId id) { return static_cast<uint16_t>(id); }
 // ── Patch table format constants ────────────────────────────────────
 
 constexpr uint32_t kPatchTableMagic   = 0x4D4F5241; // "MORA" in ASCII
-constexpr uint32_t kPatchTableVersion = 2;
+constexpr uint32_t kPatchTableVersion = 3;
 constexpr size_t   kPatchStringBufSize = 512;
 
 // ── NPC ACBS flag bits ──────────────────────────────────────────────

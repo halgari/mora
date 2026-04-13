@@ -31,7 +31,7 @@ TEST(DLLBuilderTest, GenerateIR) {
 
     auto* func = mod->getFunction("apply_all_patches");
     ASSERT_NE(func, nullptr);
-    EXPECT_EQ(func->arg_size(), 1u);
+    EXPECT_EQ(func->arg_size(), 0u);
 
     std::string err;
     llvm::raw_string_ostream err_stream(err);

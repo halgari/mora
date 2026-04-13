@@ -30,7 +30,7 @@ TEST(IREmitterTest, EmitSimplePatch) {
     // Verify the module has the function
     auto* func = mod->getFunction("apply_all_patches");
     ASSERT_NE(func, nullptr);
-    EXPECT_EQ(func->arg_size(), 1u); // skyrim_base
+    EXPECT_EQ(func->arg_size(), 0u); // no params — CommonLib handles resolution
 
     // Verify it's valid IR
     std::string err;

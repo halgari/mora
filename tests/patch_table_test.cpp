@@ -2,20 +2,11 @@
 #include "mora/emit/patch_table.h"
 #include "mora/eval/patch_set.h"
 #include "mora/core/string_pool.h"
-#include "mora/codegen/address_library.h"
 #include <cstring>
 
 class PatchTableTest : public ::testing::Test {
 protected:
     mora::StringPool pool;
-    mora::AddressLibrary addrlib = mora::AddressLibrary::mock({
-        {514351, 0x1EEBE10},  // form map (SE)
-        {11045, 0xAAAA},      // MemMgr::GetSingleton (SE)
-        {66859, 0xBBBB},      // MemMgr::Allocate (SE)
-        {66861, 0xCCCC},      // MemMgr::Deallocate (SE)
-        {67819, 0xDDDD},      // BSFixedString::ctor8 (SE)
-        {67847, 0xEEEE},      // BSFixedString::release8 (SE)
-    });
 
     const mora::PatchTableHeader* get_header(const std::vector<uint8_t>& data) {
         return reinterpret_cast<const mora::PatchTableHeader*>(data.data());
@@ -31,11 +22,11 @@ protected:
 TEST_F(PatchTableTest, EmptyPatchSet) {
     mora::PatchSet ps;
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->magic, 0x4D4F5241u);
-    EXPECT_EQ(hdr->version, 2u);
+    EXPECT_EQ(hdr->version, 3u);
     EXPECT_EQ(hdr->patch_count, 0u);
     EXPECT_EQ(hdr->string_table_size, 0u);
 }
@@ -45,11 +36,11 @@ TEST_F(PatchTableTest, HeaderMagicAndVersion) {
     ps.add_patch(0x100, mora::FieldId::Damage, mora::FieldOp::Set,
                  mora::Value::make_int(25), pool.intern("my_mod"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->magic, 0x4D4F5241u);
-    EXPECT_EQ(hdr->version, 2u);
+    EXPECT_EQ(hdr->version, 3u);
     EXPECT_EQ(hdr->patch_count, 1u);
 }
 
@@ -58,7 +49,7 @@ TEST_F(PatchTableTest, FormIDValue) {
     ps.add_patch(0x200, mora::FieldId::Keywords, mora::FieldOp::Add,
                  mora::Value::make_formid(0xAABBCC), pool.intern("mod_a"), 1);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->patch_count, 1u);
@@ -76,7 +67,7 @@ TEST_F(PatchTableTest, IntValue) {
     ps.add_patch(0x100, mora::FieldId::GoldValue, mora::FieldOp::Set,
                  mora::Value::make_int(42), pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* entries = get_entries(data);
     EXPECT_EQ(entries[0].value_type, static_cast<uint8_t>(mora::PatchValueType::Int));
@@ -90,7 +81,7 @@ TEST_F(PatchTableTest, FloatValue) {
     ps.add_patch(0x100, mora::FieldId::Weight, mora::FieldOp::Set,
                  mora::Value::make_float(3.14), pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* entries = get_entries(data);
     EXPECT_EQ(entries[0].value_type, static_cast<uint8_t>(mora::PatchValueType::Float));
@@ -105,7 +96,7 @@ TEST_F(PatchTableTest, StringValue) {
                  mora::Value::make_string(pool.intern("Iron Sword")),
                  pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->patch_count, 1u);
@@ -136,7 +127,7 @@ TEST_F(PatchTableTest, MixedValueTypes) {
     ps.add_patch(0x100, mora::FieldId::Keywords, mora::FieldOp::Add,
                  mora::Value::make_formid(0xDEAD), pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->patch_count, 4u);
@@ -158,7 +149,7 @@ TEST_F(PatchTableTest, SortedByFormID) {
     ps.add_patch(0x200, mora::FieldId::Damage, mora::FieldOp::Set,
                  mora::Value::make_int(20), pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->patch_count, 3u);
@@ -169,20 +160,9 @@ TEST_F(PatchTableTest, SortedByFormID) {
     EXPECT_EQ(entries[2].formid, 0x300u);
 }
 
-TEST_F(PatchTableTest, AddressLibraryOffsetsInHeader) {
-    mora::PatchSet ps;
-    ps.add_patch(0x100, mora::FieldId::Damage, mora::FieldOp::Set,
-                 mora::Value::make_int(25), pool.intern("mod_a"), 0);
-    auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
-
-    auto* hdr = get_header(data);
-    EXPECT_EQ(hdr->map_offset, 0x1EEBE10u);
-    EXPECT_EQ(hdr->mm_singleton_off, 0xAAAAu);
-    EXPECT_EQ(hdr->mm_allocate_off, 0xBBBBu);
-    EXPECT_EQ(hdr->mm_deallocate_off, 0xCCCCu);
-    EXPECT_EQ(hdr->bs_ctor8_off, 0xDDDDu);
-    EXPECT_EQ(hdr->bs_release8_off, 0xEEEEu);
+TEST_F(PatchTableTest, HeaderHasNoOffsetFields) {
+    // v3 header has no Address Library offsets — CommonLib handles resolution
+    EXPECT_EQ(sizeof(mora::PatchTableHeader), 16u);
 }
 
 TEST_F(PatchTableTest, StringDeduplication) {
@@ -193,7 +173,7 @@ TEST_F(PatchTableTest, StringDeduplication) {
     ps.add_patch(0x200, mora::FieldId::Name, mora::FieldOp::Set,
                  mora::Value::make_string(sword_id), pool.intern("mod_a"), 0);
     auto resolved = ps.resolve();
-    auto data = mora::serialize_patch_table(resolved, pool, addrlib);
+    auto data = mora::serialize_patch_table(resolved, pool);
 
     auto* hdr = get_header(data);
     EXPECT_EQ(hdr->patch_count, 2u);

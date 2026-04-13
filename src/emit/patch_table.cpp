@@ -7,26 +7,6 @@ namespace mora {
 
 namespace {
 
-// Address Library IDs (copied from ir_emitter.cpp)
-constexpr uint64_t kFormMapAddrLibId_AE = 400507;
-constexpr uint64_t kFormMapAddrLibId_SE = 514351;
-
-constexpr uint64_t kMemMgr_GetSingleton_AE = 11141;
-constexpr uint64_t kMemMgr_GetSingleton_SE = 11045;
-constexpr uint64_t kMemMgr_Allocate_AE     = 68115;
-constexpr uint64_t kMemMgr_Allocate_SE     = 66859;
-constexpr uint64_t kMemMgr_Deallocate_AE   = 68117;
-constexpr uint64_t kMemMgr_Deallocate_SE   = 66861;
-
-constexpr uint64_t kBS_Ctor8_AE    = 69161;
-constexpr uint64_t kBS_Ctor8_SE    = 67819;
-constexpr uint64_t kBS_Release8_AE = 69192;
-constexpr uint64_t kBS_Release8_SE = 67847;
-
-uint64_t resolve_ae_or_se(const AddressLibrary& al, uint64_t ae_id, uint64_t se_id) {
-    return al.resolve(ae_id).value_or(al.resolve(se_id).value_or(0));
-}
-
 // Append raw bytes to a vector
 template<typename T>
 void append_bytes(std::vector<uint8_t>& buf, const T& val) {
@@ -37,8 +17,7 @@ void append_bytes(std::vector<uint8_t>& buf, const T& val) {
 } // anonymous namespace
 
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
-                                            StringPool& pool,
-                                            const AddressLibrary& addrlib) {
+                                            StringPool& pool) {
     auto sorted = patches.all_patches_sorted();
 
     // Step 1: Collect all string values into a string table.
@@ -106,12 +85,6 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
     PatchTableHeader hdr;
     hdr.patch_count = static_cast<uint32_t>(entries.size());
     hdr.string_table_size = static_cast<uint32_t>(string_table.size());
-    hdr.map_offset = resolve_ae_or_se(addrlib, kFormMapAddrLibId_AE, kFormMapAddrLibId_SE);
-    hdr.mm_singleton_off = resolve_ae_or_se(addrlib, kMemMgr_GetSingleton_AE, kMemMgr_GetSingleton_SE);
-    hdr.mm_allocate_off = resolve_ae_or_se(addrlib, kMemMgr_Allocate_AE, kMemMgr_Allocate_SE);
-    hdr.mm_deallocate_off = resolve_ae_or_se(addrlib, kMemMgr_Deallocate_AE, kMemMgr_Deallocate_SE);
-    hdr.bs_ctor8_off = resolve_ae_or_se(addrlib, kBS_Ctor8_AE, kBS_Ctor8_SE);
-    hdr.bs_release8_off = resolve_ae_or_se(addrlib, kBS_Release8_AE, kBS_Release8_SE);
 
     // Step 4: Serialize: header + string table + entries
     std::vector<uint8_t> result;
@@ -127,17 +100,10 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
     return result;
 }
 
-std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
-                                            const AddressLibrary& addrlib) {
+std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries) {
     PatchTableHeader hdr;
     hdr.patch_count = static_cast<uint32_t>(entries.size());
     hdr.string_table_size = 0; // no string table in fast path
-    hdr.map_offset = resolve_ae_or_se(addrlib, kFormMapAddrLibId_AE, kFormMapAddrLibId_SE);
-    hdr.mm_singleton_off = resolve_ae_or_se(addrlib, kMemMgr_GetSingleton_AE, kMemMgr_GetSingleton_SE);
-    hdr.mm_allocate_off = resolve_ae_or_se(addrlib, kMemMgr_Allocate_AE, kMemMgr_Allocate_SE);
-    hdr.mm_deallocate_off = resolve_ae_or_se(addrlib, kMemMgr_Deallocate_AE, kMemMgr_Deallocate_SE);
-    hdr.bs_ctor8_off = resolve_ae_or_se(addrlib, kBS_Ctor8_AE, kBS_Ctor8_SE);
-    hdr.bs_release8_off = resolve_ae_or_se(addrlib, kBS_Release8_AE, kBS_Release8_SE);
 
     std::vector<uint8_t> result;
     result.reserve(sizeof(PatchTableHeader) + entries.size() * sizeof(PatchEntry));

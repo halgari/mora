@@ -734,7 +734,7 @@ static int codegen_and_link(
     auto rt_lib_path = find_mora_rt_lib();
 
     out.phase_start("Serializing patches");
-    auto patch_data = mora::serialize_patch_table(patch_buf.entries(), addrlib);
+    auto patch_data = mora::serialize_patch_table(patch_buf.entries());
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
