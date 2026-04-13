@@ -8,6 +8,7 @@
 #include "mora/cli/output.h"
 #include "mora/cli/log.h"
 #include "mora/core/string_pool.h"
+#include "mora/data/action_names.h"
 #include "mora/eval/fact_db.h"
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
@@ -845,7 +846,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // Emit plugin_loaded facts for SkyPatcher hasPlugins/hasPluginsOr filters
     {
-        auto rel_id = cr.pool.intern("plugin_loaded");
+        auto rel_id = cr.pool.intern(mora::rel::kPluginLoaded);
         db.configure_relation(rel_id, 1, {0});
         for (auto& plugin_name : loaded_plugins) {
             db.add_fact(rel_id, {mora::Value::make_string(cr.pool.intern(plugin_name))});
@@ -854,15 +855,15 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // Derive npc_gender(FormID, "male"/"female") from npc_flags ACBS data
     {
-        auto flags_rel = cr.pool.intern("npc_flags");
-        auto gender_rel = cr.pool.intern("npc_gender");
+        auto flags_rel = cr.pool.intern(mora::rel::kNpcFlags);
+        auto gender_rel = cr.pool.intern(mora::rel::kNpcGender);
         db.configure_relation(gender_rel, 2, {0});
-        auto male_sid = cr.pool.intern("male");
-        auto female_sid = cr.pool.intern("female");
+        auto male_sid = cr.pool.intern(mora::gender::kMale);
+        auto female_sid = cr.pool.intern(mora::gender::kFemale);
         for (auto& tuple : db.get_relation(flags_rel)) {
             if (tuple.size() < 2) continue;
             uint32_t flags = static_cast<uint32_t>(tuple[1].as_int());
-            bool is_female = (flags & 1) != 0;
+            bool is_female = (flags & mora::npc_flags::kFemale) != 0;
             db.add_fact(gender_rel, {tuple[0],
                 mora::Value::make_string(is_female ? female_sid : male_sid)});
         }

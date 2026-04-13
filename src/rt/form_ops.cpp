@@ -1,5 +1,6 @@
 #include "mora/rt/form_ops.h"
 #include "mora/data/form_constants.h"
+#include "mora/data/action_names.h"
 #include <cstring>
 
 using namespace mora::form_type;
@@ -7,30 +8,9 @@ using namespace mora;
 
 namespace {
 
-// FieldId values (from patch_set.h FieldId enum)
-constexpr uint16_t kDamage      = 2;
-constexpr uint16_t kArmorRating = 3;
-constexpr uint16_t kGoldValue   = 4;
-constexpr uint16_t kWeight      = 5;
-constexpr uint16_t kSpeed       = 20;
-constexpr uint16_t kReach       = 21;
-constexpr uint16_t kStagger     = 22;
-constexpr uint16_t kRangeMin    = 23;
-constexpr uint16_t kRangeMax    = 24;
-constexpr uint16_t kCritDamage  = 25;
-constexpr uint16_t kHealth      = 30;
-constexpr uint16_t kLevel       = 11;
-constexpr uint16_t kCalcLevelMin = 41;
-constexpr uint16_t kCalcLevelMax = 42;
-constexpr uint16_t kRaceForm     = 50;
-constexpr uint16_t kClassForm    = 51;
-constexpr uint16_t kSkinForm     = 52;
-constexpr uint16_t kOutfitForm   = 53;
-constexpr uint16_t kEnchForm     = 54;
-constexpr uint16_t kVoiceForm    = 55;
-constexpr uint16_t kEssential    = 72;
-constexpr uint16_t kProtected    = 73;
-constexpr uint16_t kAutoCalc     = 71;
+// Use fid16() to convert FieldId enum to uint16_t for switch cases
+using mora::fid16;
+using mora::FieldId;
 
 // BGSKeywordForm layout (shared across NPC/Weapon/Armor — offset varies by form type)
 //   +0x00: vtable
@@ -46,40 +26,40 @@ namespace mora::rt {
 uint64_t get_field_offset(uint8_t ft, uint16_t field_id) {
     if (ft == form_type::kWeapon) {
         switch (field_id) {
-            case kDamage:    return weapon_layout::kAttackDamage + kComponentMember;  // uint16_t
-            case kGoldValue: return weapon_layout::kValueForm    + kComponentMember;  // int32_t
-            case kWeight:    return weapon_layout::kWeightForm   + kComponentMember;  // float
-            case kSpeed:     return weapon_layout::kSpeed;                            // float
-            case kReach:     return weapon_layout::kReach;                            // float
-            case kStagger:   return weapon_layout::kStagger;                          // float
-            case kRangeMin:  return weapon_layout::kRangeMin;                         // float
-            case kRangeMax:  return weapon_layout::kRangeMax;                         // float
-            case kCritDamage:return weapon_layout::kCritDamage;                       // uint16_t
-            case kEnchForm:  return weapon_layout::kEnchantment;                      // ptr
-            default:         return 0;
+            case fid16(FieldId::Damage):          return weapon_layout::kAttackDamage + kComponentMember;
+            case fid16(FieldId::GoldValue):       return weapon_layout::kValueForm    + kComponentMember;
+            case fid16(FieldId::Weight):          return weapon_layout::kWeightForm   + kComponentMember;
+            case fid16(FieldId::Speed):           return weapon_layout::kSpeed;
+            case fid16(FieldId::Reach):           return weapon_layout::kReach;
+            case fid16(FieldId::Stagger):         return weapon_layout::kStagger;
+            case fid16(FieldId::RangeMin):        return weapon_layout::kRangeMin;
+            case fid16(FieldId::RangeMax):        return weapon_layout::kRangeMax;
+            case fid16(FieldId::CritDamage):      return weapon_layout::kCritDamage;
+            case fid16(FieldId::EnchantmentForm): return weapon_layout::kEnchantment;
+            default: return 0;
         }
     }
     if (ft == form_type::kArmor) {
         switch (field_id) {
-            case kArmorRating: return armor_layout::kArmorRating;                      // uint32_t
-            case kGoldValue:   return armor_layout::kValueForm   + kComponentMember;   // int32_t
-            case kWeight:      return armor_layout::kWeightForm  + kComponentMember;   // float
-            case kHealth:      return armor_layout::kHealth;                            // uint32_t
-            case kEnchForm:    return armor_layout::kEnchantment;                       // ptr
-            default:           return 0;
+            case fid16(FieldId::ArmorRating):     return armor_layout::kArmorRating;
+            case fid16(FieldId::GoldValue):       return armor_layout::kValueForm   + kComponentMember;
+            case fid16(FieldId::Weight):          return armor_layout::kWeightForm  + kComponentMember;
+            case fid16(FieldId::Health):          return armor_layout::kHealth;
+            case fid16(FieldId::EnchantmentForm): return armor_layout::kEnchantment;
+            default: return 0;
         }
     }
     if (ft == form_type::kNPC) {
         switch (field_id) {
-            case kLevel:        return npc_layout::kLevel;         // uint16_t
-            case kCalcLevelMin: return npc_layout::kCalcLevelMin;  // uint16_t
-            case kCalcLevelMax: return npc_layout::kCalcLevelMax;  // uint16_t
-            case kRaceForm:     return npc_layout::kRaceForm;      // ptr
-            case kClassForm:    return npc_layout::kClassForm;     // ptr
-            case kSkinForm:     return npc_layout::kSkinForm;      // ptr
-            case kOutfitForm:   return npc_layout::kOutfitForm;    // ptr
-            case kVoiceForm:    return npc_layout::kVoiceType;     // ptr
-            default:            return 0;
+            case fid16(FieldId::Level):           return npc_layout::kLevel;
+            case fid16(FieldId::CalcLevelMin):    return npc_layout::kCalcLevelMin;
+            case fid16(FieldId::CalcLevelMax):    return npc_layout::kCalcLevelMax;
+            case fid16(FieldId::RaceForm):        return npc_layout::kRaceForm;
+            case fid16(FieldId::ClassForm):       return npc_layout::kClassForm;
+            case fid16(FieldId::SkinForm):        return npc_layout::kSkinForm;
+            case fid16(FieldId::OutfitForm):      return npc_layout::kOutfitForm;
+            case fid16(FieldId::VoiceTypeForm):   return npc_layout::kVoiceType;
+            default: return 0;
         }
     }
     return 0;

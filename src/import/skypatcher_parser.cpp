@@ -1,5 +1,6 @@
 #include "mora/import/skypatcher_parser.h"
 #include "mora/import/mora_printer.h"
+#include "mora/data/action_names.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -113,7 +114,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         for (auto& item : items) {
             auto ref = parse_formref(item);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_keyword", std::move(args)));
+            rule.body.push_back(fact(rel::kHasKeyword, std::move(args)));
         }
         break;
 
@@ -121,11 +122,11 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         if (items.size() == 1) {
             auto ref = parse_formref(items[0]);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_keyword", std::move(args)));
+            rule.body.push_back(fact(rel::kHasKeyword, std::move(args)));
         } else {
             // Emit: has_keyword(X, KW) + KW in [...]
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(var("KW"));
-            rule.body.push_back(fact("has_keyword", std::move(args)));
+            rule.body.push_back(fact(rel::kHasKeyword, std::move(args)));
             InClause ic;
             ic.variable = std::make_unique<Expr>(var("KW"));
             for (auto& item : items) {
@@ -140,7 +141,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         for (auto& item : items) {
             auto ref = parse_formref(item);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_keyword", std::move(args), true));
+            rule.body.push_back(fact(rel::kHasKeyword, std::move(args), true));
         }
         break;
 
@@ -148,7 +149,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         for (auto& item : items) {
             auto ref = parse_formref(item);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_faction", std::move(args)));
+            rule.body.push_back(fact(rel::kHasFaction, std::move(args)));
         }
         break;
 
@@ -156,10 +157,10 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         if (items.size() == 1) {
             auto ref = parse_formref(items[0]);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_faction", std::move(args)));
+            rule.body.push_back(fact(rel::kHasFaction, std::move(args)));
         } else {
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(var("Fac"));
-            rule.body.push_back(fact("has_faction", std::move(args)));
+            rule.body.push_back(fact(rel::kHasFaction, std::move(args)));
             InClause ic;
             ic.variable = std::make_unique<Expr>(var("Fac"));
             for (auto& item : items) {
@@ -174,7 +175,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         for (auto& item : items) {
             auto ref = parse_formref(item);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("has_faction", std::move(args), true));
+            rule.body.push_back(fact(rel::kHasFaction, std::move(args), true));
         }
         break;
 
@@ -182,10 +183,10 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         if (items.size() == 1) {
             auto ref = parse_formref(items[0]);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(sym(resolve_sym(ref)));
-            rule.body.push_back(fact("race_of", std::move(args)));
+            rule.body.push_back(fact(rel::kRaceOf, std::move(args)));
         } else {
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(var("Race"));
-            rule.body.push_back(fact("race_of", std::move(args)));
+            rule.body.push_back(fact(rel::kRaceOf, std::move(args)));
             InClause ic;
             ic.variable = std::make_unique<Expr>(var("Race"));
             for (auto& item : items) {
@@ -204,7 +205,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             std::vector<Expr> args; args.push_back(var(v));
             Expr str_expr; str_expr.data = StringLiteral{pool_.intern(resolve_sym(ref)), {}};
             args.push_back(std::move(str_expr));
-            rule.body.push_back(fact("editor_id", std::move(args)));
+            rule.body.push_back(fact(rel::kEditorId, std::move(args)));
         }
         break;
 
@@ -214,7 +215,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             std::vector<Expr> args; args.push_back(var(v));
             Expr str_expr; str_expr.data = StringLiteral{pool_.intern(resolve_sym(ref)), {}};
             args.push_back(std::move(str_expr));
-            rule.body.push_back(fact("editor_id", std::move(args), true));
+            rule.body.push_back(fact(rel::kEditorId, std::move(args), true));
         }
         break;
 
@@ -225,7 +226,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             auto min_str = value.substr(0, tilde);
             auto max_str = value.substr(tilde + 1);
             std::vector<Expr> args; args.push_back(var(v)); args.push_back(var("Level"));
-            rule.body.push_back(fact("base_level", std::move(args)));
+            rule.body.push_back(fact(rel::kBaseLevel, std::move(args)));
             if (!min_str.empty()) {
                 BinaryExpr bin; bin.op = BinaryExpr::Op::GtEq;
                 bin.left = std::make_unique<Expr>(var("Level"));
@@ -254,7 +255,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             if (trimmed.empty()) continue;
             std::vector<Expr> args;
             args.push_back(sym(trimmed));
-            rule.body.push_back(fact("plugin_loaded", std::move(args)));
+            rule.body.push_back(fact(rel::kPluginLoaded, std::move(args)));
         }
         break;
     }
@@ -266,7 +267,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             if (!trimmed.empty()) {
                 std::vector<Expr> args;
                 args.push_back(sym(trimmed));
-                rule.body.push_back(fact("plugin_loaded", std::move(args)));
+                rule.body.push_back(fact(rel::kPluginLoaded, std::move(args)));
             }
         } else if (items.size() > 1) {
             // OR over plugins: use an InClause with a fresh variable
@@ -283,7 +284,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             rule.body.push_back(std::move(in_c));
             std::vector<Expr> args;
             args.push_back(var("_Plugin"));
-            rule.body.push_back(fact("plugin_loaded", std::move(args)));
+            rule.body.push_back(fact(rel::kPluginLoaded, std::move(args)));
         }
         break;
     }
@@ -301,7 +302,7 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
             std::vector<Expr> args;
             args.push_back(var(v));
             args.push_back(sym(lower));
-            rule.body.push_back(fact("npc_gender", std::move(args)));
+            rule.body.push_back(fact(rel::kNpcGender, std::move(args)));
         }
         break;
     }
@@ -316,73 +317,73 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
 // ── Generic Operation Dispatch ───────────────────────────────────────
 
 static std::string sky_field_to_action(SkyField field, OpKind kind) {
-    // Map (field, kind) to a Mora action name
+    using namespace mora::action;
     if (kind == OpKind::AddFormList) {
         switch (field) {
-            case SkyField::Keywords:  return "add_keyword";
-            case SkyField::Spells:    return "add_spell";
-            case SkyField::Perks:     return "add_perk";
-            case SkyField::Shouts:    return "add_shout";
-            case SkyField::Factions:  return "add_faction";
-            case SkyField::Items:     return "add_item";
-            case SkyField::LevSpells: return "add_lev_spell";
+            case SkyField::Keywords:  return kAddKeyword;
+            case SkyField::Spells:    return kAddSpell;
+            case SkyField::Perks:     return kAddPerk;
+            case SkyField::Shouts:    return kAddShout;
+            case SkyField::Factions:  return kAddFaction;
+            case SkyField::Items:     return kAddItem;
+            case SkyField::LevSpells: return kAddLevSpell;
             default: return "";
         }
     }
     if (kind == OpKind::RemoveFormList) {
         switch (field) {
-            case SkyField::Keywords:  return "remove_keyword";
-            case SkyField::Spells:    return "remove_spell";
-            case SkyField::Shouts:    return "remove_shout";
-            case SkyField::Factions:  return "remove_faction";
+            case SkyField::Keywords:  return kRemoveKeyword;
+            case SkyField::Spells:    return kRemoveSpell;
+            case SkyField::Shouts:    return kRemoveShout;
+            case SkyField::Factions:  return kRemoveFaction;
             default: return "";
         }
     }
     if (kind == OpKind::SetInt || kind == OpKind::SetFloat ||
         kind == OpKind::AddInt || kind == OpKind::MulFloat) {
         switch (field) {
-            case SkyField::Damage:       return "set_damage";
-            case SkyField::ArmorRating:  return "set_armor_rating";
-            case SkyField::GoldValue:    return "set_gold_value";
-            case SkyField::Weight:       return "set_weight";
-            case SkyField::Speed:        return "set_speed";
-            case SkyField::Level:        return "set_level";
-            case SkyField::Reach:        return "set_reach";
-            case SkyField::Stagger:      return "set_stagger";
-            case SkyField::RangeMin:     return "set_range_min";
-            case SkyField::RangeMax:     return "set_range_max";
-            case SkyField::CritDamage:   return "set_crit_damage";
-            case SkyField::CritPercent:  return "set_crit_percent";
-            case SkyField::Health:       return "set_health";
-            case SkyField::CalcLevelMin: return "set_calc_level_min";
-            case SkyField::CalcLevelMax: return "set_calc_level_max";
-            case SkyField::SpeedMult:    return "set_speed_mult";
+            case SkyField::Damage:       return kSetDamage;
+            case SkyField::ArmorRating:  return kSetArmorRating;
+            case SkyField::GoldValue:    return kSetGoldValue;
+            case SkyField::Weight:       return kSetWeight;
+            case SkyField::Speed:        return kSetSpeed;
+            case SkyField::Level:        return kSetLevel;
+            case SkyField::Reach:        return kSetReach;
+            case SkyField::Stagger:      return kSetStagger;
+            case SkyField::RangeMin:     return kSetRangeMin;
+            case SkyField::RangeMax:     return kSetRangeMax;
+            case SkyField::CritDamage:   return kSetCritDamage;
+            case SkyField::CritPercent:  return kSetCritPercent;
+            case SkyField::Health:       return kSetHealth;
+            case SkyField::CalcLevelMin: return kSetCalcLevelMin;
+            case SkyField::CalcLevelMax: return kSetCalcLevelMax;
+            case SkyField::SpeedMult:    return kSetSpeedMult;
             default: return "";
         }
     }
-    if (kind == OpKind::SetName) return "set_name";
+    if (kind == OpKind::SetName) return kSetName;
     if (kind == OpKind::SetForm) {
         switch (field) {
-            case SkyField::Race:           return "set_race";
-            case SkyField::Class:          return "set_class";
-            case SkyField::Skin:           return "set_skin";
-            case SkyField::OutfitDefault:  return "set_outfit";
-            case SkyField::Enchantment:    return "set_enchantment";
-            case SkyField::VoiceType:      return "set_voice_type";
-            default: return "set_form";
+            case SkyField::Race:           return kSetRace;
+            case SkyField::Class:          return kSetClass;
+            case SkyField::Skin:           return kSetSkin;
+            case SkyField::OutfitDefault:  return kSetOutfit;
+            case SkyField::Enchantment:    return kSetEnchantment;
+            case SkyField::VoiceType:      return kSetVoiceType;
+            default: return "";
         }
     }
     if (kind == OpKind::SetBool) {
         switch (field) {
-            case SkyField::Essential:     return "set_essential";
-            case SkyField::Protected:     return "set_protected";
-            case SkyField::AutoCalcStats: return "set_auto_calc_stats";
+            case SkyField::Essential:     return kSetEssential;
+            case SkyField::Protected:     return kSetProtected;
+            case SkyField::AutoCalcStats: return kSetAutoCalcStats;
             default: return "";
         }
     }
-    if (kind == OpKind::ClearFlag) return "clear_all";
-    if (kind == OpKind::AddToLeveledList) return "add_to_leveled_list";
-    if (kind == OpKind::RemoveFromLeveledList) return "remove_from_leveled_list";
+    if (kind == OpKind::ClearFlag) return kClearAll;
+    if (kind == OpKind::AddToLeveledList) return kAddToLeveledList;
+    if (kind == OpKind::RemoveFromLeveledList) return kRemoveFromLeveledList;
     return "";
 }
 
@@ -433,7 +434,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
     }
     case OpKind::SetName: {
         std::string name = strip_tildes(value);
-        Effect eff; eff.action = pool_.intern("set_name"); eff.span = span;
+        Effect eff; eff.action = pool_.intern(action::kSetName); eff.span = span;
         eff.args.push_back(var(v));
         Expr str_expr; str_expr.data = StringLiteral{pool_.intern(name), {}};
         eff.args.push_back(std::move(str_expr));
@@ -487,7 +488,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         break;
     }
     case OpKind::ClearFlag: {
-        Effect eff; eff.action = pool_.intern("clear_all"); eff.span = span;
+        Effect eff; eff.action = pool_.intern(action::kClearAll); eff.span = span;
         eff.args.push_back(var(v));
         rule.effects.push_back(std::move(eff));
         break;

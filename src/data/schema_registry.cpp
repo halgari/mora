@@ -1,4 +1,5 @@
 #include "mora/data/schema_registry.h"
+#include "mora/data/action_names.h"
 #include "mora/eval/fact_db.h"
 
 namespace mora {
@@ -58,24 +59,24 @@ void SchemaRegistry::register_defaults() {
         const char* record;
     };
     ExistenceDef existence_defs[] = {
-        {"npc",           TypeKind::NpcID,     "NPC_"},
-        {"weapon",        TypeKind::WeaponID,  "WEAP"},
-        {"armor",         TypeKind::ArmorID,   "ARMO"},
-        {"spell",         TypeKind::SpellID,   "SPEL"},
-        {"perk",          TypeKind::PerkID,    "PERK"},
-        {"keyword",       TypeKind::KeywordID, "KYWD"},
-        {"faction",       TypeKind::FactionID, "FACT"},
-        {"race",          TypeKind::RaceID,    "RACE"},
-        {"leveled_list",  TypeKind::FormID,    "LVLI"},
-        {"ammo",          TypeKind::FormID,    "AMMO"},
-        {"potion",        TypeKind::FormID,    "ALCH"},
-        {"ingredient",    TypeKind::FormID,    "INGR"},
-        {"book",          TypeKind::FormID,    "BOOK"},
-        {"scroll",        TypeKind::FormID,    "SCRL"},
-        {"enchantment",   TypeKind::FormID,    "ENCH"},
-        {"magic_effect",  TypeKind::FormID,    "MGEF"},
-        {"misc_item",     TypeKind::FormID,    "MISC"},
-        {"soul_gem",      TypeKind::FormID,    "SLGM"},
+        {rel::kNpc,         TypeKind::NpcID,     rec::kNPC_},
+        {rel::kWeapon,      TypeKind::WeaponID,  rec::kWEAP},
+        {rel::kArmor,       TypeKind::ArmorID,   rec::kARMO},
+        {rel::kSpell,       TypeKind::SpellID,   rec::kSPEL},
+        {rel::kPerk,        TypeKind::PerkID,    rec::kPERK},
+        {rel::kKeyword,     TypeKind::KeywordID, rec::kKYWD},
+        {rel::kFaction,     TypeKind::FactionID, rec::kFACT},
+        {rel::kRace,        TypeKind::RaceID,    rec::kRACE},
+        {rel::kLeveledList, TypeKind::FormID,    rec::kLVLI},
+        {rel::kAmmo,        TypeKind::FormID,    rec::kAMMO},
+        {rel::kPotion,      TypeKind::FormID,    rec::kALCH},
+        {rel::kIngredient,  TypeKind::FormID,    rec::kINGR},
+        {rel::kBook,        TypeKind::FormID,    rec::kBOOK},
+        {rel::kScroll,      TypeKind::FormID,    rec::kSCRL},
+        {rel::kEnchantment, TypeKind::FormID,    rec::kENCH},
+        {rel::kMagicEffect, TypeKind::FormID,    rec::kMGEF},
+        {rel::kMiscItem,    TypeKind::FormID,    rec::kMISC},
+        {rel::kSoulGem,     TypeKind::FormID,    rec::kSLGM},
     };
     for (auto& def : existence_defs) {
         RelationSchema s;
@@ -93,8 +94,9 @@ void SchemaRegistry::register_defaults() {
         s.name = id("has_keyword");
         s.column_types = {formid_type, MoraType::make(TypeKind::KeywordID)};
         s.indexed_columns = {0, 1};
-        const char* kw_records[] = {"NPC_", "WEAP", "ARMO", "ALCH", "BOOK", "AMMO",
-                                    "CONT", "MGEF", "INGR", "SCRL", "MISC", "SLGM"};
+        const char* kw_records[] = {rec::kNPC_, rec::kWEAP, rec::kARMO, rec::kALCH, rec::kBOOK,
+                                    rec::kAMMO, rec::kCONT, rec::kMGEF, rec::kINGR, rec::kSCRL,
+                                    rec::kMISC, rec::kSLGM};
         for (auto* rec : kw_records) {
             s.esp_sources.push_back(EspSource{
                 rec, "KWDA", EspSource::Kind::ArrayField, 0, 4, ReadType::FormID});
@@ -157,7 +159,8 @@ void SchemaRegistry::register_defaults() {
         s.name = id("name");
         s.column_types = {formid_type, MoraType::make(TypeKind::String)};
         s.indexed_columns = {0};
-        const char* name_records[] = {"NPC_", "WEAP", "ARMO", "ALCH", "BOOK"};
+        const char* name_records[] = {rec::kNPC_, rec::kWEAP, rec::kARMO, rec::kALCH, rec::kBOOK,
+                                      rec::kAMMO, rec::kINGR, rec::kSCRL, rec::kENCH, rec::kMGEF};
         for (auto* rec : name_records) {
             s.esp_sources.push_back(EspSource{
                 rec, "FULL", EspSource::Kind::Subrecord, 0, 0, ReadType::LString});

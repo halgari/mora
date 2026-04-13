@@ -2,8 +2,14 @@
 #include "mora/rt/form_ops.h"
 #include "mora/rt/bst_hashmap.h"
 #include "mora/data/form_constants.h"
+#include "mora/data/action_names.h"
 #include <cstdint>
 #include <cstring>
+
+using mora::fid;
+using mora::fop;
+using mora::FieldId;
+using mora::FieldOp;
 
 // These are defined by the LLVM IR data module and resolved at link time.
 extern "C" const uint8_t mora_patch_data[];
@@ -44,28 +50,28 @@ static void apply_patch_entry(void* skyrim_base, void* form,
     uint8_t ft = get_form_type(form);
 
     switch (e.field_id) {
-        case 1: { // Name
-            if (e.value_type != 3) break; // must be string
+        case fid(FieldId::Name): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::StringIndex)) break;
             uint32_t offset = static_cast<uint32_t>(e.value);
             uint16_t len = 0;
             std::memcpy(&len, string_table + offset, 2);
-            char buf[512];
-            uint16_t copy_len = len < 511 ? len : 511;
+            char buf[mora::kPatchStringBufSize];
+            uint16_t copy_len = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
             std::memcpy(buf, string_table + offset + 2, copy_len);
             buf[copy_len] = '\0';
             mora_rt_write_name(skyrim_base, form, buf, bs_ctor8, bs_release8);
             break;
         }
         // ── Scalar fields: uint16_t ──
-        case 2:  // Damage
-        case 25: // CritDamage
-        case 11: // Level
-        case 41: // CalcLevelMin
-        case 42: // CalcLevelMax
+        case fid(FieldId::Damage):
+        case fid(FieldId::CritDamage):
+        case fid(FieldId::Level):
+        case fid(FieldId::CalcLevelMin):
+        case fid(FieldId::CalcLevelMax):
         {
             uint64_t off = get_field_offset(ft, e.field_id);
             if (!off) break;
-            if (e.op == 3) { // Multiply
+            if (e.op == fop(FieldOp::Multiply)) {
                 uint16_t cur; std::memcpy(&cur, (char*)form + off, 2);
                 double d; std::memcpy(&d, &e.value, 8);
                 uint16_t v = static_cast<uint16_t>(cur * d);
@@ -77,12 +83,12 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             break;
         }
         // ── Scalar fields: uint32_t ──
-        case 3:  // ArmorRating
-        case 30: // Health
+        case fid(FieldId::ArmorRating):
+        case fid(FieldId::Health):
         {
             uint64_t off = get_field_offset(ft, e.field_id);
             if (!off) break;
-            if (e.op == 3) { // Multiply
+            if (e.op == fop(FieldOp::Multiply)) {
                 uint32_t cur; std::memcpy(&cur, (char*)form + off, 4);
                 double d; std::memcpy(&d, &e.value, 8);
                 uint32_t v = static_cast<uint32_t>(cur * d);
@@ -94,11 +100,11 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             break;
         }
         // ── Scalar fields: int32_t ──
-        case 4: // GoldValue
+        case fid(FieldId::GoldValue):
         {
             uint64_t off = get_field_offset(ft, e.field_id);
             if (!off) break;
-            if (e.op == 3) { // Multiply
+            if (e.op == fop(FieldOp::Multiply)) {
                 int32_t cur; std::memcpy(&cur, (char*)form + off, 4);
                 double d; std::memcpy(&d, &e.value, 8);
                 int32_t v = static_cast<int32_t>(cur * d);
@@ -110,17 +116,17 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             break;
         }
         // ── Scalar fields: float ──
-        case 5:  // Weight
-        case 20: // Speed
-        case 21: // Reach
-        case 22: // Stagger
-        case 23: // RangeMin
-        case 24: // RangeMax
+        case fid(FieldId::Weight):
+        case fid(FieldId::Speed):
+        case fid(FieldId::Reach):
+        case fid(FieldId::Stagger):
+        case fid(FieldId::RangeMin):
+        case fid(FieldId::RangeMax):
         {
             uint64_t off = get_field_offset(ft, e.field_id);
             if (!off) break;
             double d; std::memcpy(&d, &e.value, 8);
-            if (e.op == 3) { // Multiply
+            if (e.op == fop(FieldOp::Multiply)) {
                 float cur; std::memcpy(&cur, (char*)form + off, 4);
                 float v = cur * static_cast<float>(d);
                 std::memcpy((char*)form + off, &v, 4);
@@ -130,9 +136,14 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             }
             break;
         }
-        // Form reference fields — write a form pointer
-        case 50: case 51: case 52: case 53: case 54: case 55: {
-            if (e.value_type != 0) break; // must be FormID
+        // ── Form reference fields — write a form pointer ──
+        case fid(FieldId::RaceForm):
+        case fid(FieldId::ClassForm):
+        case fid(FieldId::SkinForm):
+        case fid(FieldId::OutfitForm):
+        case fid(FieldId::EnchantmentForm):
+        case fid(FieldId::VoiceTypeForm): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             uint64_t off = get_field_offset(ft, e.field_id);
             if (!off) break;
             void* ref_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
@@ -141,42 +152,43 @@ static void apply_patch_entry(void* skyrim_base, void* form,
             }
             break;
         }
-        case 6: { // Keywords
-            if (e.value_type != 0) break; // must be FormID
+        // ── Form list operations ──
+        case fid(FieldId::Keywords): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             void* kw_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
             if (!kw_form) break;
-            if (e.op == 1) // Add
+            if (e.op == fop(FieldOp::Add))
                 mora_rt_add_keyword(skyrim_base, form, kw_form, mm_singleton, mm_alloc, mm_dealloc);
-            else if (e.op == 2) // Remove
+            else if (e.op == fop(FieldOp::Remove))
                 mora_rt_remove_keyword(skyrim_base, form, kw_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
-        case 9: { // Spells
-            if (e.value_type != 0) break;
+        case fid(FieldId::Spells): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             void* spell_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
             if (!spell_form) break;
-            if (e.op == 1) // Add
+            if (e.op == fop(FieldOp::Add))
                 mora_rt_add_spell(skyrim_base, form, spell_form, mm_singleton, mm_alloc, mm_dealloc);
-            else if (e.op == 2) // Remove
+            else if (e.op == fop(FieldOp::Remove))
                 mora_rt_remove_spell(skyrim_base, form, spell_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
-        case 14: { // Shouts
-            if (e.value_type != 0) break;
+        case fid(FieldId::Shouts): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             void* shout_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
             if (shout_form)
                 mora_rt_add_shout(skyrim_base, form, shout_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
-        case 8: { // Perks
-            if (e.value_type != 0) break;
+        case fid(FieldId::Perks): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             void* perk_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
             if (perk_form)
                 mora_rt_add_perk(skyrim_base, form, perk_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
-        case 7: { // Factions
-            if (e.value_type != 0) break;
+        case fid(FieldId::Factions): {
+            if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) break;
             void* fac_form = bst_hashmap_lookup(map, static_cast<uint32_t>(e.value));
             if (fac_form)
                 mora_rt_add_faction(skyrim_base, form, fac_form, mm_singleton, mm_alloc, mm_dealloc);
@@ -190,7 +202,7 @@ extern "C" void apply_all_patches(void* skyrim_base) {
     if (mora_patch_data_size == 0) return;
 
     auto* hdr = reinterpret_cast<const PatchTableHeader*>(mora_patch_data);
-    if (hdr->magic != 0x4D4F5241 || hdr->version != 2) return;
+    if (hdr->magic != mora::kPatchTableMagic || hdr->version != mora::kPatchTableVersion) return;
 
     const uint8_t* string_table = mora_patch_data + sizeof(PatchTableHeader);
     const auto* entries = reinterpret_cast<const PatchEntry*>(
