@@ -767,7 +767,8 @@ static int codegen_and_link(
 static mora::Module load_skypatcher_rules(
     const std::string& target_path, mora::StringPool& pool,
     mora::DiagBag& diags, mora::Output& out,
-    const mora::FormIdResolver* resolver)
+    const mora::FormIdResolver* resolver,
+    const mora::EditorIdMap* editor_ids = nullptr)
 {
     mora::Module mod;
     mod.filename = "<imported SkyPatcher rules>";
@@ -794,7 +795,7 @@ static mora::Module load_skypatcher_rules(
     if (skypatcher_dir.empty()) return mod;
 
     out.phase_start("Loading SkyPatcher configs");
-    mora::SkyPatcherParser parser(pool, diags, resolver);
+    mora::SkyPatcherParser parser(pool, diags, resolver, editor_ids);
     auto rules = parser.parse_directory(skypatcher_dir.string());
     for (auto& r : rules) mod.rules.push_back(std::move(r));
     out.phase_done(fmt::format("{} SkyPatcher rules from {}", mod.rules.size(), skypatcher_dir.string()));
@@ -853,6 +854,34 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         }
     }
 
+    // Emit form_source(FormID, "Plugin.esp") facts by inspecting load order index
+    // The high byte of each FormID encodes the load order index.
+    if (!data_dir.empty()) {
+        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+        auto source_rel = cr.pool.intern(mora::rel::kFormSource);
+        db.configure_relation(source_rel, 2, {0});
+        // Scan all existence relations for FormIDs and derive their source plugin
+        const char* existence_rels[] = {
+            mora::rel::kNpc, mora::rel::kWeapon, mora::rel::kArmor, mora::rel::kAmmo,
+            mora::rel::kPotion, mora::rel::kBook, mora::rel::kSpell, mora::rel::kMiscItem,
+            mora::rel::kMagicEffect, mora::rel::kIngredient, mora::rel::kScroll,
+            mora::rel::kSoulGem, mora::rel::kEnchantment, mora::rel::kLeveledList,
+        };
+        for (auto* rel_name : existence_rels) {
+            auto rid = cr.pool.intern(rel_name);
+            for (auto& tuple : db.get_relation(rid)) {
+                if (tuple.empty() || tuple[0].kind() != mora::Value::Kind::FormID) continue;
+                uint32_t formid = tuple[0].as_formid();
+                uint8_t load_idx = static_cast<uint8_t>(formid >> 24);
+                if (load_idx < lo.plugins.size()) {
+                    auto plugin_name = lo.plugins[load_idx].filename().string();
+                    db.add_fact(source_rel, {tuple[0],
+                        mora::Value::make_string(cr.pool.intern(plugin_name))});
+                }
+            }
+        }
+    }
+
     // Derive npc_gender(FormID, "male"/"female") from npc_flags ACBS data
     {
         auto flags_rel = cr.pool.intern(mora::rel::kNpcFlags);
@@ -879,7 +908,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             resolver.build_from_editor_ids(editor_id_map);
         }
         const mora::FormIdResolver* resolver_ptr = resolver.has_data() ? &resolver : nullptr;
-        auto sky_mod = load_skypatcher_rules(target_path, cr.pool, cr.diags, out, resolver_ptr);
+        const mora::EditorIdMap* edid_ptr = editor_id_map.empty() ? nullptr : &editor_id_map;
+        auto sky_mod = load_skypatcher_rules(target_path, cr.pool, cr.diags, out, resolver_ptr, edid_ptr);
         if (!sky_mod.rules.empty()) {
             cr.rule_count += sky_mod.rules.size();
             cr.modules.push_back(std::move(sky_mod));

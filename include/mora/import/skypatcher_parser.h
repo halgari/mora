@@ -2,6 +2,7 @@
 
 #include "mora/ast/ast.h"
 #include "mora/import/ini_common.h"
+#include "mora/import/ini_facts.h"
 #include "mora/import/skypatcher_schema.h"
 #include "mora/core/string_pool.h"
 #include "mora/diag/diagnostic.h"
@@ -13,7 +14,8 @@ namespace mora {
 class SkyPatcherParser {
 public:
     SkyPatcherParser(StringPool& pool, DiagBag& diags,
-                      const FormIdResolver* resolver = nullptr);
+                      const FormIdResolver* resolver = nullptr,
+                      const EditorIdMap* editor_ids = nullptr);
 
     // Parse a single line for a known schema
     std::vector<Rule> parse_line(const std::string& line,
@@ -68,6 +70,7 @@ private:
     StringPool& pool_;
     DiagBag& diags_;
     const FormIdResolver* resolver_;
+    const EditorIdMap* editor_ids_;
 };
 
 } // namespace mora

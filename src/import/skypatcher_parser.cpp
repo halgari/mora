@@ -12,8 +12,9 @@ namespace mora {
 // ── Construction ─────────────────────────────────────────────────────
 
 SkyPatcherParser::SkyPatcherParser(StringPool& pool, DiagBag& diags,
-                                     const FormIdResolver* resolver)
-    : pool_(pool), diags_(diags), resolver_(resolver) {}
+                                     const FormIdResolver* resolver,
+                                     const EditorIdMap* editor_ids)
+    : pool_(pool), diags_(diags), resolver_(resolver), editor_ids_(editor_ids) {}
 
 // ── Utility ──────────────────────────────────────────────────────────
 
@@ -289,8 +290,30 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         break;
     }
     case FilterKind::SourcePlugin: {
-        // filterByModNames=Plugin.esp — forms originating from this plugin
-        // Requires form_source facts (not yet available from ESP loading)
+        // filterByModNames=Plugin.esp — forms originating from these plugins
+        auto items = split_commas(value);
+        if (items.size() == 1) {
+            auto trimmed = std::string(trim(items[0]));
+            if (!trimmed.empty()) {
+                std::vector<Expr> args;
+                args.push_back(var(v));
+                args.push_back(sym(trimmed));
+                rule.body.push_back(fact(rel::kFormSource, std::move(args)));
+            }
+        } else if (items.size() > 1) {
+            InClause in;
+            in.variable = std::make_unique<Expr>(var("_SrcPlugin"));
+            for (auto& item : items) {
+                auto trimmed = std::string(trim(item));
+                if (!trimmed.empty()) in.values.push_back(sym(trimmed));
+            }
+            Clause in_c; in_c.data = std::move(in);
+            rule.body.push_back(std::move(in_c));
+            std::vector<Expr> args;
+            args.push_back(var(v));
+            args.push_back(var("_SrcPlugin"));
+            rule.body.push_back(fact(rel::kFormSource, std::move(args)));
+        }
         break;
     }
     case FilterKind::GenderFilter: {
@@ -306,11 +329,99 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         }
         break;
     }
-    case FilterKind::EditorIdAnd:
-    case FilterKind::EditorIdOr:
-    case FilterKind::EditorIdExclude:
-        // EditorID substring matching requires pre-expanded facts — not yet implemented
+    case FilterKind::EditorIdAnd: {
+        if (!editor_ids_) break;
+        auto substrings = split_commas(value);
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
+        auto make_edid_fact = [&](Expr a, Expr b, bool neg = false) {
+            std::vector<Expr> args;
+            args.push_back(std::move(a));
+            args.push_back(std::move(b));
+            return fact(rel::kEditorId, std::move(args), neg);
+        };
+        for (auto& substr : substrings) {
+            auto lower_substr = to_lower(substr);
+            std::vector<std::string> matches;
+            for (auto& [edid, fid] : *editor_ids_) {
+                if (to_lower(edid).find(lower_substr) != std::string::npos)
+                    matches.push_back(edid);
+            }
+            if (matches.empty()) {
+                rule.body.push_back(make_edid_fact(var(v), sym("__no_match__")));
+            } else if (matches.size() == 1) {
+                rule.body.push_back(make_edid_fact(var(v), sym(matches[0])));
+            } else {
+                InClause in;
+                in.variable = std::make_unique<Expr>(var("_EdId"));
+                for (auto& m : matches) in.values.push_back(sym(m));
+                Clause in_c; in_c.data = std::move(in);
+                rule.body.push_back(std::move(in_c));
+                rule.body.push_back(make_edid_fact(var(v), var("_EdId")));
+            }
+        }
         break;
+    }
+    case FilterKind::EditorIdOr: {
+        if (!editor_ids_) break;
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
+        auto substrings = split_commas(value);
+        std::vector<std::string> all_matches;
+        for (auto& substr : substrings) {
+            auto lower_substr = to_lower(substr);
+            for (auto& [edid, fid] : *editor_ids_) {
+                if (to_lower(edid).find(lower_substr) != std::string::npos)
+                    all_matches.push_back(edid);
+            }
+        }
+        std::sort(all_matches.begin(), all_matches.end());
+        all_matches.erase(std::unique(all_matches.begin(), all_matches.end()), all_matches.end());
+        if (all_matches.empty()) {
+            std::vector<Expr> args;
+            args.push_back(var(v));
+            args.push_back(sym("__no_match__"));
+            rule.body.push_back(fact(rel::kEditorId, std::move(args)));
+        } else {
+            InClause in;
+            in.variable = std::make_unique<Expr>(var("_EdId"));
+            for (auto& m : all_matches) in.values.push_back(sym(m));
+            Clause in_c; in_c.data = std::move(in);
+            rule.body.push_back(std::move(in_c));
+            std::vector<Expr> args;
+            args.push_back(var(v));
+            args.push_back(var("_EdId"));
+            rule.body.push_back(fact(rel::kEditorId, std::move(args)));
+        }
+        break;
+    }
+    case FilterKind::EditorIdExclude: {
+        if (!editor_ids_) break;
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
+        auto substrings = split_commas(value);
+        for (auto& substr : substrings) {
+            auto lower_substr = to_lower(substr);
+            for (auto& [edid, fid] : *editor_ids_) {
+                if (to_lower(edid).find(lower_substr) != std::string::npos) {
+                    std::vector<Expr> args;
+                    args.push_back(var(v));
+                    args.push_back(sym(edid));
+                    rule.body.push_back(fact(rel::kEditorId, std::move(args), true));
+                }
+            }
+        }
+        break;
+    }
     }
 }
 
