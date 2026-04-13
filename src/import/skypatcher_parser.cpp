@@ -358,6 +358,7 @@ static std::string sky_field_to_action(SkyField field, OpKind kind) {
             case SkyField::CalcLevelMin: return kSetCalcLevelMin;
             case SkyField::CalcLevelMax: return kSetCalcLevelMax;
             case SkyField::SpeedMult:    return kSetSpeedMult;
+            case SkyField::ChanceNone:  return kSetChanceNone;
             default: return "";
         }
     }
@@ -493,10 +494,51 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         rule.effects.push_back(std::move(eff));
         break;
     }
-    case OpKind::AddToLeveledList:
-    case OpKind::RemoveFromLeveledList:
-        // Leveled list manipulation requires deeper runtime support — skip for now
+    case OpKind::AddToLeveledList: {
+        // Format: Form~level~count (e.g. Skyrim.esm|0x12345~10~1)
+        auto parts = split_commas(value); // comma-separated entries
+        for (auto& part : parts) {
+            // Split by ~ to extract form, level, count
+            auto tilde1 = part.find('~');
+            if (tilde1 == std::string::npos) continue;
+            std::string form_str = part.substr(0, tilde1);
+            std::string rest = part.substr(tilde1 + 1);
+            uint16_t level_val = 1, count_val = 1;
+            auto tilde2 = rest.find('~');
+            if (tilde2 != std::string::npos) {
+                level_val = static_cast<uint16_t>(std::stoi(rest.substr(0, tilde2)));
+                count_val = static_cast<uint16_t>(std::stoi(rest.substr(tilde2 + 1)));
+            } else {
+                level_val = static_cast<uint16_t>(std::stoi(rest));
+            }
+            auto ref = parse_formref(form_str);
+            Effect eff;
+            eff.action = pool_.intern(action::kAddToLeveledList);
+            eff.span = span;
+            eff.args.push_back(var(v));
+            eff.args.push_back(sym(resolve_sym(ref)));
+            eff.args.push_back(intlit(level_val));
+            eff.args.push_back(intlit(count_val));
+            rule.effects.push_back(std::move(eff));
+        }
         break;
+    }
+    case OpKind::RemoveFromLeveledList: {
+        auto parts = split_commas(value);
+        for (auto& part : parts) {
+            // Strip level/count specifiers — just use the form ref
+            auto tilde = part.find('~');
+            std::string form_str = (tilde != std::string::npos) ? part.substr(0, tilde) : part;
+            auto ref = parse_formref(form_str);
+            Effect eff;
+            eff.action = pool_.intern(action::kRemoveFromLeveledList);
+            eff.span = span;
+            eff.args.push_back(var(v));
+            eff.args.push_back(sym(resolve_sym(ref)));
+            rule.effects.push_back(std::move(eff));
+        }
+        break;
+    }
     }
 }
 

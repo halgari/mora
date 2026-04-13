@@ -100,6 +100,8 @@ namespace action {
     // Leveled list
     constexpr const char* kAddToLeveledList      = "add_to_leveled_list";
     constexpr const char* kRemoveFromLeveledList = "remove_from_leveled_list";
+    constexpr const char* kSetChanceNone         = "set_chance_none";
+    constexpr const char* kClearLeveledList      = "clear_leveled_list";
 } // namespace action
 
 // ── Relation name constants ─────────────────────────────────────────

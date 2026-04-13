@@ -65,6 +65,39 @@ namespace npc_layout {
     inline constexpr uint64_t kFlags        = 0x040; // uint32_t (TESActorBaseData flags)
 } // namespace npc_layout
 
+// TESLevItem / TESLevCharacter: TESLeveledList component at offset 0x30
+// (both inherit TESBoundObject(0x30) + TESLeveledList(0x28))
+namespace leveled_list_layout {
+    inline constexpr uint64_t kComponent   = 0x030; // offset of TESLeveledList within TESLevItem
+    // TESLeveledList internal layout (relative to component start):
+    //   +0x00: vtable (BaseFormComponent)
+    //   +0x08: SimpleArray<LEVELED_OBJECT> entries (just a pointer)
+    //   +0x10: int8_t chanceNone
+    //   +0x11: uint8_t llFlags
+    //   +0x12: uint8_t numEntries
+    //   +0x20: TESGlobal* chanceGlobal
+    inline constexpr uint64_t kEntries     = 0x08;  // SimpleArray<LEVELED_OBJECT>* (pointer)
+    inline constexpr uint64_t kChanceNone  = 0x10;  // int8_t (0-100)
+    inline constexpr uint64_t kFlags       = 0x11;  // uint8_t
+    inline constexpr uint64_t kNumEntries  = 0x12;  // uint8_t
+    inline constexpr uint64_t kChanceGlobal = 0x20; // TESGlobal*
+} // namespace leveled_list_layout
+
+// LEVELED_OBJECT element layout (0x18 bytes each)
+namespace leveled_object {
+    inline constexpr uint64_t kSize      = 0x18;
+    inline constexpr uint64_t kForm      = 0x00; // TESForm*
+    inline constexpr uint64_t kCount     = 0x08; // uint16_t
+    inline constexpr uint64_t kLevel     = 0x0A; // uint16_t
+    inline constexpr uint64_t kItemExtra = 0x10; // ContainerItemExtra*
+    inline constexpr uint8_t  kMaxEntries = 255; // uint8_t numEntries max
+} // namespace leveled_object
+
+namespace form_type {
+    inline constexpr uint8_t kLeveledItem = 0x2D;
+    inline constexpr uint8_t kLeveledChar = 0x2C;
+} // namespace form_type
+
 // Component member offset (vtable at +0x00, first data member at +0x08)
 inline constexpr uint64_t kComponentMember = 0x08;
 

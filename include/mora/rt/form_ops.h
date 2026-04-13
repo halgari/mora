@@ -114,4 +114,28 @@ void mora_rt_add_shout(void* skyrim_base, void* form, void* shout_form,
                         uint64_t allocate_off,
                         uint64_t deallocate_off);
 
+// Add an entry to a TESLeveledList's SimpleArray.
+// Parameters packed as: value = formid, extra args via level/count encoding.
+// level and count are passed via the patch entry's value field as:
+//   value = (uint64_t)formid | ((uint64_t)level << 32) | ((uint64_t)count << 48)
+void mora_rt_add_to_leveled_list(void* skyrim_base, void* form,
+                                  uint32_t entry_formid, uint16_t level, uint16_t count,
+                                  uint64_t singleton_off,
+                                  uint64_t allocate_off,
+                                  uint64_t deallocate_off,
+                                  const void* form_map);
+
+// Remove entries matching a FormID from a TESLeveledList.
+void mora_rt_remove_from_leveled_list(void* form, uint32_t entry_formid);
+
+// Set the chanceNone field on a TESLeveledList.
+void mora_rt_set_chance_none(void* form, int8_t chance);
+
+// Clear all entries from a TESLeveledList.
+void mora_rt_clear_leveled_list(void* form,
+                                 uint64_t singleton_off,
+                                 uint64_t allocate_off,
+                                 uint64_t deallocate_off,
+                                 void* skyrim_base);
+
 } // extern "C"

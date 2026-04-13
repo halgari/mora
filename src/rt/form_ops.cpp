@@ -1,4 +1,5 @@
 #include "mora/rt/form_ops.h"
+#include "mora/rt/bst_hashmap.h"
 #include "mora/data/form_constants.h"
 #include "mora/data/action_names.h"
 #include <cstring>
@@ -558,4 +559,188 @@ extern "C" void mora_rt_add_shout(void* skyrim_base, void* form, void* shout_for
     if (old_shouts) {
         mm.deallocate(mm.mgr, old_shouts, false);
     }
+}
+
+// ── Leveled List operations ────────────────────────────────────────
+// TESLeveledList component sits at leveled_list_layout::kComponent (0x30)
+// within TESLevItem. It uses a SimpleArray<LEVELED_OBJECT> for entries.
+//
+// SimpleArray stores entries as a raw pointer. The count is at
+// leveled_list_layout::kNumEntries (uint8_t at component+0x12).
+// Each LEVELED_OBJECT is 0x18 bytes: {form*, count(u16), level(u16), pad, itemExtra*}
+
+namespace {
+    using namespace mora::leveled_list_layout;
+    using namespace mora::leveled_object;
+
+    // Get pointer to the TESLeveledList component within a leveled form
+    char* get_ll_component(void* form) {
+        return reinterpret_cast<char*>(form) + kComponent;
+    }
+
+    // Read the entries pointer from the SimpleArray
+    char* get_ll_entries(char* comp) {
+        void** entries_slot = reinterpret_cast<void**>(comp + kEntries);
+        return reinterpret_cast<char*>(*entries_slot);
+    }
+
+    uint8_t get_ll_count(char* comp) {
+        return *reinterpret_cast<uint8_t*>(comp + kNumEntries);
+    }
+
+    void set_ll_count(char* comp, uint8_t count) {
+        *reinterpret_cast<uint8_t*>(comp + kNumEntries) = count;
+    }
+
+    // Read the FormID (first 4 bytes of the form pointer's FormID field at +0x14)
+    uint32_t read_entry_formid(char* entry) {
+        void* entry_form = *reinterpret_cast<void**>(entry + leveled_object::kForm);
+        if (!entry_form) return 0;
+        return *reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(entry_form) + 0x14);
+    }
+} // anonymous namespace
+
+extern "C" void mora_rt_add_to_leveled_list(void* skyrim_base, void* form,
+                                              uint32_t entry_formid, uint16_t level, uint16_t count,
+                                              uint64_t singleton_off,
+                                              uint64_t allocate_off,
+                                              uint64_t deallocate_off,
+                                              const void* form_map) {
+    using namespace mora::rt;
+    if (!form) return;
+
+    uint8_t ft = get_form_type(form);
+    if (ft != form_type::kLeveledItem && ft != form_type::kLeveledChar) return;
+
+    // Look up the form to add
+    auto* map = reinterpret_cast<const mora::rt::BSTHashMapLayout*>(form_map);
+    void* entry_form = bst_hashmap_lookup(map, entry_formid);
+    if (!entry_form) return;
+
+    char* comp = get_ll_component(form);
+    char* old_entries = get_ll_entries(comp);
+    uint8_t old_count = get_ll_count(comp);
+
+    // Check for duplicates (same form + same level)
+    for (uint8_t i = 0; i < old_count; i++) {
+        char* e = old_entries + i * kSize;
+        void* e_form = *reinterpret_cast<void**>(e + leveled_object::kForm);
+        uint16_t e_level = *reinterpret_cast<uint16_t*>(e + leveled_object::kLevel);
+        if (e_form == entry_form && e_level == level) return; // already present
+    }
+
+    if (old_count >= kMaxEntries) return; // can't add more
+
+    MemMgrFns mm;
+    if (!resolve_memmgr(skyrim_base, singleton_off, allocate_off, deallocate_off, mm)) return;
+
+    uint8_t new_count = old_count + 1;
+    char* fresh = reinterpret_cast<char*>(
+        mm.allocate(mm.mgr, new_count * kSize, 0, false));
+    if (!fresh) return;
+
+    // Copy old entries
+    if (old_entries && old_count > 0) {
+        std::memcpy(fresh, old_entries, old_count * kSize);
+    }
+
+    // Write new entry at the end
+    char* new_entry = fresh + old_count * kSize;
+    std::memset(new_entry, 0, kSize);
+    std::memcpy(new_entry + leveled_object::kForm, &entry_form, sizeof(void*));
+    std::memcpy(new_entry + leveled_object::kCount, &count, sizeof(uint16_t));
+    std::memcpy(new_entry + leveled_object::kLevel, &level, sizeof(uint16_t));
+
+    // Sort by level (insertion sort — entries are usually nearly sorted)
+    for (uint8_t i = 1; i < new_count; i++) {
+        uint16_t cur_level = *reinterpret_cast<uint16_t*>(fresh + i * kSize + leveled_object::kLevel);
+        if (i > 0) {
+            uint16_t prev_level = *reinterpret_cast<uint16_t*>(fresh + (i-1) * kSize + leveled_object::kLevel);
+            if (cur_level < prev_level) {
+                // Swap backwards until sorted
+                char tmp[0x18];
+                std::memcpy(tmp, fresh + i * kSize, kSize);
+                uint8_t j = i;
+                while (j > 0) {
+                    uint16_t jl = *reinterpret_cast<uint16_t*>(fresh + (j-1) * kSize + leveled_object::kLevel);
+                    if (jl <= cur_level) break;
+                    std::memcpy(fresh + j * kSize, fresh + (j-1) * kSize, kSize);
+                    j--;
+                }
+                std::memcpy(fresh + j * kSize, tmp, kSize);
+            }
+        }
+    }
+
+    // Update the leveled list
+    void** entries_slot = reinterpret_cast<void**>(comp + kEntries);
+    *entries_slot = fresh;
+    set_ll_count(comp, new_count);
+
+    if (old_entries) {
+        mm.deallocate(mm.mgr, old_entries, false);
+    }
+}
+
+extern "C" void mora_rt_remove_from_leveled_list(void* form, uint32_t entry_formid) {
+    using namespace mora::rt;
+    if (!form) return;
+
+    uint8_t ft = get_form_type(form);
+    if (ft != form_type::kLeveledItem && ft != form_type::kLeveledChar) return;
+
+    char* comp = get_ll_component(form);
+    char* entries = get_ll_entries(comp);
+    uint8_t count = get_ll_count(comp);
+    if (!entries || count == 0) return;
+
+    // Compact: remove all entries matching the FormID
+    uint8_t write = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        uint32_t fid = read_entry_formid(entries + i * kSize);
+        if (fid != entry_formid) {
+            if (write != i) {
+                std::memcpy(entries + write * kSize, entries + i * kSize, kSize);
+            }
+            write++;
+        }
+    }
+    set_ll_count(comp, write);
+}
+
+extern "C" void mora_rt_set_chance_none(void* form, int8_t chance) {
+    using namespace mora::rt;
+    if (!form) return;
+
+    uint8_t ft = get_form_type(form);
+    if (ft != form_type::kLeveledItem && ft != form_type::kLeveledChar) return;
+
+    char* comp = get_ll_component(form);
+    *reinterpret_cast<int8_t*>(comp + kChanceNone) = chance;
+}
+
+extern "C" void mora_rt_clear_leveled_list(void* form,
+                                            uint64_t singleton_off,
+                                            uint64_t allocate_off,
+                                            uint64_t deallocate_off,
+                                            void* skyrim_base) {
+    using namespace mora::rt;
+    if (!form) return;
+
+    uint8_t ft = get_form_type(form);
+    if (ft != form_type::kLeveledItem && ft != form_type::kLeveledChar) return;
+
+    char* comp = get_ll_component(form);
+    char* old_entries = get_ll_entries(comp);
+
+    if (old_entries) {
+        MemMgrFns mm;
+        if (resolve_memmgr(skyrim_base, singleton_off, allocate_off, deallocate_off, mm)) {
+            mm.deallocate(mm.mgr, old_entries, false);
+        }
+    }
+
+    void** entries_slot = reinterpret_cast<void**>(comp + kEntries);
+    *entries_slot = nullptr;
+    set_ll_count(comp, 0);
 }

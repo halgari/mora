@@ -56,6 +56,7 @@ enum class FieldId : uint16_t {
 
     // Leveled list
     LeveledEntries   = 60,
+    ChanceNone       = 61,
 
     // Boolean flags
     ClearAll         = 70,

@@ -194,6 +194,28 @@ static void apply_patch_entry(void* skyrim_base, void* form,
                 mora_rt_add_faction(skyrim_base, form, fac_form, mm_singleton, mm_alloc, mm_dealloc);
             break;
         }
+        // ── Leveled list operations ──
+        case fid(FieldId::LeveledEntries): {
+            if (e.op == fop(FieldOp::Add)) {
+                // value packs formid in low 32 bits, level in bits 32-47, count in bits 48-63
+                uint32_t entry_fid = static_cast<uint32_t>(e.value);
+                uint16_t level_val = static_cast<uint16_t>(e.value >> 32);
+                uint16_t count_val = static_cast<uint16_t>(e.value >> 48);
+                if (count_val == 0) count_val = 1;
+                mora_rt_add_to_leveled_list(skyrim_base, form, entry_fid, level_val, count_val,
+                    mm_singleton, mm_alloc, mm_dealloc, map);
+            } else if (e.op == fop(FieldOp::Remove)) {
+                mora_rt_remove_from_leveled_list(form, static_cast<uint32_t>(e.value));
+            } else if (e.op == fop(FieldOp::Set)) {
+                // Set with LeveledEntries = clear all
+                mora_rt_clear_leveled_list(form, mm_singleton, mm_alloc, mm_dealloc, skyrim_base);
+            }
+            break;
+        }
+        case fid(FieldId::ChanceNone): {
+            mora_rt_set_chance_none(form, static_cast<int8_t>(e.value));
+            break;
+        }
     }
 }
 

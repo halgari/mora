@@ -77,6 +77,7 @@ enum class SkyField : uint16_t {
 
     // Leveled list
     LeveledEntries = 60,
+    ChanceNone = 61,
 
     // Flags
     ClearAll = 70,
@@ -273,7 +274,7 @@ MORA_SCHEMA_OPS(leveled_list_ops,
     {"addoncetolls",       OpKind::AddToLeveledList,      SkyField::LeveledEntries},
     {"removefromlls",      OpKind::RemoveFromLeveledList, SkyField::LeveledEntries},
     {"clear",              OpKind::ClearFlag,              SkyField::ClearAll},
-    {"chancenone",         OpKind::SetInt,                 SkyField::GoldValue}, // reuse
+    {"chancenone",         OpKind::SetInt,                 SkyField::ChanceNone},
 );
 
 MORA_SCHEMA(leveled_list, "leveledList", "leveled_list", leveled_list_filters, leveled_list_ops);

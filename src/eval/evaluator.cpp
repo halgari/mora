@@ -408,6 +408,22 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
         Value target = resolve_expr(effect.args[0], bindings);
         Value value = resolve_expr(effect.args[1], bindings);
 
+        // Leveled list add: pack formid + level + count into a single int
+        if (field == FieldId::LeveledEntries && op == FieldOp::Add &&
+            effect.args.size() >= 4 && value.kind() == Value::Kind::FormID) {
+            Value level_v = resolve_expr(effect.args[2], bindings);
+            Value count_v = resolve_expr(effect.args[3], bindings);
+            uint64_t packed = value.as_formid()
+                | (static_cast<uint64_t>(level_v.as_int()) << 32)
+                | (static_cast<uint64_t>(count_v.as_int()) << 48);
+            if (target.kind() == Value::Kind::FormID) {
+                patches.add_patch(target.as_formid(), field, op,
+                    Value::make_int(static_cast<int64_t>(packed)),
+                    current_mod_name_, priority);
+            }
+            continue;
+        }
+
         if (target.kind() == Value::Kind::FormID) {
             patches.add_patch(target.as_formid(), field, op, value,
                               current_mod_name_, priority);
@@ -557,6 +573,12 @@ std::pair<FieldId, FieldOp> Evaluator::action_to_field(StringId action_id) const
     if (name == kSetProtected)     return {FieldId::Protected,     FieldOp::Set};
     if (name == kSetAutoCalcStats) return {FieldId::AutoCalcStats, FieldOp::Set};
     if (name == kClearAll)         return {FieldId::ClearAll,      FieldOp::Set};
+
+    // Leveled list
+    if (name == kAddToLeveledList)      return {FieldId::LeveledEntries, FieldOp::Add};
+    if (name == kRemoveFromLeveledList) return {FieldId::LeveledEntries, FieldOp::Remove};
+    if (name == kSetChanceNone)         return {FieldId::ChanceNone,     FieldOp::Set};
+    if (name == kClearLeveledList)      return {FieldId::LeveledEntries, FieldOp::Set};
 
     // Default fallback
     return {FieldId::Keywords, FieldOp::Add};
