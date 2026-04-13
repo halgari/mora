@@ -843,6 +843,31 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         load_esp_data(cr, db, evaluator, data_dir, out, editor_id_map, loaded_plugins);
     }
 
+    // Emit plugin_loaded facts for SkyPatcher hasPlugins/hasPluginsOr filters
+    {
+        auto rel_id = cr.pool.intern("plugin_loaded");
+        db.configure_relation(rel_id, 1, {0});
+        for (auto& plugin_name : loaded_plugins) {
+            db.add_fact(rel_id, {mora::Value::make_string(cr.pool.intern(plugin_name))});
+        }
+    }
+
+    // Derive npc_gender(FormID, "male"/"female") from npc_flags ACBS data
+    {
+        auto flags_rel = cr.pool.intern("npc_flags");
+        auto gender_rel = cr.pool.intern("npc_gender");
+        db.configure_relation(gender_rel, 2, {0});
+        auto male_sid = cr.pool.intern("male");
+        auto female_sid = cr.pool.intern("female");
+        for (auto& tuple : db.get_relation(flags_rel)) {
+            if (tuple.size() < 2) continue;
+            uint32_t flags = static_cast<uint32_t>(tuple[1].as_int());
+            bool is_female = (flags & 1) != 0;
+            db.add_fact(gender_rel, {tuple[0],
+                mora::Value::make_string(is_female ? female_sid : male_sid)});
+        }
+    }
+
     uint32_t next_rule_id = load_ini_distributions(
         target_path, cr, db, out, editor_id_map, loaded_plugins);
 

@@ -58,15 +58,24 @@ void SchemaRegistry::register_defaults() {
         const char* record;
     };
     ExistenceDef existence_defs[] = {
-        {"npc",          TypeKind::NpcID,     "NPC_"},
-        {"weapon",       TypeKind::WeaponID,  "WEAP"},
-        {"armor",        TypeKind::ArmorID,   "ARMO"},
-        {"spell",        TypeKind::SpellID,   "SPEL"},
-        {"perk",         TypeKind::PerkID,    "PERK"},
-        {"keyword",      TypeKind::KeywordID, "KYWD"},
-        {"faction",      TypeKind::FactionID, "FACT"},
-        {"race",         TypeKind::RaceID,    "RACE"},
-        {"leveled_list", TypeKind::FormID,    "LVLI"},
+        {"npc",           TypeKind::NpcID,     "NPC_"},
+        {"weapon",        TypeKind::WeaponID,  "WEAP"},
+        {"armor",         TypeKind::ArmorID,   "ARMO"},
+        {"spell",         TypeKind::SpellID,   "SPEL"},
+        {"perk",          TypeKind::PerkID,    "PERK"},
+        {"keyword",       TypeKind::KeywordID, "KYWD"},
+        {"faction",       TypeKind::FactionID, "FACT"},
+        {"race",          TypeKind::RaceID,    "RACE"},
+        {"leveled_list",  TypeKind::FormID,    "LVLI"},
+        {"ammo",          TypeKind::FormID,    "AMMO"},
+        {"potion",        TypeKind::FormID,    "ALCH"},
+        {"ingredient",    TypeKind::FormID,    "INGR"},
+        {"book",          TypeKind::FormID,    "BOOK"},
+        {"scroll",        TypeKind::FormID,    "SCRL"},
+        {"enchantment",   TypeKind::FormID,    "ENCH"},
+        {"magic_effect",  TypeKind::FormID,    "MGEF"},
+        {"misc_item",     TypeKind::FormID,    "MISC"},
+        {"soul_gem",      TypeKind::FormID,    "SLGM"},
     };
     for (auto& def : existence_defs) {
         RelationSchema s;
@@ -84,7 +93,8 @@ void SchemaRegistry::register_defaults() {
         s.name = id("has_keyword");
         s.column_types = {formid_type, MoraType::make(TypeKind::KeywordID)};
         s.indexed_columns = {0, 1};
-        const char* kw_records[] = {"NPC_", "WEAP", "ARMO", "ALCH", "BOOK", "AMMO", "CONT", "MGEF"};
+        const char* kw_records[] = {"NPC_", "WEAP", "ARMO", "ALCH", "BOOK", "AMMO",
+                                    "CONT", "MGEF", "INGR", "SCRL", "MISC", "SLGM"};
         for (auto* rec : kw_records) {
             s.esp_sources.push_back(EspSource{
                 rec, "KWDA", EspSource::Kind::ArrayField, 0, 4, ReadType::FormID});
@@ -207,6 +217,17 @@ void SchemaRegistry::register_defaults() {
         s.indexed_columns = {0};
         s.esp_sources.push_back(EspSource{
             "NPC_", "ACBS", EspSource::Kind::PackedField, 8, 0, ReadType::Int16});
+        register_schema(std::move(s));
+    }
+
+    // --- npc_flags(FormID, Int) - ACBS flags uint32 at offset 0 from NPC_ ---
+    {
+        RelationSchema s;
+        s.name = id("npc_flags");
+        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
+        s.indexed_columns = {0};
+        s.esp_sources.push_back(EspSource{
+            "NPC_", "ACBS", EspSource::Kind::PackedField, 0, 0, ReadType::UInt32});
         register_schema(std::move(s));
     }
 

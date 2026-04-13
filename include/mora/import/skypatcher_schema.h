@@ -301,10 +301,174 @@ MORA_SCHEMA_OPS(magic_effect_ops,
 
 MORA_SCHEMA(magic_effect, "magicEffect", "magic_effect", magic_effect_filters, magic_effect_ops);
 
+// ── Ammo ────────────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(ammo_filters,
+    {"filterbyammo",                  FilterKind::DirectTarget},
+    {"filterbyammoexcluded",          FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"filterbyeditoridcontainsor",    FilterKind::EditorIdOr},
+    {"filterbyeditoridcontainsexcluded", FilterKind::EditorIdExclude},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(ammo_ops,
+    {"damage",             OpKind::SetInt,        SkyField::Damage},
+    {"weight",             OpKind::SetFloat,      SkyField::Weight},
+    {"value",              OpKind::SetInt,        SkyField::GoldValue},
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(ammo, "ammo", "ammo", ammo_filters, ammo_ops);
+
+// ── Spell ───────────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(spell_filters,
+    {"filterbyspells",                FilterKind::DirectTarget},
+    {"filterbyspellsexcluded",        FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"filterbyeditoridcontainsor",    FilterKind::EditorIdOr},
+    {"filterbyeditoridcontainsexcluded", FilterKind::EditorIdExclude},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(spell_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"basecost",           OpKind::SetFloat,      SkyField::GoldValue},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(spell_schema, "spell", "spell", spell_filters, spell_ops);
+
+// ── Enchantment ─────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(enchantment_filters,
+    {"filterbyenchantments",          FilterKind::DirectTarget},
+    {"filterbyenchantmentsexcluded",  FilterKind::DirectExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"filterbyeditoridcontainsor",    FilterKind::EditorIdOr},
+    {"filterbyeditoridcontainsexcluded", FilterKind::EditorIdExclude},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(enchantment_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"basecost",           OpKind::SetFloat,      SkyField::GoldValue},
+);
+
+MORA_SCHEMA(enchantment, "enchantment", "enchantment", enchantment_filters, enchantment_ops);
+
+// ── Potion (alchemyItem) ────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(potion_filters,
+    {"filterbypotions",               FilterKind::DirectTarget},
+    {"filterbypotionsexcluded",       FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"filterbyeditoridcontainsor",    FilterKind::EditorIdOr},
+    {"filterbyeditoridcontainsexcluded", FilterKind::EditorIdExclude},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(potion_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"weight",             OpKind::SetFloat,      SkyField::Weight},
+    {"value",              OpKind::SetInt,        SkyField::GoldValue},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(potion, "alchemyItem", "potion", potion_filters, potion_ops);
+
+// ── Ingredient ──────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(ingredient_filters,
+    {"filterbyingredients",           FilterKind::DirectTarget},
+    {"filterbyingredientsexcluded",   FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(ingredient_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"weight",             OpKind::SetFloat,      SkyField::Weight},
+    {"value",              OpKind::SetInt,        SkyField::GoldValue},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(ingredient, "ingredient", "ingredient", ingredient_filters, ingredient_ops);
+
+// ── Book ────────────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(book_filters,
+    {"filterbybooks",                 FilterKind::DirectTarget},
+    {"filterbybooksexcluded",         FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(book_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"weight",             OpKind::SetFloat,      SkyField::Weight},
+    {"value",              OpKind::SetInt,        SkyField::GoldValue},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(book, "book", "book", book_filters, book_ops);
+
+// ── Scroll ──────────────────────────────────────────────────────────
+
+MORA_SCHEMA_FILTERS(scroll_filters,
+    {"filterbyscrolls",               FilterKind::DirectTarget},
+    {"filterbyscrollsexcluded",       FilterKind::DirectExclude},
+    {"filterbykeywords",              FilterKind::KeywordAnd},
+    {"filterbykeywordsor",            FilterKind::KeywordOr},
+    {"filterbykeywordsexcluded",      FilterKind::KeywordExclude},
+    {"filterbyeditoridcontains",      FilterKind::EditorIdAnd},
+    {"hasplugins",                    FilterKind::PluginRequired},
+    {"haspluginsor",                  FilterKind::PluginRequiredOr},
+);
+
+MORA_SCHEMA_OPS(scroll_ops,
+    {"fullname",           OpKind::SetName,       SkyField::Name},
+    {"weight",             OpKind::SetFloat,      SkyField::Weight},
+    {"value",              OpKind::SetInt,        SkyField::GoldValue},
+    {"keywordstoadd",      OpKind::AddFormList,   SkyField::Keywords},
+    {"keywordstoremove",   OpKind::RemoveFormList, SkyField::Keywords},
+);
+
+MORA_SCHEMA(scroll, "scroll", "scroll", scroll_filters, scroll_ops);
+
 // ── Schema registry ──────────────────────────────────────────────────
 
 constexpr const RecordSchema* all_schemas[] = {
     &weapon, &armor, &npc, &leveled_list, &magic_effect,
+    &ammo, &spell_schema, &enchantment, &potion, &ingredient, &book, &scroll,
 };
 
 constexpr size_t schema_count = std::size(all_schemas);

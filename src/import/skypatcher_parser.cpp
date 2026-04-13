@@ -246,14 +246,69 @@ void SkyPatcherParser::emit_filter(Rule& rule, FilterKind kind,
         break;
     }
 
+    case FilterKind::PluginRequired: {
+        // hasPlugins=P1,P2 — all must be loaded (AND)
+        auto items = split_commas(value);
+        for (auto& item : items) {
+            auto trimmed = std::string(trim(item));
+            if (trimmed.empty()) continue;
+            std::vector<Expr> args;
+            args.push_back(sym(trimmed));
+            rule.body.push_back(fact("plugin_loaded", std::move(args)));
+        }
+        break;
+    }
+    case FilterKind::PluginRequiredOr: {
+        // hasPluginsOr=P1,P2 — at least one must be loaded (OR)
+        auto items = split_commas(value);
+        if (items.size() == 1) {
+            auto trimmed = std::string(trim(items[0]));
+            if (!trimmed.empty()) {
+                std::vector<Expr> args;
+                args.push_back(sym(trimmed));
+                rule.body.push_back(fact("plugin_loaded", std::move(args)));
+            }
+        } else if (items.size() > 1) {
+            // OR over plugins: use an InClause with a fresh variable
+            InClause in;
+            in.variable = std::make_unique<Expr>(var("_Plugin"));
+            for (auto& item : items) {
+                auto trimmed = std::string(trim(item));
+                if (!trimmed.empty()) {
+                    in.values.push_back(sym(trimmed));
+                }
+            }
+            Clause in_c;
+            in_c.data = std::move(in);
+            rule.body.push_back(std::move(in_c));
+            std::vector<Expr> args;
+            args.push_back(var("_Plugin"));
+            rule.body.push_back(fact("plugin_loaded", std::move(args)));
+        }
+        break;
+    }
+    case FilterKind::SourcePlugin: {
+        // filterByModNames=Plugin.esp — forms originating from this plugin
+        // Requires form_source facts (not yet available from ESP loading)
+        break;
+    }
+    case FilterKind::GenderFilter: {
+        // filterByGender=male/female — requires npc_gender facts
+        auto lower = std::string(value);
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+            [](unsigned char c) { return std::tolower(c); });
+        if (lower == "male" || lower == "female") {
+            std::vector<Expr> args;
+            args.push_back(var(v));
+            args.push_back(sym(lower));
+            rule.body.push_back(fact("npc_gender", std::move(args)));
+        }
+        break;
+    }
     case FilterKind::EditorIdAnd:
     case FilterKind::EditorIdOr:
     case FilterKind::EditorIdExclude:
-    case FilterKind::GenderFilter:
-    case FilterKind::SourcePlugin:
-    case FilterKind::PluginRequired:
-    case FilterKind::PluginRequiredOr:
-        // These can't be cleanly expressed in Datalog yet — skip silently
+        // EditorID substring matching requires pre-expanded facts — not yet implemented
         break;
     }
 }
