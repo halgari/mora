@@ -3,7 +3,6 @@
 #include "mora/harness/tcp_listener.h"
 #include "mora/harness/weapon_dumper.h"
 #include "mora/harness/ini_reader.h"
-#include "mora/rt/bst_hashmap.h"
 #include "mora/rt/form_ops.h"
 #include "mora/codegen/address_library.h"
 
