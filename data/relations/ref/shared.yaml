@@ -12,6 +12,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: F, type: FormRef}
     source: handler
+    read_handler: RefReadBaseForm
     docs: "Bridge from a live placed reference to its base record. This is the primary join used to carry a reference over into form/* queries."
 
   current_location:
@@ -20,6 +21,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: LOC, type: FormRef}
     source: handler
+    read_handler: RefReadCurrentLocation
     docs: "The Location record this reference is currently in (nearest parent Location)."
 
   keyword:
@@ -36,22 +38,26 @@ relations:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadIsPlayer
     docs: "True when R is the player character."
 
   is_npc:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadIsNpc
     docs: "True when R's base form is an NPC (actor base)."
 
   is_weapon:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadIsWeapon
     docs: "True when R's base form is a WEAP record."
 
   is_armor:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadIsArmor
     docs: "True when R's base form is an ARMO record."

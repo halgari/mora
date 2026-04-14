@@ -21,6 +21,7 @@ constexpr bool validate_all_handlers(const RelationEntry* arr, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         if (!handler_registered(arr[i].apply_handler)) return false;
         if (!handler_registered(arr[i].retract_handler)) return false;
+        if (!handler_registered(arr[i].read_handler)) return false;
     }
     return true;
 }

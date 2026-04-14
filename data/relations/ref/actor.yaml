@@ -8,12 +8,14 @@ relations:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadIsDead
     docs: "True when R is an actor that is currently dead."
 
   in_combat:
     type: predicate
     args: [{name: R, type: FormRef}]
     source: handler
+    read_handler: RefReadInCombat
     docs: "True when R is an actor currently in combat state."
 
   health:
@@ -22,6 +24,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: H, type: Float}
     source: handler
+    read_handler: RefReadHealth
     docs: "Current health value for an actor reference (not max health)."
 
   magicka:
@@ -30,6 +33,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: M, type: Float}
     source: handler
+    read_handler: RefReadMagicka
     docs: "Current magicka value for an actor reference."
 
   stamina:
@@ -38,6 +42,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: S, type: Float}
     source: handler
+    read_handler: RefReadStamina
     docs: "Current stamina value for an actor reference."
 
   level:
@@ -46,6 +51,7 @@ relations:
       - {name: R, type: FormRef}
       - {name: L, type: Int}
     source: handler
+    read_handler: RefReadLevel
     docs: "Current (possibly leveled) level of an actor reference. May differ from form/base_level when the actor was auto-leveled."
 
   equipped_weapon:
@@ -54,6 +60,7 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: WEAP, type: FormRef}
     source: handler
+    read_handler: RefReadEquippedWeapon
     docs: "Weapon currently held in ACTOR's right (main) hand. Returns the base weapon FormID, not a reference."
 
   equipped_weapon_left:
@@ -62,6 +69,7 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: WEAP, type: FormRef}
     source: handler
+    read_handler: RefReadEquippedWeaponLeft
     docs: "Weapon or shield currently held in ACTOR's left (off) hand."
 
   equipped_spell_left:
@@ -70,6 +78,7 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: SPELL, type: FormRef}
     source: handler
+    read_handler: RefReadEquippedSpellLeft
     docs: "Spell currently readied in ACTOR's left hand."
 
   equipped_spell_right:
@@ -78,6 +87,7 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: SPELL, type: FormRef}
     source: handler
+    read_handler: RefReadEquippedSpellRight
     docs: "Spell currently readied in ACTOR's right hand."
 
   equipped_armor:
@@ -86,6 +96,7 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: ARMO, type: FormRef}
     source: handler
+    read_handler: RefReadEquippedArmor
     docs: "Armor pieces currently worn by ACTOR. One fact per equipped piece."
 
   inventory_item:
@@ -94,4 +105,5 @@ relations:
       - {name: ACTOR, type: FormRef}
       - {name: ITEM, type: FormRef}
     source: handler
+    read_handler: RefReadInventoryItem
     docs: "Items currently in ACTOR's inventory (base-form FormIDs; counts and individual ref instances aren't exposed here)."

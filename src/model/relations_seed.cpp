@@ -323,6 +323,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsDead,
         .docs = "True when R is an actor that is currently dead.",
     },
     {
@@ -332,6 +333,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadInCombat,
         .docs = "True when R is an actor currently in combat state.",
     },
     {
@@ -341,6 +343,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::Float},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadHealth,
         .docs = "Current health value for an actor reference (not max health).",
     },
     {
@@ -350,6 +353,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::Float},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadMagicka,
         .docs = "Current magicka value for an actor reference.",
     },
     {
@@ -359,6 +363,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::Float},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadStamina,
         .docs = "Current stamina value for an actor reference.",
     },
     {
@@ -368,6 +373,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadLevel,
         .docs = "Current (possibly leveled) level of an actor reference. May differ from form/base_level when the actor was auto-leveled.",
     },
     {
@@ -377,6 +383,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadEquippedWeapon,
         .docs = "Weapon currently held in ACTOR's right (main) hand. Returns the base weapon FormID, not a reference.",
     },
     {
@@ -386,6 +393,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadEquippedWeaponLeft,
         .docs = "Weapon or shield currently held in ACTOR's left (off) hand.",
     },
     {
@@ -395,6 +403,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadEquippedSpellLeft,
         .docs = "Spell currently readied in ACTOR's left hand.",
     },
     {
@@ -404,6 +413,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadEquippedSpellRight,
         .docs = "Spell currently readied in ACTOR's right hand.",
     },
     {
@@ -413,6 +423,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::List, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadEquippedArmor,
         .docs = "Armor pieces currently worn by ACTOR. One fact per equipped piece.",
     },
     {
@@ -422,6 +433,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::List, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadInventoryItem,
         .docs = "Items currently in ACTOR's inventory (base-form FormIDs; counts and individual ref instances aren't exposed here).",
     },
     //   from data/relations/ref/item.yaml
@@ -432,6 +444,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadWornBy,
         .docs = "The actor currently wearing or wielding this item reference, if any. Inverse of ref/equipped_armor / ref/equipped_weapon.",
     },
     {
@@ -441,6 +454,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadContainer,
         .docs = "The container or actor currently holding this item reference. Distinct from worn_by — an item can be carried but not equipped.",
     },
     {
@@ -450,6 +464,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsEquipped,
         .docs = "True when this item reference is currently equipped on some actor.",
     },
     {
@@ -459,6 +474,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsStolen,
         .docs = "True when this item reference has the stolen flag set.",
     },
     //   from data/relations/ref/shared.yaml
@@ -469,6 +485,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadBaseForm,
         .docs = "Bridge from a live placed reference to its base record. This is the primary join used to carry a reference over into form/* queries.",
     },
     {
@@ -478,6 +495,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 2,
         .type = {TypeCtor::Const, ElemType::FormRef},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadCurrentLocation,
         .docs = "The Location record this reference is currently in (nearest parent Location).",
     },
     {
@@ -498,6 +516,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsPlayer,
         .docs = "True when R is the player character.",
     },
     {
@@ -507,6 +526,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsNpc,
         .docs = "True when R's base form is an NPC (actor base).",
     },
     {
@@ -516,6 +536,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsWeapon,
         .docs = "True when R's base form is a WEAP record.",
     },
     {
@@ -525,6 +546,7 @@ constexpr RelationEntry kRelations[] = {
         .arg_count = 1,
         .type = {TypeCtor::Predicate, ElemType::Int},
         .source = RelationSourceKind::Handler,
+        .read_handler = HandlerId::RefReadIsArmor,
         .docs = "True when R's base form is an ARMO record.",
     },
     // ── player/* ──

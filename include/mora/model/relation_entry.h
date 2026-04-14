@@ -25,6 +25,7 @@ struct RelationEntry {
 
     HandlerId          apply_handler   = HandlerId::None;
     HandlerId          retract_handler = HandlerId::None;
+    HandlerId          read_handler    = HandlerId::None;
 
     std::string_view   docs = {};
 };

@@ -104,6 +104,8 @@ def emit_entry(namespace, rname, rel, out):
         out.append(f'        .apply_handler = HandlerId::{rel["apply_handler"]},')
     if "retract_handler" in rel:
         out.append(f'        .retract_handler = HandlerId::{rel["retract_handler"]},')
+    if "read_handler" in rel:
+        out.append(f'        .read_handler = HandlerId::{rel["read_handler"]},')
     docs = rel.get("docs", "").replace('"', '\\"')
     out.append(f'        .docs = "{docs}",')
     out.append(f"    }},")
