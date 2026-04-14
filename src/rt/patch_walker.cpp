@@ -11,6 +11,8 @@
 #include "mora/rt/mapped_patch_file.h"
 #include "mora/rt/dag_runtime.h"
 #include "mora/rt/handler_impls.h"
+#include "mora/rt/needed_handlers.h"
+#include "mora/rt/skse_hooks.h"
 
 #include <RE/T/TESForm.h>
 #include <RE/F/FormTraits.h>
@@ -533,7 +535,8 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
     // Load DAG bytecode (if present) into the runtime, then bind effect
     // handler implementations (CommonLibSSE-NG wrappers on Windows).
     g_dag_runtime.init_from(g_patch_file);
-    mora::rt::bind_all_handlers(g_dag_runtime.registry());
+    auto needed_handlers = mora::rt::needed_handler_ids(g_dag_runtime.dag());
+    mora::rt::bind_all_handlers(g_dag_runtime.registry(), needed_handlers);
 
     return g_patch_count;
 }

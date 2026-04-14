@@ -6,6 +6,7 @@
 #include <RE/T/TESBoundObject.h>
 
 #include <cstdint>
+#include <unordered_set>
 
 namespace mora::rt {
 
@@ -29,9 +30,15 @@ static EffectHandle effect_player_show_notification(const EffectArgs&) {
     return { 1 };
 }
 
-void bind_player_handlers(HandlerRegistry& reg) {
-    reg.bind_effect(model::HandlerId::PlayerAddGold,          effect_player_add_gold);
-    reg.bind_effect(model::HandlerId::PlayerShowNotification, effect_player_show_notification);
+void bind_player_handlers(HandlerRegistry& reg,
+                          const std::unordered_set<uint16_t>& needed) {
+    auto want = [&](model::HandlerId id) {
+        return needed.count(static_cast<uint16_t>(id)) > 0;
+    };
+    if (want(model::HandlerId::PlayerAddGold))
+        reg.bind_effect(model::HandlerId::PlayerAddGold, effect_player_add_gold);
+    if (want(model::HandlerId::PlayerShowNotification))
+        reg.bind_effect(model::HandlerId::PlayerShowNotification, effect_player_show_notification);
 }
 
 } // namespace mora::rt

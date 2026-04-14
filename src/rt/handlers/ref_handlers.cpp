@@ -7,6 +7,7 @@
 #include <RE/F/FormTraits.h>
 
 #include <cstdint>
+#include <unordered_set>
 
 namespace mora::rt {
 
@@ -44,9 +45,15 @@ static void retract_ref_add_keyword(EffectHandle h) {
     kf->RemoveKeyword(kw);
 }
 
-void bind_ref_handlers(HandlerRegistry& reg) {
-    reg.bind_effect(model::HandlerId::RefAddKeyword, effect_ref_add_keyword);
-    reg.bind_retract(model::HandlerId::RefAddKeyword, retract_ref_add_keyword);
+void bind_ref_handlers(HandlerRegistry& reg,
+                       const std::unordered_set<uint16_t>& needed) {
+    auto want = [&](model::HandlerId id) {
+        return needed.count(static_cast<uint16_t>(id)) > 0;
+    };
+    if (want(model::HandlerId::RefAddKeyword)) {
+        reg.bind_effect(model::HandlerId::RefAddKeyword, effect_ref_add_keyword);
+        reg.bind_retract(model::HandlerId::RefAddKeyword, retract_ref_add_keyword);
+    }
 }
 
 } // namespace mora::rt
