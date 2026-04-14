@@ -1,6 +1,6 @@
 # CLI Reference
 
-Quick reference for every `mora` command and option.
+Reference for every `mora` subcommand and flag.
 
 ---
 
@@ -10,267 +10,188 @@ Quick reference for every `mora` command and option.
 mora <command> [options] [path]
 ```
 
+Commands:
+
+- [`mora check`](#mora-check) — parse + type-check `.mora` files.
+- [`mora compile`](#mora-compile) — full pipeline to `mora_patches.bin`.
+- [`mora inspect`](#mora-inspect) — show the patch set without writing output.
+- [`mora info`](#mora-info) — project status overview.
+- [`mora docs`](#mora-docs) — emit the auto-generated language reference.
+
 ---
 
-## Global Options
+## Global options
 
-These options are accepted by all commands.
+Accepted by every command:
 
 `--no-color`
-: Disable colored terminal output. Useful when piping output to a file or when running in a CI environment.
+: Disable colored terminal output. Useful in CI or when piping to a file.
 
 `-v`
-: Verbose output. Prints additional detail during each pipeline stage.
+: Verbose output.
 
 ---
 
-## Commands
+## `mora check`
 
-### mora compile
-
-Compiles one or more `.mora` files to a native SKSE DLL. This is the primary command. It runs the full pipeline: parsing, type checking, plugin loading, Datalog evaluation, code generation, and linking.
-
-```bash
-mora compile my_rules.mora --data-dir /path/to/Skyrim/Data
-mora compile my_rules.mora --data-dir /path/to/Skyrim/Data --output /path/to/output
-```
-
-**Options**
-
-`--data-dir DIR`
-: Path to the Skyrim `Data/` directory. Mora loads `.esm` and `.esp` files from this location to resolve form references and evaluate rules against real plugin data. Required for a successful compilation; without it, form lookups cannot be resolved.
-
-`--output DIR`
-: Directory where the compiled DLL is written. Defaults to `MoraCache/` in the current working directory.
-
-`-v`
-: Print per-stage timing and intermediate counts.
-
-`--no-color`
-: Disable colored output.
-
-**Example output**
-
-```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ 1 static, 0 dynamic
-✓ 15 plugins, 3 relations → 59522 facts
-✓ 200 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (16.5 KB)
-✓ Compiled 1 rules in 389ms
-```
-
-**What each line means**
-
-`Parsing N files`
-: The listed `.mora` files were parsed without syntax errors.
-
-`Resolving N rules`
-: All form references (e.g. `:WeapMaterialIron`) were found in the loaded plugins.
-
-`Type checking N rules`
-: All clauses and effects have consistent types.
-
-`N static, N dynamic`
-: Rules classified as **static** depend only on plugin data and are fully evaluated at compile time. **Dynamic** rules (future feature) require runtime evaluation.
-
-`N plugins, N relations → N facts`
-: Number of plugins loaded from `--data-dir`, the distinct relations extracted from them, and the total fact count passed to the Datalog engine.
-
-`N patches generated`
-: Forms that matched all rule clauses. Each receives the rule's effect.
-
-`N entries (Address Library)`
-: Size of the Address Library database loaded for offset resolution.
-
-`MoraRuntime.dll (N KB)`
-: The compiled output written to `--output`.
-
-`Compiled N rules in Nms`
-: Total wall-clock time for the full pipeline.
-
-!!! tip
-    On a typical Steam install on Linux the Data directory is at  
-    `~/.steam/steam/steamapps/common/Skyrim Special Edition/Data`.
-
----
-
-### mora check
-
-Type-checks `.mora` files without compiling. Does not load ESP data, so it runs fast. Use this to catch syntax and type errors during development without waiting for plugin loading.
+Type-checks `.mora` files without loading ESP data. Runs in milliseconds —
+the right command for editor save-hooks and CI pre-flight.
 
 ```bash
 mora check my_rules.mora
+mora check .              # scan the current directory for .mora files
 ```
 
-**Options**
-
-`-v`
-: Print per-file diagnostic counts.
-
-`--no-color`
-: Disable colored output.
-
-**Example output**
-
-```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ No errors
-```
-
-If there are errors:
-
-```
-✗ Type checking 1 rules
-  my_rules.mora:8: set_damage expects (Weapon, Int), got (Armor, Int)
-```
-
-!!! tip
-    `mora check` is the right command to run in a save-on-write hook or editor integration. It completes in milliseconds even for large rule files because it skips all plugin I/O.
+Runs parsing, name resolution, and type checking. Skips all plugin I/O,
+so it cannot validate `@EditorID` references (those require a load
+order). Use `mora compile` or `mora inspect` for full validation.
 
 ---
 
-### mora inspect
+## `mora compile`
 
-Shows the patch set that would be generated, without building a DLL. Useful for verifying that rules produce the expected patches, and for debugging conflicts between rules.
+The primary command. Runs the full pipeline: parse, resolve, type check,
+phase-classify, evaluate static rules against your ESP data, lower
+dynamic rules to operator-DAG bytecode, and write `mora_patches.bin`.
 
 ```bash
-mora inspect my_rules.mora --data-dir /path/to/Skyrim/Data
-mora inspect my_rules.mora --data-dir /path/to/Skyrim/Data --conflicts
+mora compile my_rules.mora --data-dir "/path/to/Skyrim/Data"
+mora compile my_rules.mora --data-dir "/path/to/Skyrim/Data" --output out/
 ```
 
-**Options**
+### Options
 
 `--data-dir DIR`
-: Path to the Skyrim `Data/` directory. Required; inspect evaluates rules against real plugin data.
+: Path to the Skyrim `Data/` directory. Mora loads `.esm`/`.esp`/`.esl`
+files from this location to resolve `@EditorID` references and evaluate
+static rules. If omitted, Mora tries to auto-detect a Steam install.
+
+`--output DIR`
+: Directory for `mora_patches.bin`. Defaults to `MoraCache/` relative to
+the source file.
+
+### Example output
+
+```
+  Mora v0.1.0
+
+  [OK] Parsing 1 files
+  [OK] Resolving 1 rules
+  [OK] Type checking 1 rules
+  [OK] 1 static, 0 dynamic
+  [OK] 15 plugins, 3 relations -> 59522 facts
+  [OK] Evaluating (.mora rules) done
+  [OK] 200 patches -> mora_patches.bin (4.1 KB)
+  [OK] Wrote MoraCache/mora_patches.bin
+```
+
+Output line meanings:
+
+`N static, N dynamic`
+: Rule classification. Static rules are fully evaluated now; dynamic
+rules are lowered to DAG bytecode for the runtime.
+
+`N plugins, N relations -> N facts`
+: ESP loader summary. Relations are loaded lazily — only the ones your
+rules touch.
+
+`N patches -> mora_patches.bin`
+: Static rules matched this many facts; each one becomes a 16-byte patch
+entry.
+
+---
+
+## `mora inspect`
+
+Shows the patch set that `mora compile` would produce, without writing
+any output file. Use for debugging, for diffing rule changes, and for
+finding conflicts.
+
+```bash
+mora inspect my_rules.mora
+mora inspect my_rules.mora --conflicts
+```
+
+### Options
 
 `--conflicts`
-: Show only forms where two or more rules emit contradictory effects on the same field. Hides all non-conflicting patches.
+: Report conflicts only (cases where two rules write the same field on
+the same FormID with different values or operations).
 
-`-v`
-: Print full fact tables in addition to the patch list.
-
-`--no-color`
-: Disable colored output.
-
-**Example output (default)**
+### Example output
 
 ```
-Patch set: 200 patches across 1 rule
+  mora inspect — 200 patches (from 1 files)
 
-[my_mod.balance] iron_weapons
-  IronSword         set_damage(99)
-  IronGreatsword    set_damage(99)
-  IronDagger        set_damage(99)
-  ... (197 more)
+  0x0001397E:
+    damage: set 20
+
+  0x00013980:
+    damage: set 20
+  ...
 ```
 
-**Example output (--conflicts)**
+With `--conflicts`:
 
 ```
-Conflicts: 2 forms with contradictory patches
-
-  IronSword
-    my_mod.balance::iron_weapons   set_damage(99)
-    my_mod.nerfs::iron_nerfs       set_damage(12)
-
-  IronGreatsword
-    my_mod.balance::iron_weapons   set_damage(99)
-    my_mod.nerfs::iron_nerfs       set_damage(12)
+  0 conflict(s)
 ```
-
-!!! tip
-    Run `mora inspect --conflicts` before deploying to check that rules from multiple `.mora` files do not write opposing values to the same form field.
 
 ---
 
-### mora info
+## `mora info`
 
-Prints a project status overview: how many `.mora` files are found, how many rules they define, how many plugins are loaded, and how many facts the current load order produces.
+Project status overview: how many `.mora` files are in scope, how many
+rules they define, and — if a `--data-dir` is given — what the current
+load order looks like and how many facts it produces.
 
 ```bash
-mora info --data-dir /path/to/Skyrim/Data
+mora info
+mora info --data-dir "/path/to/Skyrim/Data"
 ```
 
-**Options**
+### Options
 
 `--data-dir DIR`
-: Path to the Skyrim `Data/` directory. Mora loads plugins from this location to report fact and plugin counts.
+: Path to the Skyrim `Data/` directory. With this set, `info` also
+reports plugin count and total extracted fact count.
 
-`-v`
-: Break down fact counts per relation.
-
-`--no-color`
-: Disable colored output.
-
-**Example output**
+### Example output
 
 ```
-Project overview
+  Mora v0.1.0
 
-  Source files    3
-  Rules           11
-  Namespaces      3
-
-  Plugins loaded  47
-  Relations       6
-  Facts           183291
-
-  Static rules    11
-  Dynamic rules   0
+  Mora rules:    11 across 3 files
+  Cache status:  MoraRuntime.dll (16.5 KB)
+  Data dir:      /path/to/Skyrim/Data
+  Plugins found: 47
+  Facts loaded:  183291
 ```
 
 ---
 
-### mora import
+## `mora docs`
 
-Scans a directory for SPID, KID, and SkyPatcher INI files and prints them as equivalent Mora rules. Nothing is written to disk; output is printed to stdout. Use this as a starting point when migrating an existing INI-based setup to Mora.
+Prints an auto-generated relation catalog to stdout, derived from the
+compiled-in constexpr relation table. Useful as a quick CLI reference for
+what the current binary knows about.
 
 ```bash
-mora import /path/to/Skyrim/Data
+mora docs | less
 ```
 
-**Options**
+No options.
 
-`-v`
-: Print each INI file as it is scanned and report how many entries were converted.
+The hand-curated on-disk `docs/src/relations.md` is regenerated from
+`data/relations/**/*.yaml` by `tools/gen_docs.py` and committed to the
+repo — don't overwrite it with `mora docs`.
 
-`--no-color`
-: Disable colored output.
+---
 
-**Example output**
+## Exit codes
 
-```
--- Imported from SPID: SpellDistributor_DISTR.ini --
+- `0` — success
+- `1` — parse / type / compile error, or invalid CLI usage
 
-namespace imported.SpellDistributor
-
-requires mod("Skyrim.esm")
-
-# Spell=0x12FD2~Skyrim.esm|ActorTypeNPC
-spelldistr_0(NPC):
-    npc(NPC)
-    has_keyword(NPC, :ActorTypeNPC)
-    => add_spell(NPC, 0x12FD2~Skyrim.esm)
-
--- Imported from KID: ArmorKeywords_DISTR.ini --
-
-namespace imported.ArmorKeywords
-
-requires mod("Skyrim.esm")
-requires mod("Dawnguard.esm")
-
-# Item=ArmorBoots|0x3E99C~Dawnguard.esm
-armorkeywords_0(Armor):
-    armor(Armor)
-    form_id(Armor, 0x3E99C~Dawnguard.esm)
-    => add_keyword(Armor, :ArmorBoots)
-```
-
-!!! tip
-    The imported rules are a mechanical translation. Review them before use. Some SPID/KID patterns have runtime conditions (level checks, chance rolls) that Mora cannot yet express, and those lines will be flagged with a comment.
+Diagnostic output goes to stderr for errors and stdout for progress and
+info messages.
