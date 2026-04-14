@@ -259,26 +259,40 @@ Rule Parser::parse_rule() {
         }
 
         // identifier followed by '(' -> fact pattern
+        // identifier '/' identifier '(' -> namespaced fact pattern
         if (check(TokenKind::Identifier)) {
             // Look ahead: is next token '(' ?
             // We need a two-token lookahead. Save state.
             Token id_tok = advance();
+            StringId qualifier{};
+            StringId fact_name = id_tok.string_id;
+            SourceSpan fact_span = id_tok.span;
+
+            if (check(TokenKind::Slash)) {
+                advance(); // consume '/'
+                Token name_tok = expect(TokenKind::Identifier,
+                    "expected identifier after '/' in namespaced fact");
+                qualifier = id_tok.string_id;
+                fact_name = name_tok.string_id;
+                fact_span = merge_spans(id_tok.span, name_tok.span);
+            }
+
             if (check(TokenKind::LParen)) {
-                // It's a fact pattern. We already consumed the identifier.
-                // Parse the rest.
+                // It's a fact pattern. We already consumed the identifier(s).
                 advance(); // consume '('
                 std::vector<Expr> args = parse_arg_list();
                 expect(TokenKind::RParen, "expected ')' in fact pattern");
 
                 FactPattern fp;
-                fp.name = id_tok.string_id;
+                fp.name = fact_name;
+                fp.qualifier = qualifier;
                 fp.args = std::move(args);
                 fp.negated = false;
-                fp.span = id_tok.span;
+                fp.span = fact_span;
 
                 Clause clause;
                 clause.data = std::move(fp);
-                clause.span = id_tok.span;
+                clause.span = fact_span;
                 rule.body.push_back(std::move(clause));
                 skip_newlines();
                 continue;
@@ -344,6 +358,15 @@ FactPattern Parser::parse_fact_pattern(bool negated) {
     fp.name = name_tok.string_id;
     fp.negated = negated;
     fp.span = name_tok.span;
+
+    if (check(TokenKind::Slash)) {
+        advance(); // consume '/'
+        Token ns_name_tok = expect(TokenKind::Identifier,
+            "expected identifier after '/' in namespaced fact");
+        fp.qualifier = name_tok.string_id;
+        fp.name = ns_name_tok.string_id;
+        fp.span = merge_spans(name_tok.span, ns_name_tok.span);
+    }
 
     expect(TokenKind::LParen, "expected '(' after fact name");
     fp.args = parse_arg_list();
