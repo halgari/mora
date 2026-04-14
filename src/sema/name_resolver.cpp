@@ -1,4 +1,5 @@
 #include "mora/sema/name_resolver.h"
+#include "mora/data/form_model.h"
 #include <variant>
 
 namespace mora {
@@ -100,17 +101,58 @@ void NameResolver::register_builtins() {
     reg("kid_filter",   { t(T::Int), t(T::String), t(T::FormID) });
     reg("kid_exclude",  { t(T::Int), t(T::String), t(T::FormID) });
 
-    // ── Effects / actions ──
-    reg("add_keyword",       { t(T::FormID), t(T::KeywordID) });
+    // ── Effects / actions (auto-registered from form model) ──
+    namespace m = model;
+
+    // Scalar field setters: set_gold_value, set_damage, set_speed, etc.
+    for (size_t i = 0; i < m::kFieldCount; i++) {
+        auto& f = m::kFields[i];
+        if (!f.set_action) continue;
+        auto& member = m::kComponents[f.component_idx].members[f.member_idx];
+        T form_tk = m::effect_form_type_kind(f.component_idx);
+        T val_tk = m::value_type_to_type_kind(member.value_type);
+        reg(f.set_action, { t(form_tk), t(val_tk) });
+    }
+
+    // Form array operations: add_keyword, remove_keyword, add_spell, etc.
+    for (size_t i = 0; i < m::kFormArrayCount; i++) {
+        auto& fa = m::kFormArrays[i];
+        T form_tk = m::effect_form_type_kind(fa.component_idx);
+        // Determine value type from the field id
+        T val_tk = T::FormID;
+        if (fa.field_id == FieldId::Keywords) val_tk = T::KeywordID;
+        else if (fa.field_id == FieldId::Spells) val_tk = T::SpellID;
+        else if (fa.field_id == FieldId::Perks) val_tk = T::PerkID;
+        else if (fa.field_id == FieldId::Factions) val_tk = T::FactionID;
+
+        if (fa.add_action) reg(fa.add_action, { t(form_tk), t(val_tk) });
+        if (fa.remove_action) reg(fa.remove_action, { t(form_tk), t(val_tk) });
+    }
+
+    // Boolean flag setters: set_essential, set_protected, set_auto_calc_stats
+    for (size_t i = 0; i < m::kFlagCount; i++) {
+        auto& fl = m::kFlags[i];
+        if (!fl.set_action) continue;
+        T form_tk = m::effect_form_type_kind(fl.component_idx);
+        reg(fl.set_action, { t(form_tk), t(T::Int) });
+    }
+
+    // Leveled list operations
+    reg("add_to_leveled_list",      { t(T::FormID), t(T::FormID), t(T::Int), t(T::Int) });
+    reg("remove_from_leveled_list", { t(T::FormID), t(T::FormID) });
+    reg("clear_leveled_list",       { t(T::FormID) });
+    reg("clear_all",                { t(T::FormID) });
+
+    // Multiply operations (legacy, pending removal)
+    reg("mul_damage",       { t(T::WeaponID), t(T::Float) });
+    reg("mul_armor_rating", { t(T::ArmorID),  t(T::Float) });
+    reg("mul_gold_value",   { t(T::FormID),   t(T::Float) });
+    reg("mul_weight",       { t(T::FormID),   t(T::Float) });
+    reg("mul_speed",        { t(T::WeaponID), t(T::Float) });
+    reg("mul_crit_percent", { t(T::WeaponID), t(T::Float) });
+
+    // Legacy effects
     reg("add_item",          { t(T::FormID), t(T::FormID)    });
-    reg("add_spell",         { t(T::FormID), t(T::SpellID)   });
-    reg("add_perk",          { t(T::FormID), t(T::PerkID)    });
-    reg("remove_keyword",    { t(T::FormID), t(T::KeywordID) });
-    reg("set_name",          { t(T::FormID), t(T::String)    });
-    reg("set_damage",        { t(T::FormID), t(T::Int)       });
-    reg("set_armor_rating",  { t(T::FormID), t(T::Int)       });
-    reg("set_gold_value",    { t(T::FormID), t(T::Int)       });
-    reg("set_weight",        { t(T::FormID), t(T::Float)     });
     reg("distribute_items",  { t(T::FormID), t(T::FormID)    });
     reg("set_game_setting",  { t(T::FormID), t(T::Float)     });
 }

@@ -1,124 +1,142 @@
 # Language Reference
 
-This page is a comprehensive reference for all built-in types, relations, and effects in Mora. For a guided introduction to writing rules, see the [Language Guide](language-guide.md).
+This reference is auto-generated from the Mora form model.
+For a guided introduction, see the [Language Guide](language-guide.md).
 
 ---
 
 ## Types
 
-| Type | Description | Example |
-|------|-------------|---------|
-| `FormID` | Any game record | `NPC`, `Weapon` |
-| `WeaponID` | Weapon record | bound from `weapon(W)` |
-| `ArmorID` | Armor record | bound from `armor(A)` |
-| `SpellID` | Spell record | bound from `spell(S)` |
-| `PerkID` | Perk record | bound from `perk(P)` |
-| `KeywordID` | Keyword record | `:WeapMaterialIron` |
-| `FactionID` | Faction record | `:BanditFaction` |
-| `RaceID` | Race record | `:NordRace` |
-| `LocationID` | Location record | |
-| `CellID` | Cell record | |
-| `QuestID` | Quest record | |
-| `String` | Text value | `"Nazeem"` |
-| `Int` | Integer | `42` |
-| `Float` | Decimal | `9.5` |
+| Type | Description |
+|------|-------------|
+| `FormID` | Any game record |
+| `WeaponID` | Weapon record (from `weapon(W)`) |
+| `ArmorID` | Armor record (from `armor(A)`) |
+| `NpcID` | NPC record (from `npc(N)`) |
+| `SpellID` | Spell record |
+| `PerkID` | Perk record |
+| `KeywordID` | Keyword record |
+| `FactionID` | Faction record |
+| `RaceID` | Race record |
+| `String` | Text value |
+| `Int` | Integer |
+| `Float` | Decimal |
 
 ---
 
 ## Form Relations
 
-Form relations enumerate what records exist in the load order. They are the starting point for most rules.
+Form relations enumerate what records exist in the load order.
 
-| Relation | Signature | Description |
-|----------|-----------|-------------|
-| `npc` | `(FormID)` | All NPC base records |
-| `weapon` | `(WeaponID)` | All weapon records |
-| `armor` | `(ArmorID)` | All armor records |
-| `spell` | `(SpellID)` | All spell records |
-| `perk` | `(PerkID)` | All perk records |
-| `keyword` | `(KeywordID)` | All keyword records |
-| `faction` | `(FactionID)` | All faction records |
-| `race` | `(RaceID)` | All race records |
-| `leveled_list` | `(FormID)` | All leveled list records |
+| Relation | Signature |
+|----------|-----------|
+| `weapon` | `(WeaponID)` |
+| `armor` | `(ArmorID)` |
+| `npc` | `(NpcID)` |
+| `leveled_list` | `(FormID)` |
+| `leveled_char` | `(FormID)` |
+| `ammo` | `(FormID)` |
+| `potion` | `(FormID)` |
+| `ingredient` | `(FormID)` |
+| `book` | `(FormID)` |
+| `scroll` | `(FormID)` |
+| `enchantment` | `(FormID)` |
+| `magic_effect` | `(FormID)` |
+| `misc_item` | `(FormID)` |
+| `soul_gem` | `(FormID)` |
+| `spell` | `(SpellID)` |
+| `perk` | `(PerkID)` |
+| `keyword` | `(KeywordID)` |
+| `faction` | `(FactionID)` |
+| `race` | `(RaceID)` |
 
 ---
 
 ## Property Relations
 
-Property relations expose attributes of a form. Use them in rule bodies to filter or bind values.
+Property relations expose attributes of a form for filtering and binding.
 
-| Relation | Signature | Description |
-|----------|-----------|-------------|
-| `has_keyword` | `(FormID, KeywordID)` | Form has keyword |
-| `has_faction` | `(FormID, FactionID)` | NPC belongs to faction |
-| `has_perk` | `(FormID, PerkID)` | NPC has perk |
-| `has_spell` | `(FormID, SpellID)` | NPC has spell |
-| `base_level` | `(FormID, Int)` | NPC's base level |
-| `level` | `(FormID, Int)` | Alias for `base_level` |
-| `race_of` | `(FormID, RaceID)` | NPC's race |
-| `name` | `(FormID, String)` | Display name |
-| `editor_id` | `(FormID, String)` | Editor ID string |
-| `gold_value` | `(FormID, Int)` | Gold value |
-| `weight` | `(FormID, Float)` | Carry weight |
-| `damage` | `(FormID, Int)` | Weapon base damage |
-| `armor_rating` | `(FormID, Int)` | Armor rating |
-
----
-
-## Relationship Relations
-
-Relationship relations describe structural connections between records.
-
-| Relation | Signature | Description |
-|----------|-----------|-------------|
-| `template_of` | `(FormID, FormID)` | NPC template relationship |
-| `leveled_entry` | `(FormID, FormID, Int)` | Leveled list entry: list, item, minimum level |
-| `outfit_has` | `(FormID, FormID)` | Outfit contains item |
-
----
-
-## Instance Relations
-
-Instance relations reflect the **runtime state** of the game world. They are only available in dynamic rules, which are evaluated at runtime rather than compiled into a static patch.
-
-> **Note:** Using any instance relation makes a rule dynamic. Dynamic rules cannot be frozen at compile time because their truth value depends on live game state (the player's level, location, active quests, etc.) rather than static load order data.
-
-| Relation | Signature | Description |
-|----------|-----------|-------------|
-| `current_level` | `(FormID, Int)` | Runtime character level |
-| `current_location` | `(FormID, LocationID)` | Current location |
-| `current_cell` | `(FormID, CellID)` | Current cell |
-| `equipped` | `(FormID, FormID)` | Has item equipped |
-| `in_inventory` | `(FormID, FormID, Int)` | Item in inventory with count |
-| `quest_stage` | `(QuestID, Int)` | Current quest stage |
-| `is_alive` | `(FormID)` | Character is alive |
+| Relation | Signature | Applies to |
+|----------|-----------|------------|
+| `gold_value` | `(FormID, Int)` | weapon, armor |
+| `weight` | `(FormID, Float)` | weapon, armor |
+| `damage` | `(FormID, Int)` | weapon |
+| `name` | `(FormID, String)` | weapon, armor, npc |
+| `speed` | `(FormID, Float)` | weapon |
+| `reach` | `(FormID, Float)` | weapon |
+| `range_min` | `(FormID, Float)` | weapon |
+| `range_max` | `(FormID, Float)` | weapon |
+| `stagger` | `(FormID, Float)` | weapon |
+| `crit_damage` | `(FormID, Int)` | weapon |
+| `armor_rating` | `(FormID, Int)` | armor |
+| `base_level` | `(FormID, Int)` | npc |
+| `calc_level_min` | `(FormID, Int)` | npc |
+| `calc_level_max` | `(FormID, Int)` | npc |
+| `speed_mult` | `(FormID, Int)` | npc |
+| `race_of` | `(FormID, FormID)` | npc |
+| `has_keyword` | `(FormID, KeywordID)` | weapon, armor, npc |
+| `has_spell` | `(FormID, SpellID)` | npc |
+| `has_perk` | `(FormID, PerkID)` | npc |
+| `has_faction` | `(FormID, FactionID)` | npc |
 
 ---
 
 ## Effects
 
-Effects are the actions Mora applies to matching forms. They appear in the `then` block of a rule.
+Effects are the actions Mora applies to matching forms.
 
-| Effect | Signature | Description |
-|--------|-----------|-------------|
-| `add_keyword` | `(FormID, KeywordID)` | Add keyword to form |
-| `remove_keyword` | `(FormID, KeywordID)` | Remove keyword from form |
-| `add_item` | `(FormID, FormID)` | Add item to container or NPC |
-| `add_spell` | `(FormID, SpellID)` | Add spell to NPC |
-| `add_perk` | `(FormID, PerkID)` | Add perk to NPC |
-| `set_name` | `(FormID, String)` | Set display name |
-| `set_damage` | `(FormID, Int)` | Set weapon base damage |
-| `set_armor_rating` | `(FormID, Int)` | Set armor rating |
-| `set_gold_value` | `(FormID, Int)` | Set gold value |
-| `set_weight` | `(FormID, Float)` | Set carry weight |
-| `distribute_items` | `(FormID, FormID)` | Distribute items to NPC |
-| `set_game_setting` | `(FormID, Float)` | Modify a game setting |
+### Scalar Setters
+
+| Effect | Signature | Applies to |
+|--------|-----------|------------|
+| `set_gold_value` | `(FormID, Int)` | weapon, armor |
+| `set_weight` | `(FormID, Float)` | weapon, armor |
+| `set_damage` | `(WeaponID, Int)` | weapon |
+| `set_name` | `(FormID, String)` | weapon, armor, npc |
+| `set_speed` | `(WeaponID, Float)` | weapon |
+| `set_reach` | `(WeaponID, Float)` | weapon |
+| `set_range_min` | `(WeaponID, Float)` | weapon |
+| `set_range_max` | `(WeaponID, Float)` | weapon |
+| `set_stagger` | `(WeaponID, Float)` | weapon |
+| `set_crit_damage` | `(WeaponID, Int)` | weapon |
+| `set_enchantment` | `(FormID, FormID)` | weapon, armor |
+| `set_armor_rating` | `(ArmorID, Int)` | armor |
+| `set_level` | `(NpcID, Int)` | npc |
+| `set_calc_level_min` | `(NpcID, Int)` | npc |
+| `set_calc_level_max` | `(NpcID, Int)` | npc |
+| `set_speed_mult` | `(NpcID, Int)` | npc |
+| `set_race` | `(NpcID, FormID)` | npc |
+| `set_class` | `(NpcID, FormID)` | npc |
+| `set_voice_type` | `(NpcID, FormID)` | npc |
+| `set_skin` | `(NpcID, FormID)` | npc |
+| `set_outfit` | `(NpcID, FormID)` | npc |
+| `set_chance_none` | `(FormID, Int)` | leveled_list, leveled_char |
+
+### Collection Operations
+
+| Effect | Signature | Applies to |
+|--------|-----------|------------|
+| `add_keyword` | `(FormID, KeywordID)` | weapon, armor, npc |
+| `remove_keyword` | `(FormID, KeywordID)` | weapon, armor, npc |
+| `add_spell` | `(NpcID, SpellID)` | npc |
+| `remove_spell` | `(NpcID, SpellID)` | npc |
+| `add_perk` | `(NpcID, PerkID)` | npc |
+| `add_faction` | `(NpcID, FactionID)` | npc |
+| `remove_faction` | `(NpcID, FactionID)` | npc |
+| `add_shout` | `(NpcID, FormID)` | npc |
+| `remove_shout` | `(NpcID, FormID)` | npc |
+
+### Boolean Flags
+
+| Effect | Signature | Applies to |
+|--------|-----------|------------|
+| `set_essential` | `(NpcID, Int)` | npc |
+| `set_protected` | `(NpcID, Int)` | npc |
+| `set_auto_calc_stats` | `(NpcID, Int)` | npc |
 
 ---
 
 ## Comparison Operators
-
-Comparison operators can be used in rule bodies to constrain numeric values.
 
 | Operator | Meaning |
 |----------|---------|
@@ -129,15 +147,13 @@ Comparison operators can be used in rule bodies to constrain numeric values.
 | `>` | Greater than |
 | `>=` | Greater than or equal |
 
-**Example:**
+## Arithmetic Operators
 
-```mora
-rule buff_weak_iron_weapons
-where
-    weapon(W),
-    has_keyword(W, :WeapMaterialIron),
-    damage(W, D),
-    D < 8
-then
-    set_damage(W, 10)
-```
+Arithmetic operators require numeric types (Int or Float).
+
+| Operator | Meaning |
+|----------|---------|
+| `+` | Addition |
+| `-` | Subtraction |
+| `*` | Multiplication |
+| `/` | Division |

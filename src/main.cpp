@@ -38,8 +38,12 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 
 namespace fs = std::filesystem;
+
+// Forward declaration (defined in cli/doc_generator.cpp)
+namespace mora { void generate_docs(std::ostream& out); }
 
 static std::string detect_skyrim_data_dir() {
     // Check common Steam library locations for Skyrim SE
@@ -1289,6 +1293,11 @@ int main(int argc, char* argv[]) {
 
     if (command == "import") {
         return cmd_import(target_path, data_dir, use_color);
+    }
+
+    if (command == "docs") {
+        mora::generate_docs(std::cout);
+        return 0;
     }
 
     print_usage();

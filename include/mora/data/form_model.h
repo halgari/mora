@@ -615,4 +615,58 @@ inline constexpr const char* kFullNameRecords[] = {
 inline constexpr size_t kFullNameRecordCount =
     sizeof(kFullNameRecords) / sizeof(kFullNameRecords[0]);
 
+// ── Type system queries (for type checker) ─────────────────────────────
+
+// Find the FormTypeDef for a given TypeKind. Returns nullptr for generic FormID.
+constexpr const FormTypeDef* find_form_type_by_kind(TypeKind tk) {
+    for (size_t i = 0; i < kFormTypeCount; i++) {
+        if (kFormTypes[i]->type_kind == tk)
+            return kFormTypes[i];
+    }
+    return nullptr;
+}
+
+// Check if a TypeKind's form type has a given component.
+// Returns true for generic FormID (can't statically disprove).
+constexpr bool type_has_component(TypeKind tk, uint8_t comp_idx) {
+    if (tk == TypeKind::FormID) return true;
+    auto* ft = find_form_type_by_kind(tk);
+    if (!ft) return true;  // unknown type — allow
+    return has_component(*ft, comp_idx);
+}
+
+// Convert model ValueType to TypeKind for type checking.
+constexpr TypeKind value_type_to_type_kind(ValueType vt) {
+    switch (vt) {
+        case ValueType::Int8:
+        case ValueType::Int16:
+        case ValueType::Int32:
+        case ValueType::UInt8:
+        case ValueType::UInt16:
+        case ValueType::UInt32:    return TypeKind::Int;
+        case ValueType::Float32:   return TypeKind::Float;
+        case ValueType::FormRef:   return TypeKind::FormID;
+        case ValueType::BSFixedString: return TypeKind::String;
+    }
+    return TypeKind::Int;
+}
+
+// Determine the narrowest first-param TypeKind for an effect's component.
+constexpr TypeKind effect_form_type_kind(uint8_t comp_idx) {
+    auto* unique = unique_form_type_for(comp_idx);
+    return unique ? unique->type_kind : TypeKind::FormID;
+}
+
+// Get all form type names that have a given component (for error messages).
+inline std::string form_types_with_component(uint8_t comp_idx) {
+    std::string result;
+    for (size_t i = 0; i < kFormTypeCount; i++) {
+        if (has_component(*kFormTypes[i], comp_idx)) {
+            if (!result.empty()) result += ", ";
+            result += kFormTypes[i]->relation_name;
+        }
+    }
+    return result;
+}
+
 } // namespace mora::model

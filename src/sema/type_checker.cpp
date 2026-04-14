@@ -1,4 +1,5 @@
 #include "mora/sema/type_checker.h"
+#include "mora/data/form_model.h"
 #include <variant>
 
 namespace mora {
@@ -166,10 +167,99 @@ void TypeChecker::check_effect(const Effect& effect) {
         return;
     }
 
-    // Mark variables as used
-    for (const Expr& arg : effect.args) {
+    // Type-check each argument (same logic as check_fact_pattern)
+    for (size_t i = 0; i < effect.args.size(); ++i) {
+        const Expr& arg = effect.args[i];
+        MoraType expected = sig->param_types[i];
+
         if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
             var_used_.insert(var->name.index);
+            MoraType existing = lookup_variable(var->name);
+            if (existing.kind != TypeKind::Unknown &&
+                !existing.is_subtype_of(expected) &&
+                !expected.is_subtype_of(existing)) {
+                diags_.error("E030",
+                             std::string("type mismatch in effect '") +
+                                 std::string(pool_.get(effect.action)) +
+                                 "': variable '" +
+                                 std::string(pool_.get(var->name)) +
+                                 "' is " + existing.to_string() +
+                                 " but effect expects " + expected.to_string(),
+                             arg.span, source_line(arg.span));
+            }
+        } else if (std::get_if<DiscardExpr>(&arg.data)) {
+            // skip
+        } else {
+            MoraType actual = infer_expr_type(arg);
+            if (actual.kind != TypeKind::Unknown &&
+                actual.kind != TypeKind::Error &&
+                !actual.is_subtype_of(expected)) {
+                diags_.error("E031",
+                             std::string("type mismatch in effect '") +
+                                 std::string(pool_.get(effect.action)) +
+                                 "': expected " + expected.to_string() +
+                                 " but got " + actual.to_string(),
+                             arg.span, source_line(arg.span));
+            }
+        }
+    }
+
+    // Component compatibility check: verify the first argument's form type
+    // actually has the component required by this effect.
+    if (effect.args.empty()) return;
+    MoraType first_type = MoraType::make(TypeKind::Unknown);
+    if (auto* var = std::get_if<VariableExpr>(&effect.args[0].data)) {
+        first_type = lookup_variable(var->name);
+    }
+    if (!first_type.is_formid() || first_type.kind == TypeKind::FormID) return;
+
+    auto action_name = pool_.get(effect.action);
+    namespace m = model;
+
+    // Check scalar fields
+    for (size_t i = 0; i < m::kFieldCount; i++) {
+        if (m::kFields[i].set_action && action_name == m::kFields[i].set_action) {
+            if (!m::type_has_component(first_type.kind, m::kFields[i].component_idx)) {
+                diags_.error("E034",
+                             std::string("effect '") + std::string(action_name) +
+                                 "' is not valid for " + first_type.to_string() +
+                                 " (available on: " +
+                                 m::form_types_with_component(m::kFields[i].component_idx) + ")",
+                             effect.args[0].span, source_line(effect.args[0].span));
+            }
+            return;
+        }
+    }
+
+    // Check form arrays
+    for (size_t i = 0; i < m::kFormArrayCount; i++) {
+        auto& fa = m::kFormArrays[i];
+        if ((fa.add_action && action_name == fa.add_action) ||
+            (fa.remove_action && action_name == fa.remove_action)) {
+            if (!m::type_has_component(first_type.kind, fa.component_idx)) {
+                diags_.error("E034",
+                             std::string("effect '") + std::string(action_name) +
+                                 "' is not valid for " + first_type.to_string() +
+                                 " (available on: " +
+                                 m::form_types_with_component(fa.component_idx) + ")",
+                             effect.args[0].span, source_line(effect.args[0].span));
+            }
+            return;
+        }
+    }
+
+    // Check flags
+    for (size_t i = 0; i < m::kFlagCount; i++) {
+        if (m::kFlags[i].set_action && action_name == m::kFlags[i].set_action) {
+            if (!m::type_has_component(first_type.kind, m::kFlags[i].component_idx)) {
+                diags_.error("E034",
+                             std::string("effect '") + std::string(action_name) +
+                                 "' is not valid for " + first_type.to_string() +
+                                 " (available on: " +
+                                 m::form_types_with_component(m::kFlags[i].component_idx) + ")",
+                             effect.args[0].span, source_line(effect.args[0].span));
+            }
+            return;
         }
     }
 }
@@ -186,6 +276,46 @@ void TypeChecker::check_guard(const Expr& expr) {
         } else if constexpr (std::is_same_v<NodeT, BinaryExpr>) {
             if (node.left) check_guard(*node.left);
             if (node.right) check_guard(*node.right);
+
+            MoraType left = node.left ? infer_expr_type(*node.left)
+                                      : MoraType::make(TypeKind::Unknown);
+            MoraType right = node.right ? infer_expr_type(*node.right)
+                                        : MoraType::make(TypeKind::Unknown);
+
+            bool is_arith = (node.op == BinaryExpr::Op::Add ||
+                             node.op == BinaryExpr::Op::Sub ||
+                             node.op == BinaryExpr::Op::Mul ||
+                             node.op == BinaryExpr::Op::Div);
+
+            bool is_cmp = (node.op == BinaryExpr::Op::Lt ||
+                           node.op == BinaryExpr::Op::Gt ||
+                           node.op == BinaryExpr::Op::LtEq ||
+                           node.op == BinaryExpr::Op::GtEq);
+
+            if (is_arith) {
+                if (left.kind != TypeKind::Unknown && !left.is_numeric()) {
+                    diags_.error("E032",
+                                 "arithmetic operator requires numeric type, got " +
+                                     left.to_string(),
+                                 expr.span, source_line(expr.span));
+                }
+                if (right.kind != TypeKind::Unknown && !right.is_numeric()) {
+                    diags_.error("E032",
+                                 "arithmetic operator requires numeric type, got " +
+                                     right.to_string(),
+                                 expr.span, source_line(expr.span));
+                }
+            }
+
+            if (is_cmp) {
+                if (left.kind != TypeKind::Unknown && !left.is_numeric() &&
+                    right.kind != TypeKind::Unknown && !right.is_numeric()) {
+                    diags_.error("E033",
+                                 "comparison requires numeric types, got " +
+                                     left.to_string() + " and " + right.to_string(),
+                                 expr.span, source_line(expr.span));
+                }
+            }
         }
     }, expr.data);
 }
