@@ -79,3 +79,11 @@ TEST(TypeCheck, ArityMismatchErrors) {
         "namespace x.y\nr(F):\n    form/weapon(F, F)\n");
     EXPECT_GE(errs.size(), 1u);
 }
+
+TEST(MaintainRules, MaintainOnNonRetractableFails) {
+    GTEST_SKIP() << "Retractability test requires dynamic relations (Plan 3).";
+}
+
+TEST(MaintainRules, MaintainUsingEventFails) {
+    GTEST_SKIP() << "Event usage test requires event relations (Plan 3).";
+}

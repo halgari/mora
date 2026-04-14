@@ -106,6 +106,58 @@ void TypeChecker::check_rule(Rule& rule) {
         check_effect(ce.effect);
     }
 
+    // ── Rule-kind constraints (shape-only; mostly dormant until Plan 3) ──
+    // event/* relations may only appear in 'on' rules.
+    auto check_event_usage = [&](const FactPattern& fp) {
+        std::string_view ns = pool_.get(fp.qualifier);
+        if (ns == "event" && rule.kind != RuleKind::On) {
+            diags_.error("E036",
+                "event/* relations are only allowed in 'on' rules",
+                fp.span, source_line(fp.span));
+        }
+    };
+    for (const Clause& clause : rule.body) {
+        if (auto* fp = std::get_if<FactPattern>(&clause.data)) {
+            check_event_usage(*fp);
+        } else if (auto* oc = std::get_if<OrClause>(&clause.data)) {
+            for (const auto& branch : oc->branches)
+                for (const auto& fp : branch) check_event_usage(fp);
+        }
+    }
+
+    // Maintain rules: all effects must be retractable.
+    if (rule.kind == RuleKind::Maintain) {
+        auto check_retractable = [&](const Effect& e) {
+            std::string_view ns = pool_.get(e.namespace_);
+            std::string_view nm = pool_.get(e.name);
+            if (ns.empty()) return;
+            const auto* rel = model::find_relation(
+                ns, nm, model::kRelations, model::kRelationCount);
+            if (!rel) return;
+            // Scalar / Countable are naturally reversible (set-prev-value bookkeeping).
+            if (rel->cardinality == model::Cardinality::Scalar ||
+                rel->cardinality == model::Cardinality::Countable) {
+                return;
+            }
+            if (rel->retract_handler == model::HandlerId::None) {
+                diags_.error("E037",
+                    std::string("effect '") + std::string(ns) + "/" +
+                        std::string(nm) +
+                        "' is not retractable and cannot be used in a maintain rule",
+                    e.span, source_line(e.span));
+            }
+        };
+        for (const Effect& e : rule.effects) check_retractable(e);
+        for (const ConditionalEffect& ce : rule.conditional_effects) {
+            check_retractable(ce.effect);
+        }
+        for (const Clause& clause : rule.body) {
+            if (auto* e = std::get_if<Effect>(&clause.data)) check_retractable(*e);
+            else if (auto* ce = std::get_if<ConditionalEffect>(&clause.data))
+                check_retractable(ce->effect);
+        }
+    }
+
     check_unused_variables(rule);
 }
 
