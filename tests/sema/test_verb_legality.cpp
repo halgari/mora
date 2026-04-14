@@ -81,9 +81,39 @@ TEST(TypeCheck, ArityMismatchErrors) {
 }
 
 TEST(MaintainRules, MaintainOnNonRetractableFails) {
-    GTEST_SKIP() << "Retractability test requires dynamic relations (Plan 3).";
+    // player/notification has apply_handler but no retract_handler →
+    // attempting to use it in 'maintain' should error.
+    auto errs = check_source(
+        "namespace x.y\n"
+        "maintain r(P):\n"
+        "    form/npc(P)\n"
+        "    => add player/notification(P, \"hi\")\n");
+    EXPECT_GE(errs.size(), 1u);
 }
 
 TEST(MaintainRules, MaintainUsingEventFails) {
-    GTEST_SKIP() << "Event usage test requires event relations (Plan 3).";
+    auto errs = check_source(
+        "namespace x.y\n"
+        "maintain r(R, L):\n"
+        "    event/entered_location(R, L)\n");
+    EXPECT_GE(errs.size(), 1u);
+}
+
+TEST(MaintainRules, MaintainOnRetractableSetSucceeds) {
+    auto errs = check_source(
+        "namespace x.y\n"
+        "maintain r(R):\n"
+        "    ref/base_form(R, Base)\n"
+        "    form/faction(Base, @BanditFaction)\n"
+        "    => add ref/keyword(R, @DangerMark)\n");
+    EXPECT_EQ(errs.size(), 0u) << "first: " << (errs.empty() ? "" : errs[0]);
+}
+
+TEST(OnRules, OnUsingEventSucceeds) {
+    auto errs = check_source(
+        "namespace x.y\n"
+        "on r(P, Loc):\n"
+        "    event/entered_location(P, Loc)\n"
+        "    => add player/gold(P, 100)\n");
+    EXPECT_EQ(errs.size(), 0u) << "first: " << (errs.empty() ? "" : errs[0]);
 }

@@ -1,5 +1,6 @@
 #include "mora/sema/name_resolver.h"
 #include "mora/data/form_model.h"
+#include "mora/model/relations.h"
 #include <unordered_map>
 #include <string>
 #include <variant>
@@ -322,6 +323,15 @@ void NameResolver::register_rule_as_fact(const Rule& rule) {
 
 // Check a name/span pair without needing a FactPattern copy.
 void NameResolver::check_fact_exists(const FactPattern& pattern) {
+    // If the pattern is namespace-qualified and the namespaced relation exists
+    // in the kRelations registry, defer to the type-checker for validation.
+    std::string_view ns = pool_.get(pattern.qualifier);
+    std::string_view nm = pool_.get(pattern.name);
+    if (!ns.empty()) {
+        if (model::find_relation(ns, nm, model::kRelations, model::kRelationCount)) {
+            return;
+        }
+    }
     if (lookup_fact(pattern.name) == nullptr) {
         diags_.error("E011",
                      std::string("unknown fact or rule: '") +
@@ -342,16 +352,31 @@ static void check_action_name(StringId action, const SourceSpan& span,
     }
 }
 
+// Overload that accepts an Effect's namespace + name — if the namespaced
+// relation exists in kRelations, skip the check (type-checker validates).
+static void check_effect_name(StringId ns, StringId action, const SourceSpan& span,
+                               const NameResolver& resolver, DiagBag& diags,
+                               StringPool& pool, const std::string& src_line) {
+    std::string_view ns_sv = pool.get(ns);
+    std::string_view nm_sv = pool.get(action);
+    if (!ns_sv.empty()) {
+        if (model::find_relation(ns_sv, nm_sv, model::kRelations, model::kRelationCount)) {
+            return;
+        }
+    }
+    check_action_name(action, span, resolver, diags, pool, src_line);
+}
+
 void NameResolver::resolve_rule(Rule& rule) {
     for (Clause& clause : rule.body) {
         resolve_clause(clause);
     }
     // Also check any top-level effects listed separately on the rule.
     for (const Effect& eff : rule.effects) {
-        check_action_name(eff.name, eff.span, *this, diags_, pool_, source_line(eff.span));
+        check_effect_name(eff.namespace_, eff.name, eff.span, *this, diags_, pool_, source_line(eff.span));
     }
     for (const ConditionalEffect& ce : rule.conditional_effects) {
-        check_action_name(ce.effect.name, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
+        check_effect_name(ce.effect.namespace_, ce.effect.name, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
     }
 }
 
@@ -361,9 +386,9 @@ void NameResolver::resolve_clause(Clause& clause) {
         if constexpr (std::is_same_v<NodeT, FactPattern>) {
             check_fact_exists(node);
         } else if constexpr (std::is_same_v<NodeT, Effect>) {
-            check_action_name(node.name, node.span, *this, diags_, pool_, source_line(node.span));
+            check_effect_name(node.namespace_, node.name, node.span, *this, diags_, pool_, source_line(node.span));
         } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
-            check_action_name(node.effect.name, node.effect.span,
+            check_effect_name(node.effect.namespace_, node.effect.name, node.effect.span,
                               *this, diags_, pool_, source_line(node.effect.span));
         } else if constexpr (std::is_same_v<NodeT, OrClause>) {
             for (auto& branch : node.branches) {
