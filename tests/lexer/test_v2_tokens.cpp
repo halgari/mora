@@ -43,3 +43,13 @@ TEST(V2Tokens, ColonIdentIsSymbolToken) {
 TEST(V2Tokens, TokenKindNameForSymbolSaysKeyword) {
     EXPECT_STREQ(token_kind_name(TokenKind::Symbol), "Keyword");
 }
+
+TEST(V2Tokens, NamespacedIdentifierLexesAsThreeTokens) {
+    auto tokens = tokenize("form/keyword\n");
+    ASSERT_GE(tokens.size(), 3u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Identifier);
+    EXPECT_EQ(tokens[0].text, "form");
+    EXPECT_EQ(tokens[1].kind, TokenKind::Slash);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Identifier);
+    EXPECT_EQ(tokens[2].text, "keyword");
+}
