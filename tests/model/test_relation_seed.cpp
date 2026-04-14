@@ -6,19 +6,21 @@ using namespace mora::model;
 TEST(RelationSeed, FormKeywordExists) {
     const auto* r = find_relation("form", "keyword", kRelations, kRelationCount);
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(r->cardinality, Cardinality::Set);
+    EXPECT_EQ(r->type.ctor, TypeCtor::List);
+    EXPECT_EQ(r->type.elem, ElemType::FormRef);
     EXPECT_EQ(r->source, RelationSourceKind::Static);
 }
 
 TEST(RelationSeed, FormDamageIsCountable) {
     const auto* r = find_relation("form", "damage", kRelations, kRelationCount);
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(r->cardinality, Cardinality::Countable);
-    EXPECT_EQ(r->value_type, RelValueType::Int);
+    EXPECT_EQ(r->type.ctor, TypeCtor::Countable);
+    EXPECT_EQ(r->type.elem, ElemType::Int);
 }
 
-TEST(RelationSeed, FormNpcIsFunctionalPredicate) {
+TEST(RelationSeed, FormNpcIsPredicate) {
     const auto* r = find_relation("form", "npc", kRelations, kRelationCount);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->arg_count, 1);
+    EXPECT_EQ(r->type.ctor, TypeCtor::Predicate);
 }

@@ -4,14 +4,15 @@
 using namespace mora::model;
 
 TEST(Validate, VerbShapePairs) {
-    EXPECT_TRUE(is_legal_verb_for(VerbKind::Set, Cardinality::Scalar));
-    EXPECT_TRUE(is_legal_verb_for(VerbKind::Set, Cardinality::Countable));
-    EXPECT_FALSE(is_legal_verb_for(VerbKind::Add, Cardinality::Scalar));
-    EXPECT_TRUE(is_legal_verb_for(VerbKind::Add, Cardinality::Countable));
-    EXPECT_TRUE(is_legal_verb_for(VerbKind::Add, Cardinality::Set));
-    EXPECT_TRUE(is_legal_verb_for(VerbKind::Remove, Cardinality::Set));
-    EXPECT_FALSE(is_legal_verb_for(VerbKind::Remove, Cardinality::Scalar));
-    EXPECT_FALSE(is_legal_verb_for(VerbKind::Set, Cardinality::Functional));
+    EXPECT_TRUE(is_legal_verb(VerbKind::Set, scalar(ElemType::String)));
+    EXPECT_TRUE(is_legal_verb(VerbKind::Set, countable(ElemType::Int)));
+    EXPECT_FALSE(is_legal_verb(VerbKind::Add, scalar(ElemType::String)));
+    EXPECT_TRUE(is_legal_verb(VerbKind::Add, countable(ElemType::Int)));
+    EXPECT_TRUE(is_legal_verb(VerbKind::Add, list_of(ElemType::FormRef)));
+    EXPECT_TRUE(is_legal_verb(VerbKind::Remove, list_of(ElemType::FormRef)));
+    EXPECT_FALSE(is_legal_verb(VerbKind::Remove, scalar(ElemType::String)));
+    EXPECT_FALSE(is_legal_verb(VerbKind::Set, predicate()));
+    EXPECT_FALSE(is_legal_verb(VerbKind::Set, const_(ElemType::FormRef)));
 }
 
 TEST(Validate, DuplicateDetection) {
