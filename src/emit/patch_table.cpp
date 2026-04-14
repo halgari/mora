@@ -1,4 +1,6 @@
 #include "mora/emit/patch_table.h"
+#include "mora/emit/flat_file_writer.h"
+#include "mora/emit/patch_file_v2.h"
 #include <algorithm>
 #include <cstring>
 #include <unordered_map>
@@ -14,14 +16,14 @@ void append_bytes(std::vector<uint8_t>& buf, const T& val) {
     buf.insert(buf.end(), p, p + sizeof(T));
 }
 
-} // anonymous namespace
+// Build the StringTable section bytes ([u16 len][data]...) while also
+// producing the PatchEntry array, translating string values into offsets.
+std::vector<uint8_t> build_string_table_and_entries(
+    const ResolvedPatchSet& patches,
+    StringPool& pool,
+    std::vector<PatchEntry>& out_entries) {
 
-std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
-                                            StringPool& pool) {
     auto sorted = patches.all_patches_sorted();
-
-    // Step 1: Collect all string values into a string table.
-    // Map StringId::index -> offset in string table bytes.
     std::vector<uint8_t> string_table;
     std::unordered_map<uint32_t, uint32_t> string_offsets; // StringId::index -> byte offset
 
@@ -33,7 +35,6 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                 std::string_view sv = pool.get(fp.value.as_string());
                 uint32_t offset = static_cast<uint32_t>(string_table.size());
                 string_offsets[sid] = offset;
-                // Write uint16_t length followed by string bytes (no null terminator)
                 uint16_t len = static_cast<uint16_t>(sv.size());
                 append_bytes(string_table, len);
                 string_table.insert(string_table.end(), sv.begin(), sv.end());
@@ -41,8 +42,7 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
         }
     }
 
-    // Step 2: Build patch entries
-    std::vector<PatchEntry> entries;
+    out_entries.clear();
     for (const auto& rp : sorted) {
         for (const auto& fp : rp.fields) {
             PatchEntry e{};
@@ -73,47 +73,38 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                     break;
                 }
                 default:
-                    // Skip unsupported value types
                     continue;
             }
 
-            entries.push_back(e);
+            out_entries.push_back(e);
         }
     }
 
-    // Step 3: Build header
-    PatchTableHeader hdr;
-    hdr.patch_count = static_cast<uint32_t>(entries.size());
-    hdr.string_table_size = static_cast<uint32_t>(string_table.size());
+    return string_table;
+}
 
-    // Step 4: Serialize: header + string table + entries
-    std::vector<uint8_t> result;
-    result.reserve(sizeof(PatchTableHeader) + string_table.size() +
-                   entries.size() * sizeof(PatchEntry));
+} // anonymous namespace
 
-    append_bytes(result, hdr);
-    result.insert(result.end(), string_table.begin(), string_table.end());
-    for (const auto& e : entries) {
-        append_bytes(result, e);
+std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
+                                            StringPool& pool) {
+    std::vector<PatchEntry> entries;
+    auto string_table = build_string_table_and_entries(patches, pool, entries);
+
+    emit::FlatFileWriter w;
+    if (!string_table.empty()) {
+        w.add_section(emit::SectionId::StringTable,
+                      string_table.data(), string_table.size());
     }
-
-    return result;
+    w.add_section(emit::SectionId::Patches,
+                  entries.data(), entries.size() * sizeof(PatchEntry));
+    return w.finish();
 }
 
 std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries) {
-    PatchTableHeader hdr;
-    hdr.patch_count = static_cast<uint32_t>(entries.size());
-    hdr.string_table_size = 0; // no string table in fast path
-
-    std::vector<uint8_t> result;
-    result.reserve(sizeof(PatchTableHeader) + entries.size() * sizeof(PatchEntry));
-
-    append_bytes(result, hdr);
-    for (const auto& e : entries) {
-        append_bytes(result, e);
-    }
-
-    return result;
+    emit::FlatFileWriter w;
+    w.add_section(emit::SectionId::Patches,
+                  entries.data(), entries.size() * sizeof(PatchEntry));
+    return w.finish();
 }
 
 } // namespace mora

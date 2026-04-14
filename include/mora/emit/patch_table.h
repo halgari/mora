@@ -6,15 +6,6 @@
 
 namespace mora {
 
-struct PatchTableHeader {
-    uint32_t magic = 0x4D4F5241; // "MORA"
-    uint32_t version = 3;
-    uint32_t patch_count = 0;
-    uint32_t string_table_size = 0; // bytes
-    // v3: Address Library offsets removed — CommonLibSSE-NG handles resolution
-};
-
-// Value type tags for patch entries
 enum class PatchValueType : uint8_t {
     FormID = 0,
     Int = 1,
@@ -32,7 +23,7 @@ struct PatchEntry {
 };
 static_assert(sizeof(PatchEntry) == 16);
 
-// Serialize patches into a binary blob ready for embedding in a DLL.
+// Serialize patches into a v2 sectioned binary blob.
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool);
 
