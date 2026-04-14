@@ -33,9 +33,17 @@ struct BinaryExpr {
     SourceSpan span;
 };
 
+// Call to a built-in pure function: e.g. max(A, B), abs(N).
+struct CallExpr {
+    StringId name;
+    std::vector<Expr> args;
+    MoraType resolved_type = MoraType::make(TypeKind::Unknown);
+    SourceSpan span;
+};
+
 struct Expr {
     std::variant<VariableExpr, SymbolExpr, EditorIdExpr, IntLiteral, FloatLiteral,
-                 StringLiteral, DiscardExpr, BinaryExpr> data;
+                 StringLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
     SourceSpan span;
 };
 

@@ -618,10 +618,24 @@ Expr Parser::parse_primary() {
         return inner;
     }
 
-    // If we get an identifier in expression context, treat as variable-like
-    // This shouldn't normally happen but helps with error recovery
+    // Identifier in expression context: either a built-in call `name(a, b, ...)`
+    // or an unexpected bare identifier (recovered as a VariableExpr).
     if (tok.kind == TokenKind::Identifier) {
         advance();
+        if (check(TokenKind::LParen)) {
+            advance(); // consume '('
+            std::vector<Expr> args = parse_arg_list();
+            Token rparen = peek();
+            expect(TokenKind::RParen, "expected ')' in function call");
+            CallExpr call;
+            call.name = tok.string_id;
+            call.args = std::move(args);
+            call.span = merge_spans(tok.span, rparen.span);
+            Expr e;
+            e.span = call.span;
+            e.data = std::move(call);
+            return e;
+        }
         Expr e;
         e.span = tok.span;
         e.data = VariableExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
