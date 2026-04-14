@@ -66,7 +66,8 @@ void Parser::synchronize() {
         // If we see a top-level keyword or identifier after newlines/dedents, stop
         if (k == TokenKind::Identifier || k == TokenKind::KwNamespace ||
             k == TokenKind::KwRequires || k == TokenKind::KwUse ||
-            k == TokenKind::KwImportSpid || k == TokenKind::KwImportKid) {
+            k == TokenKind::KwImportSpid || k == TokenKind::KwImportKid ||
+            k == TokenKind::KwMaintain || k == TokenKind::KwOn) {
             break;
         }
         advance();
@@ -119,7 +120,8 @@ Module Parser::parse_module() {
             continue;
         }
 
-        if (k == TokenKind::Identifier) {
+        if (k == TokenKind::Identifier || k == TokenKind::KwMaintain ||
+            k == TokenKind::KwOn) {
             mod.rules.push_back(parse_rule());
             skip_newlines();
             continue;
@@ -211,7 +213,17 @@ ImportIniDecl Parser::parse_import_ini(ImportIniDecl::Kind kind) {
 
 Rule Parser::parse_rule() {
     Rule rule;
-    Token name_tok = advance(); // identifier (rule name)
+
+    // Optional rule-kind annotation: 'maintain' or 'on' precedes the rule name.
+    if (check(TokenKind::KwMaintain)) {
+        advance();
+        rule.kind = RuleKind::Maintain;
+    } else if (check(TokenKind::KwOn)) {
+        advance();
+        rule.kind = RuleKind::On;
+    }
+
+    Token name_tok = expect(TokenKind::Identifier, "expected rule name");
     rule.name = name_tok.string_id;
     rule.span = name_tok.span;
 

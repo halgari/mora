@@ -49,3 +49,39 @@ TEST(V2Syntax, NamespacedFactParses) {
     EXPECT_EQ(pool.get(fp1.qualifier), "form");
     EXPECT_EQ(pool.get(fp1.name), "keyword");
 }
+
+TEST(V2Syntax, MaintainRuleAnnotation) {
+    StringPool pool;
+    DiagBag diags;
+    auto mod = parse_source(
+        "namespace x.y\n"
+        "maintain r(F):\n"
+        "    form/weapon(F)\n",
+        pool, diags);
+    ASSERT_EQ(mod.rules.size(), 1u);
+    EXPECT_EQ(mod.rules[0].kind, RuleKind::Maintain);
+}
+
+TEST(V2Syntax, OnRuleAnnotation) {
+    StringPool pool;
+    DiagBag diags;
+    auto mod = parse_source(
+        "namespace x.y\n"
+        "on r(F):\n"
+        "    form/weapon(F)\n",
+        pool, diags);
+    ASSERT_EQ(mod.rules.size(), 1u);
+    EXPECT_EQ(mod.rules[0].kind, RuleKind::On);
+}
+
+TEST(V2Syntax, UnannotatedRuleIsStatic) {
+    StringPool pool;
+    DiagBag diags;
+    auto mod = parse_source(
+        "namespace x.y\n"
+        "r(F):\n"
+        "    form/weapon(F)\n",
+        pool, diags);
+    ASSERT_EQ(mod.rules.size(), 1u);
+    EXPECT_EQ(mod.rules[0].kind, RuleKind::Static);
+}
