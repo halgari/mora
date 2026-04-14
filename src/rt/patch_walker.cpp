@@ -9,6 +9,7 @@
 #include "mora/emit/patch_table.h"
 
 #include <RE/T/TESForm.h>
+#include <RE/F/FormTraits.h>
 #include <RE/T/TESNPC.h>
 #include <RE/T/TESActorBaseData.h>
 #include <RE/T/TESObjectWEAP.h>

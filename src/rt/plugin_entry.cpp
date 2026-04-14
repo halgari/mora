@@ -53,6 +53,30 @@ void message_handler(SKSE::MessagingInterface::Message* msg) {
 
 } // anonymous namespace
 
+// SKSE plugin version struct — must match CommonLibSSE layout (0x350 bytes)
+struct SKSEPluginVersionData {
+    uint32_t dataVersion;
+    uint32_t pluginVersion;
+    char     pluginName[256];
+    char     author[256];
+    char     supportEmail[252];
+    uint32_t versionIndependenceEx;
+    uint32_t versionIndependence;
+    uint32_t compatibleVersions[16];
+    uint32_t seVersionRequired;
+};
+
+extern "C" __declspec(dllexport)
+SKSEPluginVersionData SKSEPlugin_Version = {
+    1, 1,
+    "MoraRuntime",
+    "Mora Project",
+    "",
+    0,
+    1 | 4,  // AddressLibraryPostAE | StructsPost629
+    {0}, 0
+};
+
 extern "C" __declspec(dllexport)
 bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
@@ -60,6 +84,12 @@ bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
 
     SKSE::GetMessagingInterface()->RegisterListener(message_handler);
     return true;
+}
+
+extern "C" __declspec(dllexport)
+int __stdcall DllMain(void* hinstDLL, uint32_t fdwReason, void* lpvReserved) {
+    (void)hinstDLL; (void)fdwReason; (void)lpvReserved;
+    return 1;
 }
 
 #else
