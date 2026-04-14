@@ -1,5 +1,5 @@
 #include "mora/codegen/ir_emitter.h"
-#include "mora/data/form_constants.h"
+#include "mora/data/form_model.h"
 #include "mora/rt/form_ops.h"
 
 #include <llvm/IR/Constants.h>
@@ -12,28 +12,26 @@ namespace mora {
 
 namespace {
 
-// Infer the expected form type from a FieldId. Returns 0 if the field
-// could apply to multiple form types (runtime dispatch needed).
+// Infer the expected form type from a FieldId via the model.
+// Returns 0 if the field could apply to multiple form types (runtime dispatch needed).
 uint8_t infer_form_type(FieldId field) {
-    switch (field) {
-        case FieldId::Damage:      return form_type::kWeapon;
-        case FieldId::ArmorRating: return form_type::kArmor;
-        case FieldId::Spells:      return form_type::kNPC;
-        case FieldId::Perks:       return form_type::kNPC;
-        case FieldId::Factions:    return form_type::kNPC;
-        default:                   return 0; // Keywords, GoldValue, Weight, etc.
-    }
+    auto* f = model::find_field(field);
+    if (!f) return 0;
+    auto* unique = model::unique_form_type_for(f->component_idx);
+    return unique ? unique->form_type_byte : 0;
 }
 
 enum class StoreKind { Int16, Int32, Float, Unsupported };
 
 StoreKind get_store_kind(FieldId field) {
-    switch (field) {
-        case FieldId::Damage:      return StoreKind::Int16;
-        case FieldId::ArmorRating: return StoreKind::Int32;
-        case FieldId::GoldValue:   return StoreKind::Int32;
-        case FieldId::Weight:      return StoreKind::Float;
-        default:                   return StoreKind::Unsupported;
+    auto vt = model::get_value_type(field);
+    switch (vt) {
+        case model::ValueType::Int16:
+        case model::ValueType::UInt16:  return StoreKind::Int16;
+        case model::ValueType::Int32:
+        case model::ValueType::UInt32:  return StoreKind::Int32;
+        case model::ValueType::Float32: return StoreKind::Float;
+        default:                        return StoreKind::Unsupported;
     }
 }
 
@@ -244,26 +242,27 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder,
         auto* not_null = builder.CreateICmpNE(form_ptr, null_val, "not_null");
         builder.CreateCondBr(not_null, check_type_bb, skip_bb);
 
-        // Read form type byte at offset 0x1A
+        // Read form type byte at kFormTypeOffset
         builder.SetInsertPoint(check_type_bb);
         auto* i8_ty = llvm::Type::getInt8Ty(ctx_);
-        auto* type_offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0x1A);
+        auto* type_offset = llvm::ConstantInt::get(
+            llvm::Type::getInt64Ty(ctx_), model::kFormTypeOffset);
         auto* type_addr = builder.CreateGEP(i8_ty, form_ptr, type_offset, "type_addr");
         auto* form_type_val = builder.CreateLoad(i8_ty, type_addr, "form_type");
 
         auto* is_weapon = builder.CreateICmpEQ(
             form_type_val,
-            llvm::ConstantInt::get(i8_ty, form_type::kWeapon),
+            llvm::ConstantInt::get(i8_ty, model::form_type_byte::kWeapon),
             "is_weapon");
         builder.CreateCondBr(is_weapon, write_weapon_bb, write_armor_bb);
 
         // Weapon path
         builder.SetInsertPoint(write_weapon_bb);
         {
-            uint64_t offset = rt::get_field_offset(form_type::kWeapon,
+            uint64_t offset = rt::get_field_offset(model::form_type_byte::kWeapon,
                                                     static_cast<uint16_t>(fp.field));
             if (offset != 0) {
-                emit_field_write(builder, form_ptr, form_type::kWeapon, fp);
+                emit_field_write(builder, form_ptr, model::form_type_byte::kWeapon, fp);
             }
         }
         builder.CreateBr(skip_bb);
@@ -273,16 +272,16 @@ void IREmitter::emit_patch(llvm::IRBuilder<>& builder,
         {
             auto* is_armor = builder.CreateICmpEQ(
                 form_type_val,
-                llvm::ConstantInt::get(i8_ty, form_type::kArmor),
+                llvm::ConstantInt::get(i8_ty, model::form_type_byte::kArmor),
                 "is_armor");
             auto* do_armor_bb = llvm::BasicBlock::Create(ctx_, "do_armor", func);
             builder.CreateCondBr(is_armor, do_armor_bb, skip_bb);
 
             builder.SetInsertPoint(do_armor_bb);
-            uint64_t offset = rt::get_field_offset(form_type::kArmor,
+            uint64_t offset = rt::get_field_offset(model::form_type_byte::kArmor,
                                                     static_cast<uint16_t>(fp.field));
             if (offset != 0) {
-                emit_field_write(builder, form_ptr, form_type::kArmor, fp);
+                emit_field_write(builder, form_ptr, model::form_type_byte::kArmor, fp);
             }
             builder.CreateBr(skip_bb);
         }

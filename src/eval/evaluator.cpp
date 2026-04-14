@@ -1,5 +1,6 @@
 #include "mora/eval/evaluator.h"
 #include "mora/data/action_names.h"
+#include "mora/data/form_model.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -517,42 +518,30 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
 
 std::pair<FieldId, FieldOp> Evaluator::action_to_field(StringId action_id) const {
     auto name = pool_.get(action_id);
+
+    // Scalar fields: match set_action from the model
+    for (size_t i = 0; i < model::kFieldCount; i++) {
+        if (model::kFields[i].set_action && name == model::kFields[i].set_action)
+            return {model::kFields[i].field_id, FieldOp::Set};
+    }
+
+    // Form array fields: match add_action and remove_action from the model
+    for (size_t i = 0; i < model::kFormArrayCount; i++) {
+        auto& fa = model::kFormArrays[i];
+        if (fa.add_action && name == fa.add_action)
+            return {fa.field_id, FieldOp::Add};
+        if (fa.remove_action && name == fa.remove_action)
+            return {fa.field_id, FieldOp::Remove};
+    }
+
+    // Boolean flags: match set_action
+    for (size_t i = 0; i < model::kFlagCount; i++) {
+        if (model::kFlags[i].set_action && name == model::kFlags[i].set_action)
+            return {model::kFlags[i].field_id, FieldOp::Set};
+    }
+
+    // Scalar multiply (kept for backward compat during migration)
     using namespace mora::action;
-
-    // Form list add/remove
-    if (name == kAddKeyword)      return {FieldId::Keywords,    FieldOp::Add};
-    if (name == kRemoveKeyword)   return {FieldId::Keywords,    FieldOp::Remove};
-    if (name == kAddSpell)        return {FieldId::Spells,      FieldOp::Add};
-    if (name == kRemoveSpell)     return {FieldId::Spells,      FieldOp::Remove};
-    if (name == kAddPerk)         return {FieldId::Perks,       FieldOp::Add};
-    if (name == kAddFaction)      return {FieldId::Factions,    FieldOp::Add};
-    if (name == kRemoveFaction)   return {FieldId::Factions,    FieldOp::Remove};
-    if (name == kAddShout)        return {FieldId::Shouts,      FieldOp::Add};
-    if (name == kRemoveShout)     return {FieldId::Shouts,      FieldOp::Remove};
-    if (name == kAddItem)         return {FieldId::Items,       FieldOp::Add};
-    if (name == kAddLevSpell)     return {FieldId::LevSpells,   FieldOp::Add};
-
-    // Scalar set
-    if (name == kSetName)          return {FieldId::Name,         FieldOp::Set};
-    if (name == kSetDamage)        return {FieldId::Damage,       FieldOp::Set};
-    if (name == kSetArmorRating)   return {FieldId::ArmorRating,  FieldOp::Set};
-    if (name == kSetGoldValue)     return {FieldId::GoldValue,    FieldOp::Set};
-    if (name == kSetWeight)        return {FieldId::Weight,       FieldOp::Set};
-    if (name == kSetSpeed)         return {FieldId::Speed,        FieldOp::Set};
-    if (name == kSetReach)         return {FieldId::Reach,        FieldOp::Set};
-    if (name == kSetStagger)       return {FieldId::Stagger,      FieldOp::Set};
-    if (name == kSetRangeMin)      return {FieldId::RangeMin,     FieldOp::Set};
-    if (name == kSetRangeMax)      return {FieldId::RangeMax,     FieldOp::Set};
-    if (name == kSetCritDamage)    return {FieldId::CritDamage,   FieldOp::Set};
-    if (name == kSetCritPercent)   return {FieldId::CritPercent,  FieldOp::Set};
-    if (name == kSetHealth)        return {FieldId::Health,       FieldOp::Set};
-    if (name == kSetLevel)         return {FieldId::Level,        FieldOp::Set};
-    if (name == kSetCalcLevelMin)  return {FieldId::CalcLevelMin, FieldOp::Set};
-    if (name == kSetCalcLevelMax)  return {FieldId::CalcLevelMax, FieldOp::Set};
-    if (name == kSetSpeedMult)     return {FieldId::SpeedMult,    FieldOp::Set};
-    if (name == kSetGameSetting)   return {FieldId::GoldValue,    FieldOp::Set};
-
-    // Scalar multiply
     if (name == kMulDamage)        return {FieldId::Damage,       FieldOp::Multiply};
     if (name == kMulArmorRating)   return {FieldId::ArmorRating,  FieldOp::Multiply};
     if (name == kMulGoldValue)     return {FieldId::GoldValue,    FieldOp::Multiply};
@@ -560,25 +549,16 @@ std::pair<FieldId, FieldOp> Evaluator::action_to_field(StringId action_id) const
     if (name == kMulSpeed)         return {FieldId::Speed,        FieldOp::Multiply};
     if (name == kMulCritPercent)   return {FieldId::CritPercent,  FieldOp::Multiply};
 
-    // Form references
-    if (name == kSetRace)          return {FieldId::RaceForm,        FieldOp::Set};
-    if (name == kSetClass)         return {FieldId::ClassForm,       FieldOp::Set};
-    if (name == kSetSkin)          return {FieldId::SkinForm,        FieldOp::Set};
-    if (name == kSetOutfit)        return {FieldId::OutfitForm,      FieldOp::Set};
-    if (name == kSetEnchantment)   return {FieldId::EnchantmentForm, FieldOp::Set};
-    if (name == kSetVoiceType)     return {FieldId::VoiceTypeForm,   FieldOp::Set};
-
-    // Boolean flags
-    if (name == kSetEssential)     return {FieldId::Essential,     FieldOp::Set};
-    if (name == kSetProtected)     return {FieldId::Protected,     FieldOp::Set};
-    if (name == kSetAutoCalcStats) return {FieldId::AutoCalcStats, FieldOp::Set};
-    if (name == kClearAll)         return {FieldId::ClearAll,      FieldOp::Set};
-
-    // Leveled list
+    // Leveled list operations (special, not in scalar model)
     if (name == kAddToLeveledList)      return {FieldId::LeveledEntries, FieldOp::Add};
     if (name == kRemoveFromLeveledList) return {FieldId::LeveledEntries, FieldOp::Remove};
-    if (name == kSetChanceNone)         return {FieldId::ChanceNone,     FieldOp::Set};
     if (name == kClearLeveledList)      return {FieldId::LeveledEntries, FieldOp::Set};
+
+    // Legacy: add_item, add_lev_spell, set_game_setting, clear_all
+    if (name == kAddItem)         return {FieldId::Items,       FieldOp::Add};
+    if (name == kAddLevSpell)     return {FieldId::LevSpells,   FieldOp::Add};
+    if (name == kSetGameSetting)  return {FieldId::GoldValue,   FieldOp::Set};
+    if (name == kClearAll)        return {FieldId::ClearAll,    FieldOp::Set};
 
     // Default fallback
     return {FieldId::Keywords, FieldOp::Add};

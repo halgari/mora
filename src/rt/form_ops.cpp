@@ -1,53 +1,14 @@
 // Platform-neutral code (used by IR emitter on Linux too)
 #include "mora/rt/form_ops.h"
-#include "mora/data/form_constants.h"
+#include "mora/data/form_model.h"
 #include "mora/data/action_names.h"
 
-using namespace mora::form_type;
 using namespace mora;
 
 namespace mora::rt {
 
 uint64_t get_field_offset(uint8_t ft, uint16_t field_id) {
-    if (ft == kWeapon) {
-        switch (field_id) {
-            case fid16(FieldId::Damage):          return weapon_layout::kAttackDamage + kComponentMember;
-            case fid16(FieldId::GoldValue):       return weapon_layout::kValueForm    + kComponentMember;
-            case fid16(FieldId::Weight):          return weapon_layout::kWeightForm   + kComponentMember;
-            case fid16(FieldId::Speed):           return weapon_layout::kSpeed;
-            case fid16(FieldId::Reach):           return weapon_layout::kReach;
-            case fid16(FieldId::Stagger):         return weapon_layout::kStagger;
-            case fid16(FieldId::RangeMin):        return weapon_layout::kRangeMin;
-            case fid16(FieldId::RangeMax):        return weapon_layout::kRangeMax;
-            case fid16(FieldId::CritDamage):      return weapon_layout::kCritDamage;
-            case fid16(FieldId::EnchantmentForm): return weapon_layout::kEnchantment;
-            default: return 0;
-        }
-    }
-    if (ft == kArmor) {
-        switch (field_id) {
-            case fid16(FieldId::ArmorRating):     return armor_layout::kArmorRating;
-            case fid16(FieldId::GoldValue):       return armor_layout::kValueForm   + kComponentMember;
-            case fid16(FieldId::Weight):          return armor_layout::kWeightForm  + kComponentMember;
-            case fid16(FieldId::Health):          return armor_layout::kHealth;
-            case fid16(FieldId::EnchantmentForm): return armor_layout::kEnchantment;
-            default: return 0;
-        }
-    }
-    if (ft == kNPC) {
-        switch (field_id) {
-            case fid16(FieldId::Level):           return npc_layout::kLevel;
-            case fid16(FieldId::CalcLevelMin):    return npc_layout::kCalcLevelMin;
-            case fid16(FieldId::CalcLevelMax):    return npc_layout::kCalcLevelMax;
-            case fid16(FieldId::RaceForm):        return npc_layout::kRaceForm;
-            case fid16(FieldId::ClassForm):       return npc_layout::kClassForm;
-            case fid16(FieldId::SkinForm):        return npc_layout::kSkinForm;
-            case fid16(FieldId::OutfitForm):      return npc_layout::kOutfitForm;
-            case fid16(FieldId::VoiceTypeForm):   return npc_layout::kVoiceType;
-            default: return 0;
-        }
-    }
-    return 0;
+    return model::field_offset_for(ft, static_cast<FieldId>(field_id));
 }
 
 } // namespace mora::rt

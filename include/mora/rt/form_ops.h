@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "mora/data/form_model.h"
 
 // Mora runtime form operations.
 //
@@ -15,9 +16,11 @@
 namespace mora::rt {
 
 // Read the form type byte from a TESForm*.
+// On Windows, we could use RE::TESForm::GetFormType(), but this raw read
+// is also needed by the IR codegen path and is verified in form_model_verify.cpp.
 inline uint8_t get_form_type(const void* form) {
     return *reinterpret_cast<const uint8_t*>(
-        reinterpret_cast<const char*>(form) + 0x1A);
+        reinterpret_cast<const char*>(form) + model::kFormTypeOffset);
 }
 
 // Return the offset of a scalar field within the form, or 0 if not applicable.

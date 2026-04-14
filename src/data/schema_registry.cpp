@@ -1,5 +1,6 @@
 #include "mora/data/schema_registry.h"
 #include "mora/data/action_names.h"
+#include "mora/data/form_model.h"
 #include "mora/eval/fact_db.h"
 
 namespace mora {
@@ -47,183 +48,166 @@ std::vector<const RelationSchema*> SchemaRegistry::schemas_for_record(
     return result;
 }
 
+namespace {
+
+ReadType value_type_to_read_type(mora::model::ValueType vt) {
+    using VT = mora::model::ValueType;
+    switch (vt) {
+        case VT::Int8:          return ReadType::Int8;
+        case VT::Int16:         return ReadType::Int16;
+        case VT::Int32:         return ReadType::Int32;
+        case VT::UInt8:         return ReadType::UInt8;
+        case VT::UInt16:        return ReadType::UInt16;
+        case VT::UInt32:        return ReadType::UInt32;
+        case VT::Float32:       return ReadType::Float32;
+        case VT::FormRef:       return ReadType::FormID;
+        case VT::BSFixedString: return ReadType::LString;
+    }
+    return ReadType::Int32;
+}
+
+MoraType value_type_to_mora_type(mora::model::ValueType vt) {
+    using VT = mora::model::ValueType;
+    switch (vt) {
+        case VT::Float32:       return MoraType::make(TypeKind::Float);
+        case VT::BSFixedString: return MoraType::make(TypeKind::String);
+        case VT::FormRef:       return MoraType::make(TypeKind::FormID);
+        default:                return MoraType::make(TypeKind::Int);
+    }
+}
+
+} // anonymous namespace
+
 void SchemaRegistry::register_defaults() {
-    // Helper lambdas
+    namespace m = model;
     auto id = [&](const char* s) { return pool_.intern(s); };
     auto formid_type = MoraType::make(TypeKind::FormID);
 
-    // --- Existence relations ---
-    struct ExistenceDef {
-        const char* name;
-        TypeKind type;
-        const char* record;
-    };
-    ExistenceDef existence_defs[] = {
-        {rel::kNpc,         TypeKind::NpcID,     rec::kNPC_},
-        {rel::kWeapon,      TypeKind::WeaponID,  rec::kWEAP},
-        {rel::kArmor,       TypeKind::ArmorID,   rec::kARMO},
-        {rel::kSpell,       TypeKind::SpellID,   rec::kSPEL},
-        {rel::kPerk,        TypeKind::PerkID,    rec::kPERK},
-        {rel::kKeyword,     TypeKind::KeywordID, rec::kKYWD},
-        {rel::kFaction,     TypeKind::FactionID, rec::kFACT},
-        {rel::kRace,        TypeKind::RaceID,    rec::kRACE},
-        {rel::kLeveledList, TypeKind::FormID,    rec::kLVLI},
-        {rel::kAmmo,        TypeKind::FormID,    rec::kAMMO},
-        {rel::kPotion,      TypeKind::FormID,    rec::kALCH},
-        {rel::kIngredient,  TypeKind::FormID,    rec::kINGR},
-        {rel::kBook,        TypeKind::FormID,    rec::kBOOK},
-        {rel::kScroll,      TypeKind::FormID,    rec::kSCRL},
-        {rel::kEnchantment, TypeKind::FormID,    rec::kENCH},
-        {rel::kMagicEffect, TypeKind::FormID,    rec::kMGEF},
-        {rel::kMiscItem,    TypeKind::FormID,    rec::kMISC},
-        {rel::kSoulGem,     TypeKind::FormID,    rec::kSLGM},
-    };
-    for (auto& def : existence_defs) {
+    // ── Existence relations from modifiable form types ──────────────────
+    for (size_t i = 0; i < m::kFormTypeCount; i++) {
+        auto& ft = *m::kFormTypes[i];
         RelationSchema s;
-        s.name = id(def.name);
-        s.column_types = {MoraType::make(def.type)};
+        s.name = id(ft.relation_name);
+        s.column_types = {MoraType::make(ft.type_kind)};
         s.indexed_columns = {0};
         s.esp_sources.push_back(EspSource{
-            def.record, "", EspSource::Kind::Existence, 0, 0, ReadType::FormID});
+            ft.record_tag, "", EspSource::Kind::Existence, 0, 0, ReadType::FormID});
         register_schema(std::move(s));
     }
 
-    // --- has_keyword(FormID, KeywordID) - ArrayField from KWDA ---
-    {
+    // ── Existence-only form types (no modifiable components) ────────────
+    for (size_t i = 0; i < m::kExistenceOnlyCount; i++) {
+        auto& eo = m::kExistenceOnly[i];
         RelationSchema s;
-        s.name = id("has_keyword");
-        s.column_types = {formid_type, MoraType::make(TypeKind::KeywordID)};
-        s.indexed_columns = {0, 1};
-        const char* kw_records[] = {rec::kNPC_, rec::kWEAP, rec::kARMO, rec::kALCH, rec::kBOOK,
-                                    rec::kAMMO, rec::kCONT, rec::kMGEF, rec::kINGR, rec::kSCRL,
-                                    rec::kMISC, rec::kSLGM};
-        for (auto* rec : kw_records) {
+        s.name = id(eo.relation_name);
+        s.column_types = {MoraType::make(eo.type_kind)};
+        s.indexed_columns = {0};
+        s.esp_sources.push_back(EspSource{
+            eo.record_tag, "", EspSource::Kind::Existence, 0, 0, ReadType::FormID});
+        register_schema(std::move(s));
+    }
+
+    // ── Scalar field relations from ESP sources ────────────────────────
+    for (size_t fi = 0; fi < m::kEspSourceCount; fi++) {
+        auto& esp = m::kEspSources[fi];
+        auto& field = m::kFields[esp.field_idx];
+        if (!field.relation_name) continue;
+
+        auto* existing = lookup(id(field.relation_name));
+        if (existing) {
+            // Already registered — add this ESP source to the existing schema.
+            // We need to re-register with the additional source.
+            RelationSchema s = *existing;
             s.esp_sources.push_back(EspSource{
-                rec, "KWDA", EspSource::Kind::ArrayField, 0, 4, ReadType::FormID});
+                esp.record_tag, esp.subrecord_tag,
+                EspSource::Kind::PackedField, esp.esp_offset, 0,
+                value_type_to_read_type(esp.read_type)});
+            register_schema(std::move(s));
+        } else {
+            RelationSchema s;
+            s.name = id(field.relation_name);
+            auto& member = m::kComponents[field.component_idx].members[field.member_idx];
+            s.column_types = {formid_type, value_type_to_mora_type(member.value_type)};
+            s.indexed_columns = {0};
+            s.esp_sources.push_back(EspSource{
+                esp.record_tag, esp.subrecord_tag,
+                EspSource::Kind::PackedField, esp.esp_offset, 0,
+                value_type_to_read_type(esp.read_type)});
+            register_schema(std::move(s));
+        }
+    }
+
+    // ── Form array relations (has_keyword, has_spell, etc.) ────────────
+    for (size_t i = 0; i < m::kFormArrayCount; i++) {
+        auto& fa = m::kFormArrays[i];
+        if (!fa.relation_name || !fa.subrecord_tag) continue;
+
+        RelationSchema s;
+        s.name = id(fa.relation_name);
+        s.column_types = {formid_type, MoraType::make(TypeKind::FormID)};
+
+        // Set column type for the value based on field ID
+        if (fa.field_id == FieldId::Keywords)
+            s.column_types[1] = MoraType::make(TypeKind::KeywordID);
+        else if (fa.field_id == FieldId::Spells)
+            s.column_types[1] = MoraType::make(TypeKind::SpellID);
+        else if (fa.field_id == FieldId::Perks)
+            s.column_types[1] = MoraType::make(TypeKind::PerkID);
+        else if (fa.field_id == FieldId::Factions)
+            s.column_types[1] = MoraType::make(TypeKind::FactionID);
+
+        s.indexed_columns = {0, 1};
+
+        auto esp_kind = (fa.esp_kind == m::FormArrayDef::EspKind::ArrayField)
+            ? EspSource::Kind::ArrayField : EspSource::Kind::ListField;
+
+        // Add ESP sources for all form types that have this component
+        if (fa.field_id == FieldId::Keywords) {
+            for (size_t j = 0; j < m::kKeywordRecordCount; j++) {
+                s.esp_sources.push_back(EspSource{
+                    m::kKeywordRecords[j], fa.subrecord_tag,
+                    esp_kind, 0, fa.element_size, ReadType::FormID});
+            }
+        } else {
+            // For spells, perks, factions — NPC only
+            s.esp_sources.push_back(EspSource{
+                "NPC_", fa.subrecord_tag, esp_kind, 0, fa.element_size, ReadType::FormID});
         }
         register_schema(std::move(s));
     }
 
-    // --- has_faction(FormID, FactionID) - ListField from SNAM ---
-    {
-        RelationSchema s;
-        s.name = id("has_faction");
-        s.column_types = {formid_type, MoraType::make(TypeKind::FactionID)};
-        s.indexed_columns = {0, 1};
-        s.esp_sources.push_back(EspSource{
-            "NPC_", "SNAM", EspSource::Kind::ListField, 0, 8, ReadType::FormID});
-        register_schema(std::move(s));
-    }
+    // ── Special relations not in the model ──────────────────────────────
+    // editor_id, name (FULL), npc_flags, race_of, npc_gender, form_source
 
-    // --- has_spell(FormID, SpellID) - ListField from SPLO ---
-    {
-        RelationSchema s;
-        s.name = id("has_spell");
-        s.column_types = {formid_type, MoraType::make(TypeKind::SpellID)};
-        s.indexed_columns = {0, 1};
-        s.esp_sources.push_back(EspSource{
-            "NPC_", "SPLO", EspSource::Kind::ListField, 0, 4, ReadType::FormID});
-        register_schema(std::move(s));
-    }
-
-    // --- has_perk(FormID, PerkID) - ListField from PRKR ---
-    {
-        RelationSchema s;
-        s.name = id("has_perk");
-        s.column_types = {formid_type, MoraType::make(TypeKind::PerkID)};
-        s.indexed_columns = {0, 1};
-        s.esp_sources.push_back(EspSource{
-            "NPC_", "PRKR", EspSource::Kind::ListField, 0, 8, ReadType::FormID});
-        register_schema(std::move(s));
-    }
-
-    // --- editor_id(FormID, String) - Subrecord EDID ZString from many types ---
+    // editor_id(FormID, String) — EDID subrecord from many record types
     {
         RelationSchema s;
         s.name = id("editor_id");
         s.column_types = {formid_type, MoraType::make(TypeKind::String)};
         s.indexed_columns = {0};
-        const char* edid_records[] = {
-            "NPC_", "WEAP", "ARMO", "SPEL", "PERK", "KYWD", "FACT", "RACE",
-            "LVLI", "ALCH", "BOOK", "AMMO", "CONT", "MGEF"};
-        for (auto* rec : edid_records) {
+        for (size_t i = 0; i < m::kEditorIdRecordCount; i++) {
             s.esp_sources.push_back(EspSource{
-                rec, "EDID", EspSource::Kind::Subrecord, 0, 0, ReadType::ZString});
+                m::kEditorIdRecords[i], "EDID",
+                EspSource::Kind::Subrecord, 0, 0, ReadType::ZString});
         }
         register_schema(std::move(s));
     }
 
-    // --- name(FormID, String) - Subrecord FULL LString ---
+    // name(FormID, String) — FULL subrecord (LString)
     {
         RelationSchema s;
         s.name = id("name");
         s.column_types = {formid_type, MoraType::make(TypeKind::String)};
         s.indexed_columns = {0};
-        const char* name_records[] = {rec::kNPC_, rec::kWEAP, rec::kARMO, rec::kALCH, rec::kBOOK,
-                                      rec::kAMMO, rec::kINGR, rec::kSCRL, rec::kENCH, rec::kMGEF};
-        for (auto* rec : name_records) {
+        for (size_t i = 0; i < m::kFullNameRecordCount; i++) {
             s.esp_sources.push_back(EspSource{
-                rec, "FULL", EspSource::Kind::Subrecord, 0, 0, ReadType::LString});
+                m::kFullNameRecords[i], "FULL",
+                EspSource::Kind::Subrecord, 0, 0, ReadType::LString});
         }
         register_schema(std::move(s));
     }
 
-    // --- damage(FormID, Int) - PackedField DATA offset 8 Int16 from WEAP ---
-    {
-        RelationSchema s;
-        s.name = id("damage");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
-        s.indexed_columns = {0};
-        s.esp_sources.push_back(EspSource{
-            "WEAP", "DATA", EspSource::Kind::PackedField, 8, 0, ReadType::Int16});
-        register_schema(std::move(s));
-    }
-
-    // --- gold_value(FormID, Int) - PackedField DATA offset 0 Int32 from WEAP ---
-    {
-        RelationSchema s;
-        s.name = id("gold_value");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
-        s.indexed_columns = {0};
-        s.esp_sources.push_back(EspSource{
-            "WEAP", "DATA", EspSource::Kind::PackedField, 0, 0, ReadType::Int32});
-        register_schema(std::move(s));
-    }
-
-    // --- weight(FormID, Float) - PackedField DATA offset 4 Float32 from WEAP ---
-    {
-        RelationSchema s;
-        s.name = id("weight");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Float)};
-        s.indexed_columns = {0};
-        s.esp_sources.push_back(EspSource{
-            "WEAP", "DATA", EspSource::Kind::PackedField, 4, 0, ReadType::Float32});
-        register_schema(std::move(s));
-    }
-
-    // --- armor_rating(FormID, Int) - Subrecord DNAM offset 0 Float32 from ARMO ---
-    {
-        RelationSchema s;
-        s.name = id("armor_rating");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
-        s.indexed_columns = {0};
-        s.esp_sources.push_back(EspSource{
-            "ARMO", "DNAM", EspSource::Kind::PackedField, 0, 0, ReadType::Float32});
-        register_schema(std::move(s));
-    }
-
-    // --- base_level(FormID, Int) - PackedField ACBS offset 8 Int16 from NPC_ ---
-    {
-        RelationSchema s;
-        s.name = id("base_level");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
-        s.indexed_columns = {0};
-        s.esp_sources.push_back(EspSource{
-            "NPC_", "ACBS", EspSource::Kind::PackedField, 8, 0, ReadType::Int16});
-        register_schema(std::move(s));
-    }
-
-    // --- npc_flags(FormID, Int) - ACBS flags uint32 at offset 0 from NPC_ ---
+    // npc_flags(FormID, Int) — ACBS flags at offset 0
     {
         RelationSchema s;
         s.name = id("npc_flags");
@@ -234,7 +218,7 @@ void SchemaRegistry::register_defaults() {
         register_schema(std::move(s));
     }
 
-    // --- race_of(FormID, RaceID) - Subrecord RNAM FormID from NPC_ ---
+    // race_of(FormID, RaceID) — RNAM subrecord
     {
         RelationSchema s;
         s.name = id("race_of");
