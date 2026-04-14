@@ -29,10 +29,9 @@ static uint32_t find_source_node(const DagRuntime& dr,
     return static_cast<uint32_t>(-1);
 }
 
-// NOTE: CommonLibSSE-NG exposes TESActivateEvent as a commonly-available
-// global source. Skyrim's true "location changed" event is
-// BGSLocationChangeEvent — we wire TESActivateEvent as a placeholder and
-// expect this to be refined once the handler semantics are nailed down.
+// NOTE: TESActivateEvent is a placeholder for OnLocationChange; Skyrim's
+// true location-changed event is BGSLocationChangeEvent and this should be
+// refined once the handler semantics are nailed down.
 class LocationChangeSink : public RE::BSTEventSink<RE::TESActivateEvent> {
 public:
     RE::BSEventNotifyControl ProcessEvent(
@@ -55,14 +54,44 @@ public:
     }
 };
 
+// TESDeathEvent fires twice per death: once with dead=false (entering the
+// dying state) and once with dead=true (fully dead). We emit the "killed"
+// delta on the dead=true pass so it fires once per kill.
+class ActorKilledSink : public RE::BSTEventSink<RE::TESDeathEvent> {
+public:
+    RE::BSEventNotifyControl ProcessEvent(
+        const RE::TESDeathEvent* evt,
+        RE::BSTEventSource<RE::TESDeathEvent>*) override {
+        if (!g_dag || !evt || !evt->dead) return RE::BSEventNotifyControl::kContinue;
+        auto* engine = g_dag->engine();
+        if (!engine) return RE::BSEventNotifyControl::kContinue;
+
+        uint32_t node = find_source_node(*g_dag, "event", "killed");
+        if (node == static_cast<uint32_t>(-1)) return RE::BSEventNotifyControl::kContinue;
+
+        uint32_t victim = evt->actorDying.get()  ? evt->actorDying->GetFormID()  : 0u;
+        uint32_t killer = evt->actorKiller.get() ? evt->actorKiller->GetFormID() : 0u;
+
+        Delta d{.tuple = {victim, killer}, .diff = +1};
+        engine->inject_delta(node, std::move(d));
+        engine->run_to_quiescence();
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+
 void register_skse_hooks(DagRuntime& dr,
                          const std::unordered_set<std::string>& needed_hooks) {
     g_dag = &dr;
+    auto* holder = RE::ScriptEventSourceHolder::GetSingleton();
+    if (!holder) return;
+
     if (needed_hooks.count("OnLocationChange")) {
         static LocationChangeSink s_location_sink;
-        if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {
-            holder->AddEventSink(&s_location_sink);
-        }
+        holder->AddEventSink(&s_location_sink);
+    }
+    if (needed_hooks.count("OnActorKilled")) {
+        static ActorKilledSink s_killed_sink;
+        holder->AddEventSink(&s_killed_sink);
     }
 }
 
