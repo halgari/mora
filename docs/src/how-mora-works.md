@@ -202,7 +202,7 @@ exceed disk read time, and the OS page cache handles cold start
 efficiently. A full Requiem-scale compile lands around 50–70 MB.
 
 For the byte-level layout see the
-[v2 design spec](../superpowers/specs/2026-04-14-mora-v2-static-dynamic-datalog-design.md#section-5-morapatch-binary-format).
+[v2 design spec](https://github.com/halgari/mora/blob/master/docs/superpowers/specs/2026-04-14-mora-v2-static-dynamic-datalog-design.md#section-5-morapatch-binary-format).
 
 ---
 
@@ -256,5 +256,5 @@ Further reading:
 
 - [Language Guide](language-guide.md) for writing rules.
 - [Relation Reference](relations.md) for the namespace inventory.
-- The [v2 design spec](../superpowers/specs/2026-04-14-mora-v2-static-dynamic-datalog-design.md)
+- The [v2 design spec](https://github.com/halgari/mora/blob/master/docs/superpowers/specs/2026-04-14-mora-v2-static-dynamic-datalog-design.md)
   for operator-by-operator detail.

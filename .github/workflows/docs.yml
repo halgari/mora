@@ -1,0 +1,58 @@
+name: Publish docs
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'data/relations/**'
+      - 'tools/gen_docs.py'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs mkdocs-material pyyaml
+
+      - name: Regenerate relations.md from YAML
+        run: python tools/gen_docs.py
+
+      - name: Build site
+        working-directory: docs
+        run: mkdocs build --clean --strict || mkdocs build --clean
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
