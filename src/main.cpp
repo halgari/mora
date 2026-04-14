@@ -23,12 +23,6 @@
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
-#include "mora/import/skypatcher_parser.h"
-#include "mora/import/spid_parser.h"
-#include "mora/import/kid_parser.h"
-#include "mora/import/mora_printer.h"
-#include "mora/import/ini_facts.h"
-#include "mora/import/ini_distribution_rules.h"
 #include "mora/eval/pipeline_evaluator.h"
 #include "mora/data/chunk_pool.h"
 
@@ -98,22 +92,6 @@ static std::vector<fs::path> find_mora_files(const fs::path& dir) {
     }
     for (auto& entry : fs::recursive_directory_iterator(dir)) {
         if (entry.path().extension() == ".mora") {
-            files.push_back(entry.path());
-        }
-    }
-    std::sort(files.begin(), files.end());
-    return files;
-}
-
-static std::vector<fs::path> find_files_by_suffix(const std::string& dir, const std::string& suffix) {
-    std::vector<fs::path> files;
-    fs::path base(dir);
-    if (!fs::exists(base)) return files;
-    for (auto& entry : fs::recursive_directory_iterator(base)) {
-        if (!entry.is_regular_file()) continue;
-        std::string fname = entry.path().filename().string();
-        if (fname.size() >= suffix.size() &&
-            fname.compare(fname.size() - suffix.size(), suffix.size(), suffix) == 0) {
             files.push_back(entry.path());
         }
     }
@@ -230,13 +208,19 @@ static void print_usage() {
         "  compile   Compile .mora files to native SKSE DLL\n"
         "  inspect   Display patch set from .mora source files\n"
         "  info      Show project status overview\n"
-        "  import    Scan for SPID/KID INI files and display as Mora rules\n"
         "\nOptions:\n"
         "  --no-color        Disable colored output\n"
         "  --output DIR      Output directory (compile, default: MoraCache/)\n"
         "  --data-dir DIR    Skyrim Data/ directory for ESP loading (compile, info)\n"
         "  --conflicts       Show only conflict info (inspect)\n"
         "  -v                Verbose output\n");
+}
+
+// ── Types previously exported by the import layer ──────────────────────────
+
+namespace mora {
+using EditorIdMap = std::unordered_map<std::string, uint32_t>;
+using PluginSet   = std::unordered_set<std::string>;
 }
 
 // ── Shared: parse + resolve + type-check pipeline ──────────────────────────
@@ -250,62 +234,13 @@ struct CheckResult {
     size_t rule_count = 0;
 };
 
-// Import INI files (SPID + KID) into a synthetic Module.
-static mora::Module import_ini_files(
-    const std::string& target_path,
-    mora::StringPool& pool,
-    mora::DiagBag& diags,
-    size_t& ini_count)
-{
-    mora::Module mod;
-    mod.filename = "<imported INI rules>";
-
-    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
-    auto kid_files  = find_files_by_suffix(target_path, "_KID.ini");
-
-    ini_count = spid_files.size() + kid_files.size();
-    if (ini_count == 0) return mod;
-
-    // Parse all INI files in parallel. StringPool and DiagBag are thread-safe,
-    // and each parser instance carries no shared state between files.
-    std::vector<fs::path> all_ini;
-    all_ini.reserve(ini_count);
-    all_ini.insert(all_ini.end(), spid_files.begin(), spid_files.end());
-    all_ini.insert(all_ini.end(), kid_files.begin(), kid_files.end());
-
-    std::vector<std::future<std::vector<mora::Rule>>> futures;
-    futures.reserve(all_ini.size());
-
-    for (auto& p : all_ini) {
-        futures.push_back(std::async(std::launch::async,
-            [&pool, &diags, path = p.string()]() -> std::vector<mora::Rule> {
-                bool is_spid = path.size() >= 10 &&
-                    path.compare(path.size() - 10, 10, "_DISTR.ini") == 0;
-                if (is_spid) {
-                    mora::SpidParser parser(pool, diags);
-                    return parser.parse_file(path);
-                } else {
-                    mora::KidParser parser(pool, diags);
-                    return parser.parse_file(path);
-                }
-            }));
-    }
-
-    for (auto& fut : futures) {
-        auto rules = fut.get();
-        for (auto& r : rules) mod.rules.push_back(std::move(r));
-    }
-
-    return mod;
-}
-
 static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
     mora::Output& out,
-    bool use_color,
-    bool import_ini = true)
+    bool use_color)
 {
+    (void)use_color;
     result.files = find_mora_files(target_path);
 
     // Parse .mora files
@@ -323,28 +258,12 @@ static bool run_check_pipeline(
         result.modules.push_back(std::move(mod));
     }
 
-    // Import INI files (SPID + KID) directly — only for check/inspect paths.
-    // The compile path uses fact-based INI distribution instead.
-    size_t ini_count = 0;
-    if (import_ini) {
-        auto ini_mod = import_ini_files(target_path, result.pool, result.diags, ini_count);
-        if (!ini_mod.rules.empty()) {
-            result.modules.push_back(std::move(ini_mod));
-        }
-    }
-
-    if (result.modules.empty() && import_ini) {
-        mora::log::error("No .mora or INI files found in {}\n", target_path);
+    if (result.modules.empty()) {
+        mora::log::error("No .mora files found in {}\n", target_path);
         return false;
     }
 
-    {
-        auto summary = fmt::format("{} .mora files", result.files.size());
-        if (ini_count > 0) {
-            summary += fmt::format(", {} INI files", ini_count);
-        }
-        out.phase_done(fmt::format("Parsing {}", summary));
-    }
+    out.phase_done(fmt::format("Parsing {} .mora files", result.files.size()));
 
     // Resolve
     out.phase_start("Resolving");
@@ -407,16 +326,6 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
     }
 }
 
-// Convert a Value to a uint64_t for patch table encoding
-static uint64_t value_to_u64(const mora::Value& v) {
-    switch (v.kind()) {
-        case mora::Value::Kind::FormID: return v.as_formid();
-        case mora::Value::Kind::Int:    return static_cast<uint64_t>(v.as_int());
-        case mora::Value::Kind::String: return v.as_string().index;
-        default: return 0;
-    }
-}
-
 // Load ESP plugin data into the FactDB via parallel batched reading
 static void load_esp_data(
     CheckResult& cr, mora::FactDB& db, mora::Evaluator& evaluator,
@@ -476,146 +385,6 @@ static void load_esp_data(
 
     out.phase_done(fmt::format("{} plugins, {} relations \xe2\x86\x92 {} facts",
         lo.plugins.size(), needed.size(), db.fact_count()));
-}
-
-// Load and process INI distribution files into FactDB
-static uint32_t load_ini_distributions(
-    const std::string& target_path, CheckResult& cr, mora::FactDB& db,
-    mora::Output& out, const mora::EditorIdMap& editor_id_map,
-    const mora::PluginSet& loaded_plugins)
-{
-    mora::configure_ini_relations(db, cr.pool);
-    uint32_t next_rule_id = 1;
-
-    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
-    auto kid_files = find_files_by_suffix(target_path, "_KID.ini");
-
-    if (spid_files.empty() && kid_files.empty()) return 0;
-
-    mora::IniLoadStats ini_stats;
-    out.phase_start("Loading INI distributions");
-    size_t spid_count = 0, kid_count = 0;
-
-    for (auto& path : spid_files) {
-        spid_count += mora::emit_spid_facts(path.string(), db, cr.pool,
-            cr.diags, next_rule_id, editor_id_map, loaded_plugins, ini_stats);
-    }
-    for (auto& path : kid_files) {
-        kid_count += mora::emit_kid_facts(path.string(), db, cr.pool,
-            cr.diags, next_rule_id, editor_id_map, loaded_plugins, ini_stats);
-    }
-    out.phase_done(fmt::format("{} SPID + {} KID \xe2\x86\x92 {} distribution facts",
-        spid_count, kid_count, next_rule_id - 1));
-
-    if (ini_stats.rules_dropped_missing_plugin > 0) {
-        mora::log::info("    Dropped {} rules referencing {} missing plugins\n",
-            ini_stats.rules_dropped_missing_plugin, ini_stats.missing_plugins.size());
-        std::vector<std::pair<std::string, size_t>> sorted_missing(
-            ini_stats.missing_plugins.begin(), ini_stats.missing_plugins.end());
-        std::sort(sorted_missing.begin(), sorted_missing.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
-        for (size_t i = 0; i < std::min(sorted_missing.size(), size_t(5)); ++i) {
-            mora::log::info("      {} ({} rules)\n",
-                sorted_missing[i].first, sorted_missing[i].second);
-        }
-    }
-    if (ini_stats.unresolved_editor_ids > 0) {
-        mora::log::info("    {} editor IDs could not be resolved\n",
-            ini_stats.unresolved_editor_ids);
-    }
-
-    return next_rule_id;
-}
-
-// Copy FactDB relations into columnar format and run pipeline evaluation
-static void evaluate_columnar(
-    CheckResult& cr, mora::FactDB& db, mora::PatchBuffer& patch_buf,
-    mora::Output& out)
-{
-    mora::ChunkPool chunk_pool;
-    mora::ColumnarFactStore col_store(chunk_pool);
-
-    // Copy ESP relations into columnar format
-    auto copy_relation = [&](const char* name, std::vector<mora::ColType> types) {
-        auto rel_id = cr.pool.intern(name);
-        auto& old_rel = db.get_relation(rel_id);
-        if (old_rel.empty()) return;
-        auto& col_rel = col_store.get_or_create(rel_id, types);
-        for (auto& tuple : old_rel) {
-            uint64_t vals[8];
-            for (size_t i = 0; i < tuple.size() && i < 8; i++) {
-                vals[i] = value_to_u64(tuple[i]);
-            }
-            col_rel.append_row(vals);
-        }
-    };
-
-    copy_relation("npc", {mora::ColType::U32});
-    copy_relation("weapon", {mora::ColType::U32});
-    copy_relation("armor", {mora::ColType::U32});
-    copy_relation("ammo", {mora::ColType::U32});
-    copy_relation("potion", {mora::ColType::U32});
-    copy_relation("book", {mora::ColType::U32});
-    copy_relation("spell", {mora::ColType::U32});
-    copy_relation("misc_item", {mora::ColType::U32});
-    copy_relation("magic_effect", {mora::ColType::U32});
-    copy_relation("ingredient", {mora::ColType::U32});
-    copy_relation("scroll", {mora::ColType::U32});
-    copy_relation("soul_gem", {mora::ColType::U32});
-    copy_relation("has_keyword", {mora::ColType::U32, mora::ColType::U32});
-    copy_relation("race_of", {mora::ColType::U32, mora::ColType::U32});
-    copy_relation("has_faction", {mora::ColType::U32, mora::ColType::U32});
-
-    // Expand filter lists into flat columnar relations
-    auto expand_filters = [&](const char* filter_rel_name,
-                               const char* kw_out_name,
-                               const char* form_out_name,
-                               const char* none_out_name) {
-        auto filter_id = cr.pool.intern(filter_rel_name);
-        auto& filter_tuples = db.get_relation(filter_id);
-        auto keyword_sid = cr.pool.intern("keyword");
-        auto none_sid = cr.pool.intern("none");
-
-        auto& kw_out = col_store.get_or_create(cr.pool.intern(kw_out_name),
-            {mora::ColType::U32, mora::ColType::U32});
-        auto& form_out = col_store.get_or_create(cr.pool.intern(form_out_name),
-            {mora::ColType::U32, mora::ColType::U32});
-        auto& none_out = col_store.get_or_create(cr.pool.intern(none_out_name),
-            {mora::ColType::U32});
-
-        for (auto& tuple : filter_tuples) {
-            uint32_t rule_id = static_cast<uint32_t>(tuple[0].as_int());
-            auto filter_kind = tuple[1].as_string();
-
-            if (filter_kind == none_sid) {
-                uint64_t v = rule_id;
-                none_out.append_row(&v);
-            } else if (tuple.size() > 2 && tuple[2].kind() == mora::Value::Kind::List) {
-                auto& list = tuple[2].as_list();
-                bool is_keyword = (filter_kind == keyword_sid);
-                auto& target = is_keyword ? kw_out : form_out;
-                for (auto& item : list) {
-                    if (item.kind() == mora::Value::Kind::FormID) {
-                        uint64_t vals[2] = {rule_id, item.as_formid()};
-                        target.append_row(vals);
-                    }
-                }
-            }
-        }
-    };
-
-    expand_filters("spid_filter", "spid_kw_filter", "spid_form_filter", "spid_no_filter");
-    expand_filters("kid_filter", "kid_kw_filter", "kid_form_filter", "kid_no_filter");
-
-    copy_relation("spid_dist", {mora::ColType::U32, mora::ColType::U32, mora::ColType::U32});
-    copy_relation("kid_dist", {mora::ColType::U32, mora::ColType::U32, mora::ColType::U32});
-
-    col_store.build_all_indexes();
-
-    out.phase_start("Evaluating (columnar)");
-    mora::evaluate_distributions_columnar(col_store, cr.pool, patch_buf);
-    patch_buf.sort_and_dedup();
-    out.phase_done(fmt::format("{} patches generated", patch_buf.size()));
 }
 
 // Evaluate .mora rules via Datalog and merge results into PatchBuffer
@@ -793,46 +562,6 @@ static int write_patch_file(
     return 0;
 }
 
-// Scan for SkyPatcher INI directories and parse into a Module
-static mora::Module load_skypatcher_rules(
-    const std::string& target_path, mora::StringPool& pool,
-    mora::DiagBag& diags, mora::Output& out,
-    const mora::FormIdResolver* resolver,
-    const mora::EditorIdMap* editor_ids = nullptr)
-{
-    mora::Module mod;
-    mod.filename = "<imported SkyPatcher rules>";
-
-    // Same directory scanning logic as cmd_import
-    fs::path skypatcher_dir;
-    for (auto& candidate : {
-        fs::path(target_path) / "SKSE" / "Plugins" / "SkyPatcher",
-        fs::path(target_path) / "SkyPatcher",
-        fs::path(target_path),
-    }) {
-        if (!fs::exists(candidate) || !fs::is_directory(candidate)) continue;
-        for (auto& sub : fs::directory_iterator(candidate)) {
-            auto name = sub.path().filename().string();
-            if (name == "weapon" || name == "armor" || name == "npc" ||
-                name == "leveledList" || name == "magicEffect") {
-                skypatcher_dir = candidate;
-                break;
-            }
-        }
-        if (!skypatcher_dir.empty()) break;
-    }
-
-    if (skypatcher_dir.empty()) return mod;
-
-    out.phase_start("Loading SkyPatcher configs");
-    mora::SkyPatcherParser parser(pool, diags, resolver, editor_ids);
-    auto rules = parser.parse_directory(skypatcher_dir.string());
-    for (auto& r : rules) mod.rules.push_back(std::move(r));
-    out.phase_done(fmt::format("{} SkyPatcher rules from {}", mod.rules.size(), skypatcher_dir.string()));
-
-    return mod;
-}
-
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir,
                         mora::Output& out, bool use_color) {
@@ -840,7 +569,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.print_header("0.1.0");
 
     CheckResult cr;
-    if (!run_check_pipeline(cr, target_path, out, use_color, /*import_ini=*/false)) return 1;
+    if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
 
     if (cr.diags.has_errors()) {
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -875,83 +604,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         load_esp_data(cr, db, evaluator, data_dir, out, editor_id_map, loaded_plugins);
     }
 
-    // Emit plugin_loaded facts for SkyPatcher hasPlugins/hasPluginsOr filters
-    {
-        auto rel_id = cr.pool.intern(mora::rel::kPluginLoaded);
-        db.configure_relation(rel_id, 1, {0});
-        for (auto& plugin_name : loaded_plugins) {
-            db.add_fact(rel_id, {mora::Value::make_string(cr.pool.intern(plugin_name))});
-        }
-    }
-
-    // Emit form_source(FormID, "Plugin.esp") facts by inspecting load order index
-    // The high byte of each FormID encodes the load order index.
-    if (!data_dir.empty()) {
-        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
-        auto source_rel = cr.pool.intern(mora::rel::kFormSource);
-        db.configure_relation(source_rel, 2, {0});
-        // Scan all existence relations for FormIDs and derive their source plugin
-        const char* existence_rels[] = {
-            mora::rel::kNpc, mora::rel::kWeapon, mora::rel::kArmor, mora::rel::kAmmo,
-            mora::rel::kPotion, mora::rel::kBook, mora::rel::kSpell, mora::rel::kMiscItem,
-            mora::rel::kMagicEffect, mora::rel::kIngredient, mora::rel::kScroll,
-            mora::rel::kSoulGem, mora::rel::kEnchantment, mora::rel::kLeveledList,
-        };
-        for (auto* rel_name : existence_rels) {
-            auto rid = cr.pool.intern(rel_name);
-            for (auto& tuple : db.get_relation(rid)) {
-                if (tuple.empty() || tuple[0].kind() != mora::Value::Kind::FormID) continue;
-                uint32_t formid = tuple[0].as_formid();
-                uint8_t load_idx = static_cast<uint8_t>(formid >> 24);
-                if (load_idx < lo.plugins.size()) {
-                    auto plugin_name = lo.plugins[load_idx].filename().string();
-                    db.add_fact(source_rel, {tuple[0],
-                        mora::Value::make_string(cr.pool.intern(plugin_name))});
-                }
-            }
-        }
-    }
-
-    // Derive npc_gender(FormID, "male"/"female") from npc_flags ACBS data
-    {
-        auto flags_rel = cr.pool.intern(mora::rel::kNpcFlags);
-        auto gender_rel = cr.pool.intern(mora::rel::kNpcGender);
-        db.configure_relation(gender_rel, 2, {0});
-        auto male_sid = cr.pool.intern(mora::gender::kMale);
-        auto female_sid = cr.pool.intern(mora::gender::kFemale);
-        for (auto& tuple : db.get_relation(flags_rel)) {
-            if (tuple.size() < 2) continue;
-            uint32_t flags = static_cast<uint32_t>(tuple[1].as_int());
-            bool is_female = (flags & mora::npc_flags::kFemale) != 0;
-            db.add_fact(gender_rel, {tuple[0],
-                mora::Value::make_string(is_female ? female_sid : male_sid)});
-        }
-    }
-
-    uint32_t next_rule_id = load_ini_distributions(
-        target_path, cr, db, out, editor_id_map, loaded_plugins);
-
-    // Load SkyPatcher INI configs as Datalog rules
-    {
-        mora::FormIdResolver resolver;
-        if (!editor_id_map.empty()) {
-            resolver.build_from_editor_ids(editor_id_map);
-        }
-        const mora::FormIdResolver* resolver_ptr = resolver.has_data() ? &resolver : nullptr;
-        const mora::EditorIdMap* edid_ptr = editor_id_map.empty() ? nullptr : &editor_id_map;
-        auto sky_mod = load_skypatcher_rules(target_path, cr.pool, cr.diags, out, resolver_ptr, edid_ptr);
-        if (!sky_mod.rules.empty()) {
-            cr.rule_count += sky_mod.rules.size();
-            cr.modules.push_back(std::move(sky_mod));
-        }
-    }
-
     mora::PatchBuffer patch_buf;
-
-    if (next_rule_id > 1) {
-        evaluate_columnar(cr, db, patch_buf, out);
-    }
-
     evaluate_mora_rules(cr, evaluator, patch_buf, out);
 
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
@@ -1134,209 +787,6 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     return 0;
 }
 
-// Colorize :Symbol tokens in a rule line for display
-static std::string colorize_symbols(const std::string& line, bool use_color) {
-    if (!use_color) return line;
-    std::string colored;
-    size_t i = 0;
-    while (i < line.size()) {
-        if (line[i] == ':' && i + 1 < line.size() &&
-            (std::isalpha((unsigned char)line[i+1]) || line[i+1] == '_')) {
-            size_t j = i + 1;
-            while (j < line.size() &&
-                   (std::isalnum((unsigned char)line[j]) || line[j] == '_')) {
-                ++j;
-            }
-            colored += mora::TermStyle::cyan(line.substr(i, j - i), true);
-            i = j;
-        } else {
-            colored += line[i++];
-        }
-    }
-    return colored;
-}
-
-// Print a rule with colored formatting
-static void print_rule_colored(const mora::Rule& rule, const std::string& fallback_file,
-                                mora::MoraPrinter& printer, mora::Output& out, bool use_color) {
-    // Source comment
-    std::string src_file = rule.span.file.empty() ? fallback_file : rule.span.file;
-    if (auto pos = src_file.rfind('/'); pos != std::string::npos)
-        src_file = src_file.substr(pos + 1);
-    auto comment = fmt::format("Imported from {}:{}", src_file, rule.span.start_line);
-    mora::log::info("  {}\n", mora::TermStyle::dim(printer.print_comment(comment), use_color));
-
-    std::string rule_text = printer.print_rule(rule);
-    std::istringstream ss(rule_text);
-    std::string line;
-    bool first_line = true;
-    while (std::getline(ss, line)) {
-        if (first_line) {
-            mora::log::info("  {}\n", mora::TermStyle::bold(line, use_color));
-            first_line = false;
-        } else if (!line.empty()) {
-            mora::log::info("  {}\n", colorize_symbols(line, use_color));
-        } else {
-            mora::log::info("\n");
-        }
-    }
-    mora::log::info("\n");
-}
-
-static int cmd_import(const std::string& target_path, const std::string& data_dir,
-                      bool use_color) {
-    mora::Output out(use_color, mora::stdout_is_tty());
-    out.print_header("0.1.0");
-
-    auto spid_files = find_files_by_suffix(target_path, "_DISTR.ini");
-    auto kid_files  = find_files_by_suffix(target_path, "_KID.ini");
-
-    // Look for SkyPatcher directory
-    fs::path skypatcher_dir;
-    for (auto& candidate : {
-        fs::path(target_path) / "SKSE" / "Plugins" / "SkyPatcher",
-        fs::path(target_path) / "SkyPatcher",
-        fs::path(target_path),
-    }) {
-        if (fs::exists(candidate) && fs::is_directory(candidate)) {
-            for (auto& sub : fs::directory_iterator(candidate)) {
-                auto name = sub.path().filename().string();
-                if (name == "weapon" || name == "armor" || name == "npc" ||
-                    name == "leveledList" || name == "magicEffect") {
-                    skypatcher_dir = candidate;
-                    break;
-                }
-            }
-            if (!skypatcher_dir.empty()) break;
-        }
-    }
-
-    if (spid_files.empty() && kid_files.empty() && skypatcher_dir.empty()) {
-        mora::log::info("  No INI files found in {}\n", target_path);
-        return 1;
-    }
-
-    mora::StringPool pool;
-    mora::DiagBag diags;
-
-    // Load ESP data for FormID resolution (optional but improves output)
-    mora::FormIdResolver resolver;
-    if (!data_dir.empty()) {
-        out.phase_start("Loading ESP data for symbol resolution");
-        mora::SchemaRegistry schema(pool);
-        schema.register_defaults();
-        mora::FactDB db(pool);
-        schema.configure_fact_db(db);
-        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
-        mora::EspReader esp_reader(pool, diags, schema);
-        esp_reader.read_load_order(lo.plugins, db);
-        resolver.build_from_editor_ids(esp_reader.editor_id_map());
-        out.phase_done(fmt::format("{} EditorIDs loaded",
-            resolver.has_data() ? esp_reader.editor_id_map().size() : 0));
-        mora::log::info("\n");
-    }
-
-    mora::log::info("  Scanning for INI files...\n\n");
-
-    mora::MoraPrinter printer(pool);
-    const mora::FormIdResolver* resolver_ptr = resolver.has_data() ? &resolver : nullptr;
-
-    size_t total_spid_rules = 0;
-    size_t total_kid_rules  = 0;
-
-    for (auto& path : spid_files) {
-        mora::SpidParser parser(pool, diags, resolver_ptr);
-        auto rules = parser.parse_file(path.string());
-        std::string fname = path.filename().string();
-        out.section_header(fmt::format("{} ({} rules)", fname, rules.size()));
-        mora::log::info("\n");
-        for (auto& rule : rules) {
-            print_rule_colored(rule, fname, printer, out, use_color);
-        }
-        total_spid_rules += rules.size();
-    }
-
-    for (auto& path : kid_files) {
-        mora::KidParser parser(pool, diags, resolver_ptr);
-        auto rules = parser.parse_file(path.string());
-        std::string fname = path.filename().string();
-        out.section_header(fmt::format("{} ({} rules)", fname, rules.size()));
-        mora::log::info("\n");
-        for (auto& rule : rules) {
-            print_rule_colored(rule, fname, printer, out, use_color);
-        }
-        total_kid_rules += rules.size();
-    }
-
-    // Process SkyPatcher directories
-    size_t total_skypatcher_rules = 0;
-    size_t skypatcher_file_count = 0;
-    if (!skypatcher_dir.empty()) {
-        mora::SkyPatcherParser sky_parser(pool, diags, resolver_ptr);
-        auto sky_rules = sky_parser.parse_directory(skypatcher_dir.string());
-
-        if (!sky_rules.empty()) {
-            out.section_header(fmt::format("SkyPatcher ({}) ({} rules)",
-                skypatcher_dir.string(), sky_rules.size()));
-            mora::log::info("\n");
-
-            for (auto& rule : sky_rules) {
-                std::string rule_text = printer.print_rule(rule);
-                std::istringstream ss(rule_text);
-                std::string line;
-                bool first_line = true;
-                while (std::getline(ss, line)) {
-                    if (first_line) {
-                        mora::log::info("  {}\n", mora::TermStyle::bold(line, use_color));
-                        first_line = false;
-                    } else if (!line.empty()) {
-                        mora::log::info("  {}\n", line);
-                    } else {
-                        mora::log::info("\n");
-                    }
-                }
-                mora::log::info("\n");
-            }
-
-            total_skypatcher_rules = sky_rules.size();
-        }
-
-        for (auto& entry : fs::recursive_directory_iterator(skypatcher_dir)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".ini")
-                skypatcher_file_count++;
-        }
-    }
-
-    // Summary
-    size_t total_rules = total_spid_rules + total_kid_rules + total_skypatcher_rules;
-    size_t total_files = spid_files.size() + kid_files.size() + skypatcher_file_count;
-
-    out.section_header("Summary");
-
-    auto gs = [use_color](auto v) { return mora::TermStyle::green(fmt::format("{}", v), use_color); };
-    auto pl = [](size_t n) -> const char* { return n == 1 ? "" : "s"; };
-
-    mora::log::info("  {} INI files \xe2\x86\x92 {} Mora rules\n", gs(total_files), gs(total_rules));
-
-    if (!spid_files.empty()) {
-        mora::log::info("    SPID: {} file{}, {} rule{}\n",
-            gs(spid_files.size()), pl(spid_files.size()),
-            gs(total_spid_rules), pl(total_spid_rules));
-    }
-    if (!kid_files.empty()) {
-        mora::log::info("    KID:  {} file{}, {} rule{}\n",
-            gs(kid_files.size()), pl(kid_files.size()),
-            gs(total_kid_rules), pl(total_kid_rules));
-    }
-    if (total_skypatcher_rules > 0) {
-        mora::log::info("    SkyPatcher: {} file{}, {} rule{}\n",
-            gs(skypatcher_file_count), pl(skypatcher_file_count),
-            gs(total_skypatcher_rules), pl(total_skypatcher_rules));
-    }
-    mora::log::info("\n");
-
-    return 0;
-}
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
@@ -1359,7 +809,7 @@ int main(int argc, char* argv[]) {
         else target_path = arg;
     }
 
-    if (data_dir.empty() && (command == "compile" || command == "info" || command == "import")) {
+    if (data_dir.empty() && (command == "compile" || command == "info")) {
         data_dir = detect_skyrim_data_dir();
     }
 
@@ -1381,10 +831,6 @@ int main(int argc, char* argv[]) {
 
     if (command == "info") {
         return cmd_info(target_path, data_dir);
-    }
-
-    if (command == "import") {
-        return cmd_import(target_path, data_dir, use_color);
     }
 
     if (command == "docs") {

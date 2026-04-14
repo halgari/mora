@@ -20,7 +20,7 @@ target("mora_lib")
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
-              "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp",
+              "src/data/*.cpp", "src/esp/*.cpp",
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
               "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
