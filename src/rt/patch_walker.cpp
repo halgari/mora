@@ -9,6 +9,7 @@
 #include "mora/emit/patch_table.h"
 #include "mora/emit/patch_file_v2.h"
 #include "mora/rt/mapped_patch_file.h"
+#include "mora/rt/dag_runtime.h"
 
 #include <RE/T/TESForm.h>
 #include <RE/F/FormTraits.h>
@@ -54,6 +55,7 @@ static mora::rt::MappedPatchFile g_patch_file;
 static const uint8_t* g_patch_entries  = nullptr;
 static uint32_t       g_patch_count    = 0;
 static const uint8_t* g_string_table   = nullptr;
+static mora::rt::DagRuntime g_dag_runtime;
 
 using mora::PatchEntry;
 
@@ -526,6 +528,10 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
 
     auto strings = g_patch_file.section(mora::emit::SectionId::StringTable);
     g_string_table = strings.data; // may be null if no strings
+
+    // Load DAG bytecode (if present) into the runtime. Handler bindings are
+    // wired in a later task; this just threads the runtime object through.
+    g_dag_runtime.init_from(g_patch_file);
 
     return g_patch_count;
 }
