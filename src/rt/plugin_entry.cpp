@@ -27,11 +27,14 @@ std::filesystem::path get_dll_directory() {
 }
 
 void on_data_loaded() {
-    auto patch_file = get_dll_directory() / "mora_patches.bin";
+    auto dll_dir = get_dll_directory();
+    SKSE::log::info("[Mora] DLL directory: {}", dll_dir.string());
+    auto patch_file = dll_dir / "mora_patches.bin";
+    SKSE::log::info("[Mora] Looking for patches at: {}", patch_file.string());
 
     uint32_t count = load_patches(patch_file);
     if (count == 0) {
-        SKSE::log::info("[Mora] No patches loaded");
+        SKSE::log::info("[Mora] No patches loaded from {}", patch_file.string());
         return;
     }
 
