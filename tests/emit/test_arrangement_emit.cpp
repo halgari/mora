@@ -48,3 +48,31 @@ TEST(ArrangementEmit, EmptyRowsProducesHeaderOnly) {
     std::memcpy(&h, bytes.data(), sizeof(h));
     EXPECT_EQ(h.row_count, 0u);
 }
+
+TEST(ArrangementEmit, SectionWithTwoArrangements) {
+    auto a1 = build_u32_arrangement(1, {{{0x10,0x20}}}, 0);
+    auto a2 = build_u32_arrangement(2, {{{0x30,0x40}}, {{0x10,0x50}}}, 0);
+    auto section = build_arrangements_section({a1, a2});
+
+    uint32_t count = 0;
+    std::memcpy(&count, section.data(), 4);
+    EXPECT_EQ(count, 2u);
+
+    // First entry: u64 length prefix, then the arrangement bytes.
+    uint64_t len1 = 0;
+    std::memcpy(&len1, section.data() + 4, 8);
+    EXPECT_EQ(len1, a1.size());
+    EXPECT_EQ(std::memcmp(section.data() + 4 + 8, a1.data(), a1.size()), 0);
+
+    uint64_t len2 = 0;
+    std::memcpy(&len2, section.data() + 4 + 8 + a1.size(), 8);
+    EXPECT_EQ(len2, a2.size());
+}
+
+TEST(ArrangementEmit, EmptySection) {
+    auto section = build_arrangements_section({});
+    EXPECT_EQ(section.size(), 4u);
+    uint32_t count = 0;
+    std::memcpy(&count, section.data(), 4);
+    EXPECT_EQ(count, 0u);
+}
