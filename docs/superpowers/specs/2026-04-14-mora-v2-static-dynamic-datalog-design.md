@@ -147,13 +147,12 @@ Verbs: `set`, `add`, `sub`, `remove`. Legal verbs per relation are determined by
 
 | Cardinality | Value type | Legal verbs |
 |-------------|-----------|-------------|
-| Scalar | Float | `set` |
-| Scalar | Int, String, FormID, Keyword | `set` |
-| Countable | Int | `set`, `add`, `sub` |
+| Scalar | any (Int, Float, String, FormID, Keyword) | `set` |
+| Countable | Int or Float | `set`, `add`, `sub` |
 | Set | any | `add`, `remove` |
 | Functional (1:1) | any | read-only |
 
-Countable is distinct from plain Int scalar — it's used for relations where additive deltas make sense (e.g. `player/gold`). Plain scalars can only be `set`. The constexpr entry for each relation declares its cardinality; verb/shape mismatches are compile errors pointing at the source location.
+Countable is distinct from plain Scalar — it's used for numeric relations where additive deltas make sense (e.g. `player/gold`, `form/damage_multiplier`). Applies to both Int and Float. Plain scalars can only be `set` (e.g. `form/name`, `ref/race`). The constexpr entry for each relation declares its cardinality; verb/shape mismatches are compile errors pointing at the source location.
 
 ### Body grammar
 
