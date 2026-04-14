@@ -367,34 +367,14 @@ Extraction: `packed_field`, offset `8`, read as `float32`.
 
 Dynamic data about placed references (live world instances).
 
-*Source: `data/relations/ref.yaml`*
+*Source: `data/relations/ref/actor.yaml`*
 
-### `ref/keyword(R: FormRef, KW: FormRef)`
+### `ref/is_dead(R: FormRef)`
 
-**Type:** `list<FormRef>`  
-**Verbs:** `add`, `remove`
-
-Keywords added dynamically to a specific placed reference.
-
-Runtime handler-dispatched.
-Apply handler: `RefAddKeyword`.
-Retract handler: `RefRemoveKeyword`.
-
-### `ref/current_location(R: FormRef, LOC: FormRef)`
-
-**Type:** `const<FormRef>`  
+**Type:** `predicate`  
 **Verbs:** *(read-only; body-position only)*
 
-The location this reference is currently in.
-
-Runtime handler-dispatched.
-
-### `ref/base_form(R: FormRef, F: FormRef)`
-
-**Type:** `const<FormRef>`  
-**Verbs:** *(read-only; body-position only)*
-
-Bridge from live reference to its base record.
+True when R is an actor that is currently dead.
 
 Runtime handler-dispatched.
 
@@ -403,7 +383,202 @@ Runtime handler-dispatched.
 **Type:** `predicate`  
 **Verbs:** *(read-only; body-position only)*
 
-True when this reference is currently in combat.
+True when R is an actor currently in combat state.
+
+Runtime handler-dispatched.
+
+### `ref/health(R: FormRef, H: Float)`
+
+**Type:** `const<Float>`  
+**Verbs:** *(read-only; body-position only)*
+
+Current health value for an actor reference (not max health).
+
+Runtime handler-dispatched.
+
+### `ref/magicka(R: FormRef, M: Float)`
+
+**Type:** `const<Float>`  
+**Verbs:** *(read-only; body-position only)*
+
+Current magicka value for an actor reference.
+
+Runtime handler-dispatched.
+
+### `ref/stamina(R: FormRef, S: Float)`
+
+**Type:** `const<Float>`  
+**Verbs:** *(read-only; body-position only)*
+
+Current stamina value for an actor reference.
+
+Runtime handler-dispatched.
+
+### `ref/level(R: FormRef, L: Int)`
+
+**Type:** `const<Int>`  
+**Verbs:** *(read-only; body-position only)*
+
+Current (possibly leveled) level of an actor reference. May differ from form/base_level when the actor was auto-leveled.
+
+Runtime handler-dispatched.
+
+### `ref/equipped_weapon(ACTOR: FormRef, WEAP: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+Weapon currently held in ACTOR's right (main) hand. Returns the base weapon FormID, not a reference.
+
+Runtime handler-dispatched.
+
+### `ref/equipped_weapon_left(ACTOR: FormRef, WEAP: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+Weapon or shield currently held in ACTOR's left (off) hand.
+
+Runtime handler-dispatched.
+
+### `ref/equipped_spell_left(ACTOR: FormRef, SPELL: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+Spell currently readied in ACTOR's left hand.
+
+Runtime handler-dispatched.
+
+### `ref/equipped_spell_right(ACTOR: FormRef, SPELL: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+Spell currently readied in ACTOR's right hand.
+
+Runtime handler-dispatched.
+
+### `ref/equipped_armor(ACTOR: FormRef, ARMO: FormRef)`
+
+**Type:** `list<FormRef>`  
+**Verbs:** `add`, `remove`
+
+Armor pieces currently worn by ACTOR. One fact per equipped piece.
+
+Runtime handler-dispatched.
+
+### `ref/inventory_item(ACTOR: FormRef, ITEM: FormRef)`
+
+**Type:** `list<FormRef>`  
+**Verbs:** `add`, `remove`
+
+Items currently in ACTOR's inventory (base-form FormIDs; counts and individual ref instances aren't exposed here).
+
+Runtime handler-dispatched.
+
+*Source: `data/relations/ref/item.yaml`*
+
+### `ref/worn_by(ITEM: FormRef, ACTOR: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+The actor currently wearing or wielding this item reference, if any. Inverse of ref/equipped_armor / ref/equipped_weapon.
+
+Runtime handler-dispatched.
+
+### `ref/container(ITEM: FormRef, OWNER: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+The container or actor currently holding this item reference. Distinct from worn_by — an item can be carried but not equipped.
+
+Runtime handler-dispatched.
+
+### `ref/is_equipped(ITEM: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when this item reference is currently equipped on some actor.
+
+Runtime handler-dispatched.
+
+### `ref/is_stolen(ITEM: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when this item reference has the stolen flag set.
+
+Runtime handler-dispatched.
+
+*Source: `data/relations/ref/shared.yaml`*
+
+### `ref/base_form(R: FormRef, F: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+Bridge from a live placed reference to its base record. This is the primary join used to carry a reference over into form/* queries.
+
+Runtime handler-dispatched.
+
+### `ref/current_location(R: FormRef, LOC: FormRef)`
+
+**Type:** `const<FormRef>`  
+**Verbs:** *(read-only; body-position only)*
+
+The Location record this reference is currently in (nearest parent Location).
+
+Runtime handler-dispatched.
+
+### `ref/keyword(R: FormRef, KW: FormRef)`
+
+**Type:** `list<FormRef>`  
+**Verbs:** `add`, `remove`
+
+Keywords added to a specific reference at runtime (distinct from its base form's keywords).
+
+Runtime handler-dispatched.
+Apply handler: `RefAddKeyword`.
+Retract handler: `RefRemoveKeyword`.
+
+### `ref/is_player(R: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when R is the player character.
+
+Runtime handler-dispatched.
+
+### `ref/is_npc(R: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when R's base form is an NPC (actor base).
+
+Runtime handler-dispatched.
+
+### `ref/is_weapon(R: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when R's base form is a WEAP record.
+
+Runtime handler-dispatched.
+
+### `ref/is_armor(R: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when R's base form is an ARMO record.
 
 Runtime handler-dispatched.
 

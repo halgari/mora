@@ -1,0 +1,34 @@
+namespace: ref
+# Item-reference relations (weapons, armor, containers on the ground or in
+# an inventory).
+#
+# ref/is_weapon and ref/is_armor live in ref/shared.yaml as universal type
+# predicates. This file covers item-specific runtime state.
+relations:
+  worn_by:
+    type: const<FormRef>
+    args:
+      - {name: ITEM, type: FormRef}
+      - {name: ACTOR, type: FormRef}
+    source: handler
+    docs: "The actor currently wearing or wielding this item reference, if any. Inverse of ref/equipped_armor / ref/equipped_weapon."
+
+  container:
+    type: const<FormRef>
+    args:
+      - {name: ITEM, type: FormRef}
+      - {name: OWNER, type: FormRef}
+    source: handler
+    docs: "The container or actor currently holding this item reference. Distinct from worn_by — an item can be carried but not equipped."
+
+  is_equipped:
+    type: predicate
+    args: [{name: ITEM, type: FormRef}]
+    source: handler
+    docs: "True when this item reference is currently equipped on some actor."
+
+  is_stolen:
+    type: predicate
+    args: [{name: ITEM, type: FormRef}]
+    source: handler
+    docs: "True when this item reference has the stolen flag set."
