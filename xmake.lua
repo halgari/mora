@@ -22,7 +22,7 @@ target("mora_lib")
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
               "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp",
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/harness/*.cpp",
-              "src/model/*.cpp")
+              "src/model/*.cpp", "src/dag/*.cpp")
     add_packages("zlib", "fmt")
 target_end()
 
