@@ -78,8 +78,8 @@ target("mora_runtime")
 
     -- Shared Mora core code (subset — no ESP parser, no CLI, no lexer/parser)
     add_files("src/core/*.cpp", "src/data/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp")
-    add_files("src/runtime/*.cpp")
-    add_files("src/rt/handlers/*.cpp")
+    add_files("src/rt/*.cpp", "src/rt/handlers/*.cpp")
+    add_files("src/dag/*.cpp", "src/model/*.cpp")
     add_includedirs("include", {public = true})
 
     -- CommonLibSSE-NG (alandtse/CommonLibVR ng branch)
