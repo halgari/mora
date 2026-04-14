@@ -150,6 +150,14 @@ Token Lexer::lex_identifier_or_keyword() {
     if (text == "in") return make_token(TokenKind::KwIn);
     if (text == "import_spid") return make_token(TokenKind::KwImportSpid);
     if (text == "import_kid") return make_token(TokenKind::KwImportKid);
+    if (text == "maintain") return make_token(TokenKind::KwMaintain);
+    if (text == "on") return make_token(TokenKind::KwOn);
+    if (text == "as") return make_token(TokenKind::KwAs);
+    if (text == "refer") return make_token(TokenKind::KwRefer);
+    if (text == "set") return make_token(TokenKind::KwSet);
+    if (text == "add") return make_token(TokenKind::KwAdd);
+    if (text == "sub") return make_token(TokenKind::KwSub);
+    if (text == "remove") return make_token(TokenKind::KwRemove);
 
     // Variable: starts with uppercase
     if (std::isupper(static_cast<unsigned char>(text[0]))) {

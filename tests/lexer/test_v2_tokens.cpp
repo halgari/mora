@@ -53,3 +53,16 @@ TEST(V2Tokens, NamespacedIdentifierLexesAsThreeTokens) {
     EXPECT_EQ(tokens[2].kind, TokenKind::Identifier);
     EXPECT_EQ(tokens[2].text, "keyword");
 }
+
+TEST(V2Tokens, NewKeywordsRecognized) {
+    auto tokens = tokenize("maintain on as refer set add sub remove\n");
+    ASSERT_GE(tokens.size(), 8u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwMaintain);
+    EXPECT_EQ(tokens[1].kind, TokenKind::KwOn);
+    EXPECT_EQ(tokens[2].kind, TokenKind::KwAs);
+    EXPECT_EQ(tokens[3].kind, TokenKind::KwRefer);
+    EXPECT_EQ(tokens[4].kind, TokenKind::KwSet);
+    EXPECT_EQ(tokens[5].kind, TokenKind::KwAdd);
+    EXPECT_EQ(tokens[6].kind, TokenKind::KwSub);
+    EXPECT_EQ(tokens[7].kind, TokenKind::KwRemove);
+}

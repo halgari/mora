@@ -43,6 +43,22 @@ const char* token_kind_name(TokenKind kind) {
         return "import_spid";
     case TokenKind::KwImportKid:
         return "import_kid";
+    case TokenKind::KwMaintain:
+        return "maintain";
+    case TokenKind::KwOn:
+        return "on";
+    case TokenKind::KwAs:
+        return "as";
+    case TokenKind::KwRefer:
+        return "refer";
+    case TokenKind::KwSet:
+        return "set";
+    case TokenKind::KwAdd:
+        return "add";
+    case TokenKind::KwSub:
+        return "sub";
+    case TokenKind::KwRemove:
+        return "remove";
 
     // Punctuation
     case TokenKind::Colon:

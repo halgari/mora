@@ -12,6 +12,8 @@ enum class TokenKind {
 
     // Keywords
     KwNamespace, KwRequires, KwMod, KwUse, KwOnly, KwNot, KwOr, KwIn, KwImportSpid, KwImportKid,
+    KwMaintain, KwOn, KwAs, KwRefer,
+    KwSet, KwAdd, KwSub, KwRemove,
 
     // Punctuation
     Colon, DoubleColon, Comma, Dot, LParen, RParen, LBracket, RBracket,
