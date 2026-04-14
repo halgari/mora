@@ -193,6 +193,42 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                 break;
             }
 
+            case EspSource::Kind::BitTest: {
+                reader.reset();
+                auto sub_data = reader.find(src.subrecord_tag.c_str());
+                if (sub_data.empty()) break;
+                // Read the flags word at src.offset per src.read_type, then
+                // emit a unary predicate fact if the bit is set.
+                uint32_t word = 0;
+                switch (src.read_type) {
+                    case ReadType::UInt8:
+                        if (sub_data.size() < src.offset + 1) break;
+                        word = *(sub_data.data() + src.offset);
+                        break;
+                    case ReadType::UInt16: {
+                        if (sub_data.size() < src.offset + 2) break;
+                        uint16_t v = 0;
+                        std::memcpy(&v, sub_data.data() + src.offset, 2);
+                        word = v;
+                        break;
+                    }
+                    case ReadType::UInt32:
+                    case ReadType::Int32: {
+                        if (sub_data.size() < src.offset + 4) break;
+                        std::memcpy(&word, sub_data.data() + src.offset, 4);
+                        break;
+                    }
+                    default: break;
+                }
+                if (word & (1u << src.bit)) {
+                    Tuple t;
+                    t.push_back(Value::make_formid(global_fid));
+                    db.add_fact(schema->name, std::move(t));
+                    facts_generated_++;
+                }
+                break;
+            }
+
             case EspSource::Kind::ListField: {
                 reader.reset();
                 auto all_subs = reader.find_all(src.subrecord_tag.c_str());

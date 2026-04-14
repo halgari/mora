@@ -48,9 +48,38 @@ struct ArgSpec {
     std::string_view name = {};
 };
 
+// How to pull a value out of an ESP subrecord. Mirrors the reader-side
+// ReadType; kept here to keep model/* decoupled from esp/schema_registry.h.
+enum class EspReadType : uint8_t {
+    Unspecified,
+    Int8, Int16, Int32,
+    UInt8, UInt16, UInt32,
+    Float32,
+    FormID,
+    ZString,
+    LString,
+};
+
+// Extraction kind declared in YAML. Unspecified means "form_model-driven
+// registration already covers this relation; don't add a YAML-sourced schema."
+enum class EspExtract : uint8_t {
+    Unspecified,
+    Existence,    // record exists → one unary predicate fact
+    Subrecord,    // whole subrecord is one value
+    PackedField,  // read at byte offset inside a subrecord
+    ArrayField,   // subrecord is an array of fixed-size elements
+    ListField,    // repeating subrecords, each one is an element
+    BitTest,      // predicate: emit fact if a specific bit is set in a flags word
+};
+
 struct EspSource {
     std::string_view record_type = {};
-    std::string_view subrecord  = {};
+    std::string_view subrecord   = {};
+    EspExtract       extract      = EspExtract::Unspecified;
+    uint16_t         offset       = 0;   // byte offset within the subrecord
+    uint16_t         element_size = 0;   // for ArrayField / ListField
+    uint8_t          bit          = 0;   // for BitTest, 0-indexed
+    EspReadType      read_as      = EspReadType::Unspecified;
 };
 
 struct MemoryReadSpec {

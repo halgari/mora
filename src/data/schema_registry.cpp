@@ -2,6 +2,7 @@
 #include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
 #include "mora/eval/fact_db.h"
+#include "mora/model/relations.h"
 
 namespace mora {
 
@@ -226,6 +227,96 @@ void SchemaRegistry::register_defaults() {
         s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "RNAM", EspSource::Kind::Subrecord, 0, 0, ReadType::FormID});
+        register_schema(std::move(s));
+    }
+
+    // ── YAML-sourced relations (data/relations/*.yaml) ─────────────────
+    // For every kRelations entry that carries extraction metadata (esp.extract
+    // != Unspecified) AND isn't already registered via form_model.h above,
+    // build a RelationSchema from the YAML declaration.
+    register_yaml_relations();
+}
+
+namespace {
+
+MoraType elem_to_mora_type(mora::model::ElemType e) {
+    using E = mora::model::ElemType;
+    switch (e) {
+        case E::Int:     return MoraType::make(TypeKind::Int);
+        case E::Float:   return MoraType::make(TypeKind::Float);
+        case E::String:  return MoraType::make(TypeKind::String);
+        case E::FormRef: return MoraType::make(TypeKind::FormID);
+        case E::Keyword: return MoraType::make(TypeKind::KeywordID);
+        case E::RefId:   return MoraType::make(TypeKind::FormID);
+    }
+    return MoraType::make(TypeKind::Int);
+}
+
+ReadType esp_read_to_read_type(mora::model::EspReadType r) {
+    using R = mora::model::EspReadType;
+    switch (r) {
+        case R::Int8:    return ReadType::Int8;
+        case R::Int16:   return ReadType::Int16;
+        case R::Int32:   return ReadType::Int32;
+        case R::UInt8:   return ReadType::UInt8;
+        case R::UInt16:  return ReadType::UInt16;
+        case R::UInt32:  return ReadType::UInt32;
+        case R::Float32: return ReadType::Float32;
+        case R::FormID:  return ReadType::FormID;
+        case R::ZString: return ReadType::ZString;
+        case R::LString: return ReadType::LString;
+        case R::Unspecified: break;
+    }
+    return ReadType::Int32;
+}
+
+EspSource::Kind esp_extract_to_kind(mora::model::EspExtract e) {
+    using E = mora::model::EspExtract;
+    switch (e) {
+        case E::Existence:   return EspSource::Kind::Existence;
+        case E::Subrecord:   return EspSource::Kind::Subrecord;
+        case E::PackedField: return EspSource::Kind::PackedField;
+        case E::ArrayField:  return EspSource::Kind::ArrayField;
+        case E::ListField:   return EspSource::Kind::ListField;
+        case E::BitTest:     return EspSource::Kind::BitTest;
+        case E::Unspecified: break;
+    }
+    return EspSource::Kind::Existence;
+}
+
+} // anonymous
+
+void SchemaRegistry::register_yaml_relations() {
+    namespace mm = mora::model;
+    for (size_t i = 0; i < mm::kRelationCount; ++i) {
+        const auto& r = mm::kRelations[i];
+        if (r.source != mm::RelationSourceKind::Static) continue;
+        if (r.esp_source.extract == mm::EspExtract::Unspecified) continue;
+
+        auto name_id = pool_.intern(std::string(r.namespace_) + "_" + std::string(r.name));
+        // Legacy relation naming didn't use the namespace prefix; try bare name
+        // first and only fall back to namespaced if there's a collision.
+        name_id = pool_.intern(std::string(r.name));
+        if (lookup(name_id)) continue; // form_model.h already covers it
+
+        RelationSchema s;
+        s.name = name_id;
+        // Column types from the declared args.
+        for (uint8_t c = 0; c < r.arg_count; ++c) {
+            s.column_types.push_back(elem_to_mora_type(r.args[c].type));
+        }
+        // Predicates are unary; everything else has a FormID-keyed primary.
+        if (r.arg_count > 0) s.indexed_columns.push_back(0);
+
+        EspSource src;
+        src.record_type  = std::string(r.esp_source.record_type);
+        src.subrecord_tag = std::string(r.esp_source.subrecord);
+        src.kind         = esp_extract_to_kind(r.esp_source.extract);
+        src.offset       = r.esp_source.offset;
+        src.element_size = r.esp_source.element_size;
+        src.read_type    = esp_read_to_read_type(r.esp_source.read_as);
+        src.bit          = r.esp_source.bit;
+        s.esp_sources.push_back(std::move(src));
         register_schema(std::move(s));
     }
 }

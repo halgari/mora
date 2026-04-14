@@ -41,10 +41,44 @@ def fmt_source(rel):
     m = {"static":"Static","handler":"Handler","hook":"Hook","event":"Event","memory":"MemoryRead"}
     return f"RelationSourceKind::{m[src]}"
 
+EXTRACT_MAP = {
+    "existence": "Existence",
+    "subrecord": "Subrecord",
+    "packed_field": "PackedField",
+    "array_field": "ArrayField",
+    "list_field": "ListField",
+    "bit_test": "BitTest",
+}
+
+READ_MAP = {
+    "int8":    "Int8",    "int16":  "Int16",  "int32":  "Int32",
+    "uint8":   "UInt8",   "uint16": "UInt16", "uint32": "UInt32",
+    "float32": "Float32", "formid": "FormID",
+    "zstring": "ZString", "lstring": "LString",
+}
+
 def fmt_esp(esp):
-    rt = esp.get("record_type", "")
-    sr = esp.get("subrecord", "")
-    return f'{{.record_type = "{rt}", .subrecord = "{sr}"}}'
+    parts = [
+        f'.record_type = "{esp.get("record_type", "")}"',
+        f'.subrecord = "{esp.get("subrecord", "")}"',
+    ]
+    if "extract" in esp:
+        extract = esp["extract"]
+        if extract not in EXTRACT_MAP:
+            raise ValueError(f"bad extract kind: {extract!r}")
+        parts.append(f'.extract = EspExtract::{EXTRACT_MAP[extract]}')
+    if "offset" in esp:
+        parts.append(f'.offset = {esp["offset"]}')
+    if "element_size" in esp:
+        parts.append(f'.element_size = {esp["element_size"]}')
+    if "bit" in esp:
+        parts.append(f'.bit = {esp["bit"]}')
+    if "read_as" in esp:
+        rt = esp["read_as"]
+        if rt not in READ_MAP:
+            raise ValueError(f"bad read_as: {rt!r}")
+        parts.append(f'.read_as = EspReadType::{READ_MAP[rt]}')
+    return "{" + ", ".join(parts) + "}"
 
 def fmt_hook(h):
     name = h["name"]

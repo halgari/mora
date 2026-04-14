@@ -85,13 +85,20 @@ relations:
     docs: "NPC base race."
 
   # ── NPC-specific scalar fields (ACBS = Actor Configuration Base Stats) ──
+  # ACBS layout: flags(u32@0) magicka(u16@4) stamina(u16@6) level(u16@8)
+  #              calcMin(u16@10) calcMax(u16@12) speedMult(u16@14) ...
   calc_level_min:
     type: countable<Int>
     args:
       - {name: NPC, type: FormRef}
       - {name: L, type: Int}
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: packed_field
+      offset: 10
+      read_as: uint16
     docs: "Minimum auto-calculated level for this NPC."
 
   calc_level_max:
@@ -100,7 +107,12 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: L, type: Int}
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: packed_field
+      offset: 12
+      read_as: uint16
     docs: "Maximum auto-calculated level for this NPC (0 = no cap)."
 
   speed_mult:
@@ -109,7 +121,12 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: N, type: Int}
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: packed_field
+      offset: 14
+      read_as: uint16
     docs: "NPC movement speed multiplier (100 = normal)."
 
   npc_class:
@@ -118,7 +135,11 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: CLASS, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: CNAM}
+    esp:
+      record_type: NPC_
+      subrecord: CNAM
+      extract: subrecord
+      read_as: formid
     docs: "NPC class record (TESClass)."
 
   voice_type:
@@ -127,7 +148,11 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: VTYPE, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: VTCK}
+    esp:
+      record_type: NPC_
+      subrecord: VTCK
+      extract: subrecord
+      read_as: formid
     docs: "NPC voice type."
 
   default_outfit:
@@ -136,37 +161,65 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: OUTFIT, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: DOFT}
+    esp:
+      record_type: NPC_
+      subrecord: DOFT
+      extract: subrecord
+      read_as: formid
     docs: "NPC default outfit (Outfit record)."
 
-  # ── NPC flags (from ACBS flags word at offset 0) ──
+  # ── NPC flags (bits in the ACBS flags word at offset 0) ──
+  female:
+    type: predicate
+    args: [{name: NPC, type: FormRef}]
+    source: static
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: bit_test
+      offset: 0
+      read_as: uint32
+      bit: 0
+    docs: "True when this NPC is female."
+
   essential:
     type: predicate
     args: [{name: NPC, type: FormRef}]
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: bit_test
+      offset: 0
+      read_as: uint32
+      bit: 1
     docs: "True when this NPC has the Essential flag (cannot be killed)."
-
-  protected:
-    type: predicate
-    args: [{name: NPC, type: FormRef}]
-    source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
-    docs: "True when this NPC has the Protected flag (killable only by player)."
 
   unique:
     type: predicate
     args: [{name: NPC, type: FormRef}]
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: bit_test
+      offset: 0
+      read_as: uint32
+      bit: 5
     docs: "True when this NPC is marked Unique (only one instance can exist)."
 
-  female:
+  protected:
     type: predicate
     args: [{name: NPC, type: FormRef}]
     source: static
-    esp: {record_type: NPC_, subrecord: ACBS}
-    docs: "True when this NPC is female."
+    esp:
+      record_type: NPC_
+      subrecord: ACBS
+      extract: bit_test
+      offset: 0
+      read_as: uint32
+      bit: 11
+    docs: "True when this NPC has the Protected flag (killable only by player)."
 
   # ── NPC collections (repeating subrecords) ──
   spell:
@@ -175,7 +228,12 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: SPELL, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: SPLO}
+    esp:
+      record_type: NPC_
+      subrecord: SPLO
+      extract: list_field
+      element_size: 4
+      read_as: formid
     docs: "Spells granted to this NPC."
 
   perk:
@@ -184,7 +242,12 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: PERK, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: PRKR}
+    esp:
+      record_type: NPC_
+      subrecord: PRKR
+      extract: list_field
+      element_size: 8
+      read_as: formid
     docs: "Perks granted to this NPC."
 
   inventory_item:
@@ -193,5 +256,10 @@ relations:
       - {name: NPC, type: FormRef}
       - {name: ITEM, type: FormRef}
     source: static
-    esp: {record_type: NPC_, subrecord: CNTO}
-    docs: "Items in this NPC's default inventory."
+    esp:
+      record_type: NPC_
+      subrecord: CNTO
+      extract: list_field
+      element_size: 8
+      read_as: formid
+    docs: "Items in this NPC's default inventory (CNTO is form+count)."

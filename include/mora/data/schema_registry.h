@@ -25,10 +25,12 @@ struct EspSource {
         PackedField,   // field at byte offset within a packed subrecord
         ArrayField,    // subrecord contains array of fixed-size elements
         ListField,     // repeating subrecords
+        BitTest,       // predicate: bit N is set in a flags word at offset
     } kind = Kind::Existence;
     size_t offset = 0;
     size_t element_size = 0;
     ReadType read_type = ReadType::FormID;
+    uint8_t bit = 0;
 };
 
 struct RelationSchema {
@@ -55,6 +57,8 @@ public:
     std::vector<const RelationSchema*> schemas_for_record(const std::string& record_type) const;
 
 private:
+    void register_yaml_relations();
+
     StringPool& pool_;
     std::unordered_map<uint32_t, RelationSchema> schemas_;
 };
