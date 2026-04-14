@@ -1,7 +1,10 @@
 namespace test.errors
 
+# Intentionally-broken fixture used to verify diagnostics.
+# The smoke test skips this file.
+
 wrong(NPC):
-    npc(NPC, :Extra)
+    form/npc(NPC, @Extra)
 
 also_wrong(NPC):
-    nonexistent_fact(NPC)
+    form/nonexistent_fact(NPC)

@@ -4,5 +4,5 @@ requires mod("Skyrim.esm")
 
 # Rename every NPC to Nazeem
 everyone_is_nazeem(NPC):
-    npc(NPC)
-    => set_name(NPC, "Nazeem")
+    form/npc(NPC)
+    => set form/name(NPC, "Nazeem")

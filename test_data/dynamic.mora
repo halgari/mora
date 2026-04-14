@@ -1,6 +1,10 @@
 namespace test.dynamic
 
-dynamic_rule(NPC):
-    npc(NPC)
-    current_location(NPC, Loc)
-    => add_item(NPC, :RegionalGoods)
+# Tag all NPCs of a given faction with a keyword.
+# (Formerly used current_location + add_item; those relations are legacy-only
+#  and not part of the v2 form/* model yet, so this fixture exercises the
+#  v2 form namespace with a body-and-effect pattern.)
+faction_tag(NPC):
+    form/npc(NPC)
+    form/faction(NPC, @SomeFaction)
+    => add form/keyword(NPC, @RegionalGoodsTag)

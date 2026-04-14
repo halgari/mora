@@ -4,6 +4,6 @@ requires mod("Skyrim.esm")
 
 # All iron weapons get 99 damage
 iron_weapons(Weapon):
-    weapon(Weapon)
-    has_keyword(Weapon, :WeapMaterialIron)
-    => set_damage(Weapon, 99)
+    form/weapon(Weapon)
+    form/keyword(Weapon, @WeapMaterialIron)
+    => set form/damage(Weapon, 99)

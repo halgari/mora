@@ -5,6 +5,6 @@ requires mod("Skyrim.esm")
 # Rename just Ulfric Stormcloak to Nazeem
 # Ulfric's FormID is 0x0001414D in Skyrim.esm
 rename_ulfric(NPC):
-    npc(NPC)
-    has_faction(NPC, :CWSonsFaction)
-    => set_name(NPC, "Nazeem")
+    form/npc(NPC)
+    form/faction(NPC, @CWSonsFaction)
+    => set form/name(NPC, "Nazeem")
