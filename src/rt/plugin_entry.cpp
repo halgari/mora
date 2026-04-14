@@ -1,13 +1,12 @@
 // src/rt/plugin_entry.cpp
-// SKSE plugin glue — compiled into MoraRuntime.dll with CommonLibSSE-NG.
-// Loads mora_patches.bin from the SKSE/Plugins directory and applies at DataLoaded.
+// SKSE plugin glue — loads mora_patches.bin and applies at DataLoaded.
 
 #ifdef _WIN32
 
-#include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 #include <chrono>
 #include <filesystem>
+#include <windows.h>
 
 // Defined in patch_walker.cpp
 uint32_t load_patches(const std::filesystem::path& patch_file);
@@ -15,18 +14,28 @@ void apply_all_patches();
 
 namespace {
 
+// Get the directory containing this DLL
+std::filesystem::path get_dll_directory() {
+    HMODULE hmod = nullptr;
+    GetModuleHandleExA(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCSTR>(&get_dll_directory),
+        &hmod);
+    char path[MAX_PATH];
+    GetModuleFileNameA(hmod, path, MAX_PATH);
+    return std::filesystem::path(path).parent_path();
+}
+
 void on_data_loaded() {
-    // Find mora_patches.bin next to this DLL
-    auto plugin_dir = std::filesystem::path(SKSE::GetPluginFolder());
-    auto patch_file = plugin_dir / "mora_patches.bin";
+    auto patch_file = get_dll_directory() / "mora_patches.bin";
 
     uint32_t count = load_patches(patch_file);
     if (count == 0) {
-        SKSE::log::info("[Mora] No patches loaded ({})", patch_file.string());
+        SKSE::log::info("[Mora] No patches loaded");
         return;
     }
 
-    SKSE::log::info("[Mora] Loaded {} patches from {}", count, patch_file.string());
+    SKSE::log::info("[Mora] Loaded {} patches", count);
 
     auto start = std::chrono::steady_clock::now();
     apply_all_patches();
@@ -54,6 +63,6 @@ bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
 }
 
 #else
-// Linux stub -- this file is only meaningful when cross-compiled for Windows
+// Linux stub
 namespace mora::rt { void plugin_entry_stub() {} }
 #endif

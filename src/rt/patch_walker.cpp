@@ -29,6 +29,9 @@
 #include <RE/T/TESRaceForm.h>
 #include <RE/B/BGSSkinForm.h>
 #include <RE/B/BGSOutfit.h>
+#include <RE/B/BGSVoiceType.h>
+#include <RE/E/EnchantmentItem.h>
+#include <RE/T/TESClass.h>
 #include <RE/M/MemoryManager.h>
 
 #include <cstdint>
@@ -64,14 +67,22 @@ struct PatchEntry {
 // As<T>() only works for form types, not component base classes,
 // so we cast through the concrete form type.
 
+// Get a component base class from a form by trying each concrete form type.
+// Uses if-constexpr to avoid casting through unrelated types.
 template<typename ComponentT>
 ComponentT* get_component(RE::TESForm* form) {
-    if (auto* npc = form->As<RE::TESNPC>())
-        return static_cast<ComponentT*>(npc);
-    if (auto* weap = form->As<RE::TESObjectWEAP>())
-        return static_cast<ComponentT*>(weap);
-    if (auto* armo = form->As<RE::TESObjectARMO>())
-        return static_cast<ComponentT*>(armo);
+    if constexpr (std::is_base_of_v<ComponentT, RE::TESObjectWEAP>) {
+        if (auto* weap = form->As<RE::TESObjectWEAP>())
+            return static_cast<ComponentT*>(weap);
+    }
+    if constexpr (std::is_base_of_v<ComponentT, RE::TESObjectARMO>) {
+        if (auto* armo = form->As<RE::TESObjectARMO>())
+            return static_cast<ComponentT*>(armo);
+    }
+    if constexpr (std::is_base_of_v<ComponentT, RE::TESNPC>) {
+        if (auto* npc = form->As<RE::TESNPC>())
+            return static_cast<ComponentT*>(npc);
+    }
     return nullptr;
 }
 
@@ -128,8 +139,8 @@ static void apply_enchantment(RE::TESForm* form, const PatchEntry& e) {
     if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
     auto* ef = get_component<RE::TESEnchantableForm>(form);
     if (!ef) return;
-    auto* ench = RE::TESForm::LookupByID(static_cast<uint32_t>(e.value));
-    if (ench) ef->formEnchanting = static_cast<RE::EnchantmentItem*>(ench);
+    auto* ench = RE::TESForm::LookupByID<RE::EnchantmentItem>(static_cast<uint32_t>(e.value));
+    if (ench) ef->formEnchanting = ench;
 }
 
 // ── Weapon-specific fields ─────────────────────────────────────────────
@@ -196,10 +207,10 @@ static void apply_npc_form_ref(RE::TESNPC* npc, FieldId field, const PatchEntry&
             break;
         }
         case FieldId::ClassForm:
-            npc->npcClass = static_cast<RE::TESClass*>(ref);
+            npc->npcClass = ref->As<RE::TESClass>();
             break;
         case FieldId::VoiceTypeForm:
-            npc->voiceType = static_cast<RE::BGSVoiceType*>(ref);
+            npc->voiceType = ref->As<RE::BGSVoiceType>();
             break;
         case FieldId::SkinForm: {
             auto* sf = static_cast<RE::BGSSkinForm*>(npc);
@@ -207,7 +218,7 @@ static void apply_npc_form_ref(RE::TESNPC* npc, FieldId field, const PatchEntry&
             break;
         }
         case FieldId::OutfitForm:
-            npc->defaultOutfit = static_cast<RE::BGSOutfit*>(ref);
+            npc->defaultOutfit = ref->As<RE::BGSOutfit>();
             break;
         default: break;
     }

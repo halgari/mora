@@ -17,13 +17,14 @@ MSVC_FLAGS=(
     /O2
     /EHsc
     /utf-8
+    /Zc:preprocessor
     /DWIN32
     /D_WIN32
     /DNOMINMAX
     /DSPDLOG_COMPILED_LIB
     /DENABLE_SKYRIM_SE=1
     /DENABLE_SKYRIM_AE=1
-    /DSKSE_SUPPORT_XBYAK=0
+    /USKSE_SUPPORT_XBYAK
     /I"$PROJECT_DIR/include"
     /I"$PROJECT_DIR/extern/CommonLibSSE-NG/include"
     /I"$PROJECT_DIR/extern/spdlog-shim"
