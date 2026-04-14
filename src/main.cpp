@@ -14,6 +14,8 @@
 #include "mora/eval/evaluator.h"
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
+#include "mora/core/digest.h"
+#include <algorithm>
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -673,7 +675,8 @@ static void evaluate_mora_rules(
 // Write serialized patch table to a binary file
 static int write_patch_file(
     mora::PatchBuffer& patch_buf, const std::string& target_path,
-    const std::string& output_dir, mora::Output& out)
+    const std::string& output_dir, mora::Output& out,
+    const mora::PluginSet& loaded_plugins)
 {
     fs::path out_path(output_dir);
     if (out_path.is_relative()) {
@@ -683,8 +686,20 @@ static int write_patch_file(
     }
     fs::create_directories(out_path);
 
+    // Build a manifest string from the loaded plugin set and hash it so the
+    // runtime can detect when the user swaps plugins. PluginSet is an
+    // unordered set of filenames; sort for a stable digest.
+    std::vector<std::string> plugin_names(loaded_plugins.begin(), loaded_plugins.end());
+    std::sort(plugin_names.begin(), plugin_names.end());
+    std::string manifest;
+    for (const auto& name : plugin_names) {
+        manifest += name;
+        manifest += '\n';
+    }
+    auto digest = mora::compute_digest(manifest);
+
     out.phase_start("Serializing patches");
-    auto patch_data = mora::serialize_patch_table(patch_buf.entries());
+    auto patch_data = mora::serialize_patch_table(patch_buf.entries(), digest);
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
@@ -865,7 +880,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out);
+    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins);
     if (write_rc != 0) return write_rc;
 
     // Summary

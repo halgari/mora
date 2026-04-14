@@ -87,10 +87,18 @@ std::vector<uint8_t> build_string_table_and_entries(
 
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool) {
+    std::array<uint8_t, 32> zero{};
+    return serialize_patch_table(patches, pool, zero);
+}
+
+std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
+                                            StringPool& pool,
+                                            const std::array<uint8_t, 32>& esp_digest) {
     std::vector<PatchEntry> entries;
     auto string_table = build_string_table_and_entries(patches, pool, entries);
 
     emit::FlatFileWriter w;
+    w.set_esp_digest(esp_digest);
     if (!string_table.empty()) {
         w.add_section(emit::SectionId::StringTable,
                       string_table.data(), string_table.size());
@@ -101,7 +109,14 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
 }
 
 std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries) {
+    std::array<uint8_t, 32> zero{};
+    return serialize_patch_table(entries, zero);
+}
+
+std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
+                                            const std::array<uint8_t, 32>& esp_digest) {
     emit::FlatFileWriter w;
+    w.set_esp_digest(esp_digest);
     w.add_section(emit::SectionId::Patches,
                   entries.data(), entries.size() * sizeof(PatchEntry));
     return w.finish();

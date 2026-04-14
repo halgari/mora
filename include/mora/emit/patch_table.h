@@ -1,6 +1,7 @@
 #pragma once
 #include "mora/eval/patch_set.h"
 #include "mora/core/string_pool.h"
+#include <array>
 #include <vector>
 #include <cstdint>
 
@@ -27,9 +28,19 @@ static_assert(sizeof(PatchEntry) == 16);
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool);
 
+// Same, but embed an esp_digest into the file header so the runtime can
+// detect when the loaded plugin set has changed since compilation.
+std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
+                                            StringPool& pool,
+                                            const std::array<uint8_t, 32>& esp_digest);
+
 // Serialize pre-built PatchEntry array directly (fast path for PatchBuffer).
 // Entries must already be sorted and deduped. No string table support (all
 // values are FormID/Int/Float).
 std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries);
+
+// Same, with esp_digest.
+std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
+                                            const std::array<uint8_t, 32>& esp_digest);
 
 } // namespace mora
