@@ -7,6 +7,8 @@
 
 #include "mora/data/action_names.h"
 #include "mora/emit/patch_table.h"
+#include "mora/emit/patch_file_v2.h"
+#include "mora/rt/mapped_patch_file.h"
 
 #include <RE/T/TESForm.h>
 #include <RE/F/FormTraits.h>
@@ -46,23 +48,14 @@ using mora::fop;
 using mora::FieldId;
 using mora::FieldOp;
 
-static std::vector<uint8_t> g_patch_data;
+// Patch file is mmap-loaded (well: read into a backing buffer) for the
+// lifetime of the runtime. Section pointers below alias into this buffer.
+static mora::rt::MappedPatchFile g_patch_file;
+static const uint8_t* g_patch_entries  = nullptr;
+static uint32_t       g_patch_count    = 0;
+static const uint8_t* g_string_table   = nullptr;
 
-struct PatchTableHeader {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t patch_count;
-    uint32_t string_table_size;
-};
-
-struct PatchEntry {
-    uint32_t formid;
-    uint8_t field_id;
-    uint8_t op;
-    uint8_t value_type;
-    uint8_t pad;
-    uint64_t value;
-};
+using mora::PatchEntry;
 
 // ── Component extraction helpers ───────────────────────────────────────
 // As<T>() only works for form types, not component base classes,
@@ -498,43 +491,36 @@ static void apply_patch_entry(RE::TESForm* form, const PatchEntry& e,
 // ── Public API ─────────────────────────────────────────────────────────
 
 uint32_t load_patches(const std::filesystem::path& patch_file) {
-    std::ifstream ifs(patch_file, std::ios::binary | std::ios::ate);
-    if (!ifs) return 0;
+    if (!g_patch_file.open(patch_file.string())) return 0;
 
-    auto size = ifs.tellg();
-    if (size < static_cast<std::streamoff>(sizeof(PatchTableHeader))) return 0;
+    auto patches = g_patch_file.section(mora::emit::SectionId::Patches);
+    if (!patches.data) return 0;
 
-    g_patch_data.resize(static_cast<size_t>(size));
-    ifs.seekg(0);
-    ifs.read(reinterpret_cast<char*>(g_patch_data.data()), size);
+    g_patch_entries = patches.data;
+    g_patch_count   = static_cast<uint32_t>(patches.size / sizeof(PatchEntry));
 
-    auto* hdr = reinterpret_cast<const PatchTableHeader*>(g_patch_data.data());
-    if (hdr->magic != mora::kPatchTableMagic || hdr->version != mora::kPatchTableVersion) {
-        g_patch_data.clear();
-        return 0;
-    }
-    return hdr->patch_count;
+    auto strings = g_patch_file.section(mora::emit::SectionId::StringTable);
+    g_string_table = strings.data; // may be null if no strings
+
+    return g_patch_count;
 }
 
 void apply_all_patches() {
-    if (g_patch_data.empty()) return;
+    if (!g_patch_entries || g_patch_count == 0) return;
 
-    auto* hdr = reinterpret_cast<const PatchTableHeader*>(g_patch_data.data());
-    const uint8_t* string_table = g_patch_data.data() + sizeof(PatchTableHeader);
-    const auto* entries = reinterpret_cast<const PatchEntry*>(
-        string_table + hdr->string_table_size);
+    const auto* entries = reinterpret_cast<const PatchEntry*>(g_patch_entries);
 
     uint32_t current_fid = 0;
     RE::TESForm* current_form = nullptr;
 
-    for (uint32_t i = 0; i < hdr->patch_count; i++) {
+    for (uint32_t i = 0; i < g_patch_count; i++) {
         const auto& e = entries[i];
         if (e.formid != current_fid) {
             current_fid = e.formid;
             current_form = RE::TESForm::LookupByID(current_fid);
         }
         if (!current_form) continue;
-        apply_patch_entry(current_form, e, string_table);
+        apply_patch_entry(current_form, e, g_string_table);
     }
 }
 
