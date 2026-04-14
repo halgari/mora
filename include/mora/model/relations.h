@@ -5,6 +5,9 @@
 namespace mora::model {
 
 // Defined in src/model/relations_seed.cpp.
+// kRelations is constexpr (implicitly inline) so it can be used in static_assert
+// validators. kRelationCount remains extern const to track the logical count
+// (sentinel entry excluded).
 extern const RelationEntry kRelations[];
 extern const size_t        kRelationCount;
 
