@@ -1,8 +1,99 @@
 #include "mora/sema/name_resolver.h"
 #include "mora/data/form_model.h"
+#include <unordered_map>
+#include <string>
 #include <variant>
 
 namespace mora {
+
+// ---------------------------------------------------------------------------
+// Import map — built from Module::use_decls
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct ImportMap {
+    std::unordered_map<std::string, std::string> alias_to_ns; // "f" -> "form"
+    std::unordered_map<std::string, std::string> refer_to_ns; // "keyword" -> "ref"
+};
+
+static ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags,
+                                const Module* cur) {
+    ImportMap im;
+    for (const UseDecl& u : m.use_decls) {
+        std::string ns{pool.get(u.namespace_path)};
+        if (u.alias.index != 0) {
+            im.alias_to_ns[std::string{pool.get(u.alias)}] = ns;
+        }
+        for (StringId name_id : u.refer) {
+            std::string key{pool.get(name_id)};
+            auto it = im.refer_to_ns.find(key);
+            if (it != im.refer_to_ns.end() && it->second != ns) {
+                std::string line = cur ? cur->get_line(u.span.start_line) : "";
+                diags.error("E013",
+                            "name '" + key + "' referred from both '" +
+                                it->second + "' and '" + ns + "'",
+                            u.span, line);
+            }
+            im.refer_to_ns[key] = ns;
+        }
+    }
+    return im;
+}
+
+static void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
+                                   StringPool& pool) {
+    if (fp.qualifier.index == 0) {
+        std::string name{pool.get(fp.name)};
+        auto it = im.refer_to_ns.find(name);
+        if (it != im.refer_to_ns.end()) {
+            fp.qualifier = pool.intern(it->second);
+        }
+    } else {
+        std::string q{pool.get(fp.qualifier)};
+        auto it = im.alias_to_ns.find(q);
+        if (it != im.alias_to_ns.end()) {
+            fp.qualifier = pool.intern(it->second);
+        }
+    }
+}
+
+static void apply_imports_to_effect(Effect& eff, const ImportMap& im,
+                                     StringPool& pool) {
+    if (eff.namespace_.index == 0) {
+        std::string name{pool.get(eff.name)};
+        auto it = im.refer_to_ns.find(name);
+        if (it != im.refer_to_ns.end()) {
+            eff.namespace_ = pool.intern(it->second);
+        }
+    } else {
+        std::string q{pool.get(eff.namespace_)};
+        auto it = im.alias_to_ns.find(q);
+        if (it != im.alias_to_ns.end()) {
+            eff.namespace_ = pool.intern(it->second);
+        }
+    }
+}
+
+static void apply_imports_to_clause(Clause& clause, const ImportMap& im,
+                                     StringPool& pool) {
+    std::visit([&](auto& node) {
+        using NodeT = std::decay_t<decltype(node)>;
+        if constexpr (std::is_same_v<NodeT, FactPattern>) {
+            apply_imports_to_fact(node, im, pool);
+        } else if constexpr (std::is_same_v<NodeT, Effect>) {
+            apply_imports_to_effect(node, im, pool);
+        } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
+            apply_imports_to_effect(node.effect, im, pool);
+        } else if constexpr (std::is_same_v<NodeT, OrClause>) {
+            for (auto& branch : node.branches) {
+                for (auto& fp : branch) apply_imports_to_fact(fp, im, pool);
+            }
+        }
+    }, clause.data);
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -169,6 +260,21 @@ const FactSignature* NameResolver::lookup_fact(StringId name) const {
 
 void NameResolver::resolve(Module& mod) {
     current_mod_ = &mod;
+
+    // Pass 0: build the import map from `use` declarations and rewrite
+    // qualifiers on FactPatterns / Effects accordingly.
+    ImportMap imports = build_imports(mod, pool_, diags_, current_mod_);
+    for (Rule& rule : mod.rules) {
+        for (Clause& clause : rule.body) {
+            apply_imports_to_clause(clause, imports, pool_);
+        }
+        for (Effect& eff : rule.effects) {
+            apply_imports_to_effect(eff, imports, pool_);
+        }
+        for (ConditionalEffect& ce : rule.conditional_effects) {
+            apply_imports_to_effect(ce.effect, imports, pool_);
+        }
+    }
 
     // Pass 1: register every rule head as a derived fact, detect duplicates.
     for (const Rule& rule : mod.rules) {
