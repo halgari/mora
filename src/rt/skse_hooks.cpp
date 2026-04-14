@@ -55,11 +55,14 @@ public:
     }
 };
 
-void register_skse_hooks(DagRuntime& dr) {
+void register_skse_hooks(DagRuntime& dr,
+                         const std::unordered_set<std::string>& needed_hooks) {
     g_dag = &dr;
-    static LocationChangeSink s_location_sink;
-    if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {
-        holder->AddEventSink(&s_location_sink);
+    if (needed_hooks.count("OnLocationChange")) {
+        static LocationChangeSink s_location_sink;
+        if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {
+            holder->AddEventSink(&s_location_sink);
+        }
     }
 }
 
@@ -67,6 +70,6 @@ void register_skse_hooks(DagRuntime& dr) {
 #else
 #include "mora/rt/skse_hooks.h"
 namespace mora::rt {
-void register_skse_hooks(DagRuntime&) { /* no-op on Linux */ }
+void register_skse_hooks(DagRuntime&, const std::unordered_set<std::string>&) { /* no-op on Linux */ }
 } // namespace mora::rt
 #endif
