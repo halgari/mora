@@ -1,23 +1,32 @@
 // src/rt/plugin_entry.cpp
-// SKSE plugin glue — compiled into mora_rt.lib with CommonLibSSE-NG.
-// The IR defines apply_all_patches(); this file provides the SKSE entry.
+// SKSE plugin glue — compiled into MoraRuntime.dll with CommonLibSSE-NG.
+// Loads mora_patches.bin from the SKSE/Plugins directory and applies at DataLoaded.
 
 #ifdef _WIN32
 
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 #include <chrono>
+#include <filesystem>
 
-// Forward declaration -- defined by the IR emitter in the generated module
-extern "C" void apply_all_patches();
-
-// Patch count -- defined by the IR emitter as a global constant
-extern "C" uint32_t mora_patch_count;
+// Defined in patch_walker.cpp
+uint32_t load_patches(const std::filesystem::path& patch_file);
+void apply_all_patches();
 
 namespace {
 
 void on_data_loaded() {
-    uint32_t count = &mora_patch_count ? mora_patch_count : 0;
+    // Find mora_patches.bin next to this DLL
+    auto plugin_dir = std::filesystem::path(SKSE::GetPluginFolder());
+    auto patch_file = plugin_dir / "mora_patches.bin";
+
+    uint32_t count = load_patches(patch_file);
+    if (count == 0) {
+        SKSE::log::info("[Mora] No patches loaded ({})", patch_file.string());
+        return;
+    }
+
+    SKSE::log::info("[Mora] Loaded {} patches from {}", count, patch_file.string());
 
     auto start = std::chrono::steady_clock::now();
     apply_all_patches();

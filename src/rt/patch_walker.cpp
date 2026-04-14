@@ -11,9 +11,11 @@ using mora::fop;
 using mora::FieldId;
 using mora::FieldOp;
 
-// These are defined by the LLVM IR data module and resolved at link time.
-extern "C" const uint8_t mora_patch_data[];
-extern "C" const uint32_t mora_patch_data_size;
+// Patch data loaded from mora_patches.bin at runtime
+#include <filesystem>
+#include <fstream>
+#include <vector>
+static std::vector<uint8_t> g_patch_data;
 
 struct PatchTableHeader {
     uint32_t magic;
@@ -158,14 +160,33 @@ static void apply_patch_entry(void* form, const PatchEntry& e,
     }
 }
 
-// Main entry point -- called from plugin_entry.cpp at DataLoaded
-extern "C" void apply_all_patches() {
-    if (mora_patch_data_size == 0) return;
+// Load patch data from a binary file.
+// Returns the number of patches loaded, or 0 on failure.
+uint32_t load_patches(const std::filesystem::path& patch_file) {
+    std::ifstream ifs(patch_file, std::ios::binary | std::ios::ate);
+    if (!ifs) return 0;
 
-    auto* hdr = reinterpret_cast<const PatchTableHeader*>(mora_patch_data);
-    if (hdr->magic != mora::kPatchTableMagic || hdr->version != mora::kPatchTableVersion) return;
+    auto size = ifs.tellg();
+    if (size < static_cast<std::streamoff>(sizeof(PatchTableHeader))) return 0;
 
-    const uint8_t* string_table = mora_patch_data + sizeof(PatchTableHeader);
+    g_patch_data.resize(static_cast<size_t>(size));
+    ifs.seekg(0);
+    ifs.read(reinterpret_cast<char*>(g_patch_data.data()), size);
+
+    auto* hdr = reinterpret_cast<const PatchTableHeader*>(g_patch_data.data());
+    if (hdr->magic != mora::kPatchTableMagic || hdr->version != mora::kPatchTableVersion) {
+        g_patch_data.clear();
+        return 0;
+    }
+    return hdr->patch_count;
+}
+
+// Apply all loaded patches. Call after load_patches() and after game data is loaded.
+void apply_all_patches() {
+    if (g_patch_data.empty()) return;
+
+    auto* hdr = reinterpret_cast<const PatchTableHeader*>(g_patch_data.data());
+    const uint8_t* string_table = g_patch_data.data() + sizeof(PatchTableHeader);
     const auto* entries = reinterpret_cast<const PatchEntry*>(
         string_table + hdr->string_table_size);
 

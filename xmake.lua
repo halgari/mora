@@ -23,8 +23,6 @@ target("mora_lib")
               "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp",
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/harness/*.cpp")
     add_packages("zlib", "fmt")
-    add_cxflags("-fno-exceptions", {force = true})  -- LLVM headers require this
-    add_syslinks("LLVM-22", "lldCOFF", "lldCommon")
 target_end()
 
 -- CLI executable

@@ -13,8 +13,6 @@
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/patch_set.h"
-#include "mora/codegen/dll_builder.h"
-#include "mora/codegen/address_library.h"
 #include "mora/emit/patch_table.h"
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
@@ -119,25 +117,7 @@ static std::string format_bytes(std::uintmax_t bytes) {
     return fmt::format("{:.1f} MB", double(bytes) / (1024.0 * 1024.0));
 }
 
-static fs::path find_address_library(const std::string& data_dir) {
-    if (data_dir.empty()) return {};
-    fs::path skse_plugins = fs::path(data_dir) / "SKSE" / "Plugins";
-    if (!fs::exists(skse_plugins)) return {};
-
-    // Try exact match for 1.6.1170 first (most common AE version)
-    auto exact = skse_plugins / "versionlib-1-6-1170-0.bin";
-    if (fs::exists(exact)) return exact;
-
-    // Fall back to any versionlib (AE) or version (SE) bin
-    for (auto& entry : fs::directory_iterator(skse_plugins)) {
-        std::string fname = entry.path().filename().string();
-        if ((fname.find("versionlib") == 0 || fname.find("version-") == 0)
-            && entry.path().extension() == ".bin") {
-            return entry.path();
-        }
-    }
-    return {};
-}
+// (address library lookup removed — no longer needed without LLVM codegen)
 
 static std::string field_name(mora::FieldId id) {
     switch (id) {
@@ -686,29 +666,11 @@ static void evaluate_mora_rules(
     patch_buf.sort_and_dedup();
 }
 
-// Find mora_rt.lib by searching relative to the binary
-static fs::path find_mora_rt_lib() {
-    auto exe_dir = fs::canonical("/proc/self/exe").parent_path();
-    for (auto& p : {
-        exe_dir / "mora_rt.lib",
-        exe_dir / "../data/mora_rt.lib",
-        exe_dir / "../../data/mora_rt.lib",
-        exe_dir / "../../../data/mora_rt.lib",
-        exe_dir / "../../../../data/mora_rt.lib",
-        fs::path("data/mora_rt.lib"),
-    }) {
-        if (fs::exists(p)) return fs::canonical(p);
-    }
-    return {};
-}
-
-// Build the runtime DLL from patches
-static int codegen_and_link(
-    mora::PatchBuffer& patch_buf, const std::string& data_dir,
-    const std::string& target_path, const std::string& output_dir,
-    mora::Output& out)
+// Write serialized patch table to a binary file
+static int write_patch_file(
+    mora::PatchBuffer& patch_buf, const std::string& target_path,
+    const std::string& output_dir, mora::Output& out)
 {
-    // Determine output directory
     fs::path out_path(output_dir);
     if (out_path.is_relative()) {
         fs::path base = fs::path(target_path);
@@ -717,49 +679,21 @@ static int codegen_and_link(
     }
     fs::create_directories(out_path);
 
-    out.phase_start("Loading Address Library");
-    mora::AddressLibrary addrlib;
-    auto addr_lib_path = find_address_library(data_dir);
-    if (!addr_lib_path.empty()) {
-        addrlib.load(addr_lib_path);
-    } else {
-        addrlib = mora::AddressLibrary::mock({{514351, 0x1EEBE10}});
-        if (!data_dir.empty()) {
-            mora::log::info("  \xe2\x9a\xa0 No Address Library found \xe2\x80\x94 using fallback offsets (SE 1.5.97)\n");
-        }
-    }
-    out.phase_done(fmt::format("{} entries", addrlib.entry_count()));
-
-    mora::DLLBuilder builder(addrlib);
-    auto rt_lib_path = find_mora_rt_lib();
-
     out.phase_start("Serializing patches");
     auto patch_data = mora::serialize_patch_table(patch_buf.entries());
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
-    auto build_result = builder.build_data_dll(patch_data, patch_buf.size(),
-                                                out_path, rt_lib_path);
-    if (!build_result.success) {
-        out.failure(fmt::format("DLL build failed: {}", build_result.error));
+    auto patch_file = out_path / "mora_patches.bin";
+    std::ofstream ofs(patch_file, std::ios::binary);
+    if (!ofs) {
+        out.failure(fmt::format("Failed to open {} for writing", patch_file.string()));
         return 1;
     }
+    ofs.write(reinterpret_cast<const char*>(patch_data.data()), patch_data.size());
+    ofs.close();
 
-    auto fmt_ms = [](double ms) -> std::string {
-        if (ms < 1.0) return "<1ms";
-        if (ms < 1000.0) return fmt::format("{}ms", static_cast<int>(ms));
-        return fmt::format("{:.1f}s", ms / 1000.0);
-    };
-    out.step_done(fmt::format("Data IR ({})", format_bytes(patch_data.size())));
-    mora::log::info("  \xe2\x9c\x93 Compile to x86-64 COFF {}\n", fmt_ms(build_result.compile_ms));
-    if (!fs::exists(build_result.output_path)) {
-        out.failure(fmt::format("DLL output missing: {}", build_result.output_path.string()));
-        return 1;
-    }
-    mora::log::info("  \xe2\x9c\x93 Link MoraRuntime.dll ({}) {}\n",
-        format_bytes(fs::file_size(build_result.output_path)),
-        fmt_ms(build_result.link_ms));
-
+    mora::log::info("  \xe2\x9c\x93 Wrote {}\n", patch_file.string());
     return 0;
 }
 
@@ -926,19 +860,19 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
-    // Codegen
-    int codegen_rc = codegen_and_link(patch_buf, data_dir, target_path, output_dir, out);
-    if (codegen_rc != 0) return codegen_rc;
+    // Write patch file
+    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out);
+    if (write_rc != 0) return write_rc;
 
     // Summary
-    auto dll_path = fs::path(target_path);
-    if (fs::is_regular_file(dll_path)) dll_path = dll_path.parent_path();
-    dll_path = dll_path / output_dir / "MoraRuntime.dll";
-    auto dll_size = fs::exists(dll_path) ? fs::file_size(dll_path) : 0;
+    auto patch_path = fs::path(target_path);
+    if (fs::is_regular_file(patch_path)) patch_path = patch_path.parent_path();
+    patch_path = patch_path / output_dir / "mora_patches.bin";
+    auto patch_size = fs::exists(patch_path) ? fs::file_size(patch_path) : 0;
 
     std::vector<mora::TableRow> summary;
     summary.push_back({"Frozen:", fmt::format("{} rules", static_count),
-        fmt::format("\xe2\x86\x92 MoraRuntime.dll ({})", format_bytes(dll_size))});
+        fmt::format("\xe2\x86\x92 mora_patches.bin ({})", format_bytes(patch_size))});
     summary.push_back({"", fmt::format("{} patches baked into native code", patch_buf.size()), ""});
     summary.push_back({"", "Estimated runtime: <15ms", ""});
     if (dynamic_count > 0) {
