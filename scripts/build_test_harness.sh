@@ -34,6 +34,7 @@ CFLAGS=(
 SOURCES=(
     src/harness/harness_plugin.cpp
     src/harness/weapon_dumper.cpp
+    src/harness/npc_dumper.cpp
     src/harness/ini_reader.cpp
     src/harness/tcp_listener.cpp
     src/codegen/address_library.cpp
@@ -52,15 +53,20 @@ done
 
 # Link
 echo "  LINK MoraTestHarness.dll"
+MSVC_LIB_ROOT="/opt/msvc/VC/Tools/MSVC/14.50.35717/lib/x64"
 lld-link \
     /dll \
     /out:"$OUTPUT" \
+    /libpath:"$MSVC_LIB_ROOT" \
     /libpath:"$XWIN/crt/lib/x86_64" \
     /libpath:"$XWIN/sdk/lib/um/x86_64" \
     /libpath:"$XWIN/sdk/lib/ucrt/x86_64" \
     "${OBJ_FILES[@]}" \
     "$RT_LIB" \
-    msvcrt.lib ucrt.lib vcruntime.lib kernel32.lib ws2_32.lib
+    "$PROJECT_DIR/extern/CommonLibSSE-NG/CommonLibSSE.lib" \
+    msvcrt.lib ucrt.lib vcruntime.lib kernel32.lib user32.lib ws2_32.lib \
+    advapi32.lib ole32.lib shell32.lib version.lib bcrypt.lib dbghelp.lib \
+    dxgi.lib d3d11.lib d3dcompiler.lib
 
 echo ""
 echo "Done: $OUTPUT ($(du -h "$OUTPUT" | awk '{print $1}'))"

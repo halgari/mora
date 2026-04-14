@@ -11,3 +11,5 @@ SkyPatcher
 .superpowers/
 docs/site/
 docs/site/
+compile_commands.json
+.claude/

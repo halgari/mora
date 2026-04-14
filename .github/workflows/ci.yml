@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (xmake + gtest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git curl unzip zip pkg-config \
+                                  libreadline-dev python3-pip
+          pip install pyyaml
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.xmake
+            build/.packages
+          key: xmake-linux-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-linux-
+
+      - name: Configure
+        run: xmake f -y -m releasedbg
+
+      - name: Build
+        run: xmake build -y
+
+      - name: Run tests
+        run: xmake test -v
+
+  windows:
+    name: Windows (MSVC — SKSE runtime DLL)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache CommonLibSSE-NG objects
+        uses: actions/cache@v4
+        with:
+          path: build/commonlib
+          key: commonlib-${{ runner.os }}-${{ hashFiles('extern/CommonLibSSE-NG/**/*.cpp', 'extern/CommonLibSSE-NG/**/*.h') }}
+          restore-keys: commonlib-${{ runner.os }}-
+
+      - name: Build CommonLibSSE-NG static lib
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = $PWD.Path
+          $commonlib = "$proj/extern/CommonLibSSE-NG"
+          $buildDir = "$proj/build/commonlib"
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+
+          $flags = @(
+            '/nologo','/std:c++latest','/O2','/EHsc','/utf-8','/MD',
+            '/Zc:preprocessor',
+            '/DWIN32','/D_WIN32','/DNOMINMAX',
+            '/DSPDLOG_COMPILED_LIB',
+            '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
+            "/I$commonlib/include",
+            "/I$proj/extern/spdlog-shim",
+            "/I$proj/extern/simplemath-shim",
+            '/FISKSE/Impl/PCH.h',
+            '/w'
+          )
+
+          $sources = Get-ChildItem -Path "$commonlib/src" -Recurse -Filter *.cpp
+          Write-Host "Compiling $($sources.Count) CommonLibSSE source files..."
+
+          $jobs = @()
+          $maxJobs = [Math]::Min([Environment]::ProcessorCount, 8)
+          $queue = [System.Collections.Generic.Queue[object]]::new()
+          foreach ($s in $sources) { $queue.Enqueue($s) }
+
+          $objFiles = @()
+          $failed = 0
+
+          while ($queue.Count -gt 0 -or $jobs.Count -gt 0) {
+            while ($jobs.Count -lt $maxJobs -and $queue.Count -gt 0) {
+              $src = $queue.Dequeue()
+              $rel = $src.FullName.Substring("$commonlib/src/".Replace('/','\').Length)
+              $objName = ($rel -replace '[\\/]','_') -replace '\.cpp$',''
+              $obj = "$buildDir/$objName.obj"
+              $objFiles += $obj
+              if ((Test-Path $obj) -and ((Get-Item $obj).LastWriteTime -gt $src.LastWriteTime)) {
+                continue
+              }
+              $args = $flags + @('/c',"/Fo$obj",$src.FullName)
+              $jobs += Start-Job -ScriptBlock {
+                param($exe,$a,$rel)
+                $p = Start-Process -FilePath $exe -ArgumentList $a -NoNewWindow -Wait -PassThru `
+                     -RedirectStandardOutput ([System.IO.Path]::GetTempFileName()) `
+                     -RedirectStandardError ([System.IO.Path]::GetTempFileName())
+                if ($p.ExitCode -ne 0) { Write-Output "FAIL $rel" } else { Write-Output "OK" }
+              } -ArgumentList 'cl.exe',$args,$rel
+            }
+            Start-Sleep -Milliseconds 50
+            $done = $jobs | Where-Object { $_.State -ne 'Running' }
+            foreach ($j in $done) {
+              $r = Receive-Job $j
+              if ($r -like 'FAIL*') { $failed++; Write-Host $r }
+              Remove-Job $j
+            }
+            $jobs = $jobs | Where-Object { $_.State -eq 'Running' }
+          }
+
+          $existing = $objFiles | Where-Object { Test-Path $_ }
+          Write-Host "Compiled $($existing.Count)/$($sources.Count) files ($failed failed this run)"
+
+          & lib.exe /nologo "/out:$commonlib/CommonLibSSE.lib" $existing
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe failed" }
+          Write-Host "Produced $commonlib/CommonLibSSE.lib"
+
+      - name: Build mora_rt.lib
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = $PWD.Path
+          $buildDir = "$proj/build/rt"
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+          New-Item -ItemType Directory -Force -Path "$proj/data" | Out-Null
+
+          $flags = @(
+            '/nologo','/std:c++latest','/O2','/EHsc','/utf-8','/MD',
+            '/Zc:preprocessor',
+            '/DWIN32','/D_WIN32','/DNOMINMAX',
+            '/DSPDLOG_COMPILED_LIB',
+            '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
+            '/USKSE_SUPPORT_XBYAK',
+            "/I$proj/include",
+            "/I$proj/extern/CommonLibSSE-NG/include",
+            "/I$proj/extern/spdlog-shim",
+            "/I$proj/extern/simplemath-shim",
+            '/FISKSE/Impl/PCH.h'
+          )
+
+          $patterns = @(
+            'src/core/*.cpp','src/data/*.cpp','src/diag/*.cpp',
+            'src/eval/*.cpp','src/emit/*.cpp',
+            'src/rt/*.cpp','src/rt/handlers/*.cpp',
+            'src/dag/*.cpp','src/model/*.cpp'
+          )
+          $sources = @()
+          foreach ($p in $patterns) { $sources += Get-ChildItem -Path $p -ErrorAction SilentlyContinue }
+          $sources = $sources | Where-Object {
+            $_.Name -ne 'form_model_verify.cpp' -and $_.Name -ne 'renderer.cpp'
+          }
+
+          # Regenerate relations_seed.cpp (xmake.lua does this pre-build; we replicate it)
+          python tools/gen_relations.py
+          if ($LASTEXITCODE -ne 0) { throw "gen_relations.py failed" }
+
+          $objFiles = @()
+          foreach ($s in $sources) {
+            $obj = "$buildDir/$($s.BaseName).obj"
+            Write-Host "  CC $($s.FullName.Substring($proj.Length + 1))"
+            & cl.exe @flags '/c' "/Fo$obj" $s.FullName
+            if ($LASTEXITCODE -ne 0) { throw "cl.exe failed on $($s.FullName)" }
+            $objFiles += $obj
+          }
+
+          foreach ($shim in @('extern/spdlog-shim/spdlog.cpp','extern/spdlog-shim/fmt.cpp')) {
+            $src = "$proj/$shim"
+            $obj = "$buildDir/$([System.IO.Path]::GetFileNameWithoutExtension($shim)).obj"
+            Write-Host "  CC $shim"
+            & cl.exe @flags '/c' "/Fo$obj" $src
+            if ($LASTEXITCODE -ne 0) { throw "cl.exe failed on $shim" }
+            $objFiles += $obj
+          }
+
+          & lib.exe /nologo "/out:$proj/data/mora_rt.lib" $objFiles
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe failed" }
+          Write-Host "Produced data/mora_rt.lib"
+
+      - name: Link MoraRuntime.dll
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = $PWD.Path
+          $outDir = "$proj/build/runtime"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          & link.exe /nologo /dll "/out:$outDir/MoraRuntime.dll" /machine:x64 `
+            "/def:$proj/scripts/MoraRuntime.def" `
+            "/wholearchive:$proj/data/mora_rt.lib" `
+            "$proj/extern/CommonLibSSE-NG/CommonLibSSE.lib" `
+            msvcrt.lib ucrt.lib vcruntime.lib `
+            kernel32.lib user32.lib advapi32.lib `
+            ole32.lib shell32.lib `
+            dxgi.lib version.lib d3dcompiler.lib dbghelp.lib `
+            d3d11.lib bcrypt.lib
+          if ($LASTEXITCODE -ne 0) { throw "link.exe failed" }
+
+          Get-Item "$outDir/MoraRuntime.dll" | Format-List Name,Length,LastWriteTime
+
+      - name: Upload MoraRuntime.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoraRuntime-dll
+          path: build/runtime/MoraRuntime.dll
+          if-no-files-found: error
