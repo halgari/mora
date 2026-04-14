@@ -114,6 +114,51 @@ void TypeChecker::check_rule(Rule& rule) {
 // ---------------------------------------------------------------------------
 
 void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
+    // ── New: namespaced-relation validation against kRelations ──
+    std::string_view fp_ns = pool_.get(pattern.qualifier);
+    std::string_view fp_nm = pool_.get(pattern.name);
+    if (!fp_ns.empty()) {
+        const model::RelationEntry* rel = model::find_relation(
+            fp_ns, fp_nm, model::kRelations, model::kRelationCount);
+
+        // Built-in namespaces: if not in kRelations, flag as unknown.
+        static const auto is_builtin_ns = [](std::string_view ns) {
+            return ns == "form" || ns == "ref" || ns == "player"
+                || ns == "world" || ns == "event";
+        };
+
+        if (!rel && is_builtin_ns(fp_ns)) {
+            diags_.error("E023",
+                std::string("unknown relation '") +
+                    std::string(fp_ns) + "/" + std::string(fp_nm) + "'",
+                pattern.span, source_line(pattern.span));
+            return;
+        }
+
+        if (rel) {
+            if (pattern.args.size() != rel->arg_count) {
+                diags_.error("E020",
+                    std::string("relation '") +
+                        std::string(fp_ns) + "/" + std::string(fp_nm) +
+                        "' expects " + std::to_string(rel->arg_count) +
+                        " args, got " + std::to_string(pattern.args.size()),
+                    pattern.span, source_line(pattern.span));
+            }
+            // Mark variable arguments as used / bind if unknown.
+            for (const Expr& arg : pattern.args) {
+                if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
+                    MoraType existing = lookup_variable(var->name);
+                    if (existing.kind == TypeKind::Unknown) {
+                        bind_variable(var->name, existing, arg.span);
+                    } else {
+                        var_used_.insert(var->name.index);
+                    }
+                }
+            }
+            return;
+        }
+    }
+
     const FactSignature* sig = resolver_.lookup_fact(pattern.name);
     if (!sig) return; // already reported by NameResolver
 

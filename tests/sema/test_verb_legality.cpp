@@ -65,3 +65,17 @@ TEST(VerbLegality, SetOnSetFails) {
         "namespace x.y\nr(W):\n    form/weapon(W)\n    => set form/keyword(W, @Iron)\n");
     EXPECT_GE(errs.size(), 1u);
 }
+
+TEST(TypeCheck, UnknownRelationErrors) {
+    // form/nonexistent does not exist.
+    auto errs = check_source(
+        "namespace x.y\nr(F):\n    form/nonexistent(F)\n");
+    EXPECT_GE(errs.size(), 1u);
+}
+
+TEST(TypeCheck, ArityMismatchErrors) {
+    // form/weapon is unary; two args should error.
+    auto errs = check_source(
+        "namespace x.y\nr(F):\n    form/weapon(F, F)\n");
+    EXPECT_GE(errs.size(), 1u);
+}
