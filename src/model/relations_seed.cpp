@@ -77,6 +77,33 @@ constexpr RelationEntry kRelations[] = {
       .source = RelationSourceKind::Static,
       .esp_source = {.record_type = "NPC_", .subrecord = "RNAM"},
       .docs = "NPC base race." },
+
+    // ── ref/* dynamic relations ────────────────────────────────────────
+    { .namespace_ = "ref", .name = "keyword",
+      .args = {{RelValueType::FormRef, "R"}, {RelValueType::FormRef, "KW"}}, .arg_count = 2,
+      .value_type = RelValueType::FormRef, .cardinality = Cardinality::Set,
+      .source = RelationSourceKind::Handler,
+      .apply_handler   = HandlerId::RefAddKeyword,
+      .retract_handler = HandlerId::RefRemoveKeyword,
+      .docs = "Keywords added dynamically to a specific placed reference." },
+
+    { .namespace_ = "ref", .name = "current_location",
+      .args = {{RelValueType::FormRef, "R"}, {RelValueType::FormRef, "LOC"}}, .arg_count = 2,
+      .value_type = RelValueType::FormRef, .cardinality = Cardinality::Functional,
+      .source = RelationSourceKind::Handler,
+      .docs = "The location this reference is currently in." },
+
+    { .namespace_ = "ref", .name = "base_form",
+      .args = {{RelValueType::FormRef, "R"}, {RelValueType::FormRef, "F"}}, .arg_count = 2,
+      .value_type = RelValueType::FormRef, .cardinality = Cardinality::Functional,
+      .source = RelationSourceKind::Handler,
+      .docs = "Bridge from live reference to its base record." },
+
+    { .namespace_ = "ref", .name = "in_combat",
+      .args = {{RelValueType::FormRef, "R"}}, .arg_count = 1,
+      .value_type = RelValueType::Int, .cardinality = Cardinality::Functional,
+      .source = RelationSourceKind::Handler,
+      .docs = "True when this reference is currently in combat." },
 };
 
 const size_t kRelationCount = sizeof(kRelations) / sizeof(kRelations[0]);
