@@ -354,6 +354,25 @@ Token Lexer::next() {
         return lex_symbol();
     }
 
+    // EditorId: @ident
+    if (c == '@') {
+        advance(); // consume '@'
+        if (!at_end() && (std::isalpha(static_cast<unsigned char>(peek())) || peek() == '_')) {
+            size_t ident_start = pos_;
+            while (!at_end() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_')) {
+                advance();
+            }
+            // Build token with text = identifier only (stripping '@').
+            // Span still covers the '@' + identifier range.
+            size_t saved_start = token_start_;
+            token_start_ = ident_start;
+            Token tok = make_token(TokenKind::EditorId);
+            token_start_ = saved_start;
+            return tok;
+        }
+        return error_token("expected identifier after '@'");
+    }
+
     // Two-character operators
     if (c == '=') {
         advance();
