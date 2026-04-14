@@ -83,3 +83,115 @@ relations:
     source: static
     esp: {record_type: NPC_, subrecord: RNAM}
     docs: "NPC base race."
+
+  # ── NPC-specific scalar fields (ACBS = Actor Configuration Base Stats) ──
+  calc_level_min:
+    type: countable<Int>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: L, type: Int}
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "Minimum auto-calculated level for this NPC."
+
+  calc_level_max:
+    type: countable<Int>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: L, type: Int}
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "Maximum auto-calculated level for this NPC (0 = no cap)."
+
+  speed_mult:
+    type: countable<Int>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: N, type: Int}
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "NPC movement speed multiplier (100 = normal)."
+
+  npc_class:
+    type: const<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: CLASS, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: CNAM}
+    docs: "NPC class record (TESClass)."
+
+  voice_type:
+    type: const<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: VTYPE, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: VTCK}
+    docs: "NPC voice type."
+
+  default_outfit:
+    type: const<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: OUTFIT, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: DOFT}
+    docs: "NPC default outfit (Outfit record)."
+
+  # ── NPC flags (from ACBS flags word at offset 0) ──
+  essential:
+    type: predicate
+    args: [{name: NPC, type: FormRef}]
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "True when this NPC has the Essential flag (cannot be killed)."
+
+  protected:
+    type: predicate
+    args: [{name: NPC, type: FormRef}]
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "True when this NPC has the Protected flag (killable only by player)."
+
+  unique:
+    type: predicate
+    args: [{name: NPC, type: FormRef}]
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "True when this NPC is marked Unique (only one instance can exist)."
+
+  female:
+    type: predicate
+    args: [{name: NPC, type: FormRef}]
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "True when this NPC is female."
+
+  # ── NPC collections (repeating subrecords) ──
+  spell:
+    type: list<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: SPELL, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: SPLO}
+    docs: "Spells granted to this NPC."
+
+  perk:
+    type: list<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: PERK, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: PRKR}
+    docs: "Perks granted to this NPC."
+
+  inventory_item:
+    type: list<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: ITEM, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: CNTO}
+    docs: "Items in this NPC's default inventory."
