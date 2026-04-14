@@ -57,6 +57,21 @@ static const uint8_t* g_string_table   = nullptr;
 
 using mora::PatchEntry;
 
+namespace {
+
+// Returns the digest expected for the currently-loaded plugin set.
+//
+// PLACEHOLDER: Plan 2 does not yet enumerate loaded plugins at runtime.
+// Currently we accept whatever digest the patch file carries, which makes
+// this verification a no-op. Plan 3+ will replace this with a real
+// computation via CommonLibSSE-NG (iterate TESDataHandler's loaded files,
+// build the same manifest string the CLI produced, then SHA-256 it).
+std::array<uint8_t, 32> runtime_expected_digest(const std::array<uint8_t, 32>& file_digest) {
+    return file_digest;
+}
+
+} // anonymous
+
 // ── Component extraction helpers ───────────────────────────────────────
 // As<T>() only works for form types, not component base classes,
 // so we cast through the concrete form type.
@@ -492,6 +507,16 @@ static void apply_patch_entry(RE::TESForm* form, const PatchEntry& e,
 
 uint32_t load_patches(const std::filesystem::path& patch_file) {
     if (!g_patch_file.open(patch_file.string())) return 0;
+
+    // Verify that the patch file was built against a plugin set matching
+    // the one currently loaded. In Plan 2 the expected digest is stubbed
+    // to match the file digest (see runtime_expected_digest above), so
+    // this check is effectively a no-op today. It becomes real once the
+    // SKSE side can enumerate loaded plugins.
+    if (g_patch_file.header().esp_digest !=
+        runtime_expected_digest(g_patch_file.header().esp_digest)) {
+        return 0;
+    }
 
     auto patches = g_patch_file.section(mora::emit::SectionId::Patches);
     if (!patches.data) return 0;
