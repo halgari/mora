@@ -464,7 +464,7 @@ static std::vector<uint8_t> build_static_arrangements_section(
     for (size_t i = 0; i < mora::model::kRelationCount; ++i) {
         const auto& r = mora::model::kRelations[i];
         if (r.source != mora::model::RelationSourceKind::Static) continue;
-        if (r.cardinality != mora::model::Cardinality::Set) continue;
+        if (r.type.ctor != mora::model::TypeCtor::List) continue;
 
         std::string_view fdb_key;
         for (const auto& m : kMappings) {

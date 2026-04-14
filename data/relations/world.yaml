@@ -1,0 +1,8 @@
+namespace: world
+relations:
+  time_of_day:
+    type: const<Float>
+    args: [{name: T, type: Float}]
+    source: hook
+    hook: {name: OnTimeOfDayChanged, kind: state}
+    docs: "Current in-game hour 0..24."

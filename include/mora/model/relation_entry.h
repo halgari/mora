@@ -12,15 +12,16 @@ struct RelationEntry {
     std::string_view   namespace_;
     std::string_view   name;
     ArgSpec            args[kMaxArgs]{};
-    uint8_t            arg_count     = 0;
-    RelValueType       value_type    = RelValueType::Int;
-    Cardinality        cardinality   = Cardinality::Scalar;
-    RelationSourceKind source        = RelationSourceKind::Static;
+    uint8_t            arg_count = 0;
+
+    TypeExpr           type;
+
+    RelationSourceKind source = RelationSourceKind::Static;
 
     // Exactly one of these is populated based on `source`.
-    EspSource          esp_source    = {};
-    MemoryReadSpec     memory_read   = {};
-    HookSpec           hook          = {};
+    EspSource          esp_source  = {};
+    MemoryReadSpec     memory_read = {};
+    HookSpec           hook        = {};
 
     HandlerId          apply_handler   = HandlerId::None;
     HandlerId          retract_handler = HandlerId::None;

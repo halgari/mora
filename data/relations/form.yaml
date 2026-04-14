@@ -1,0 +1,85 @@
+namespace: form
+relations:
+  npc:
+    type: predicate
+    args: [{name: F, type: FormRef}]
+    source: static
+    esp: {record_type: NPC_}
+    docs: "True when F is a base NPC record."
+
+  weapon:
+    type: predicate
+    args: [{name: F, type: FormRef}]
+    source: static
+    esp: {record_type: WEAP}
+    docs: "True when F is a weapon base record."
+
+  armor:
+    type: predicate
+    args: [{name: F, type: FormRef}]
+    source: static
+    esp: {record_type: ARMO}
+    docs: "True when F is an armor base record."
+
+  keyword:
+    type: list<FormRef>
+    args:
+      - {name: F, type: FormRef}
+      - {name: KW, type: FormRef}
+    source: static
+    esp: {subrecord: KWDA}
+    docs: "Keyword membership on a base record (body: query; head: add/remove)."
+
+  faction:
+    type: list<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: FAC, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: SNAM}
+    docs: "Faction membership on an NPC base record."
+
+  damage:
+    type: countable<Int>
+    args:
+      - {name: W, type: FormRef}
+      - {name: N, type: Int}
+    source: static
+    esp: {record_type: WEAP, subrecord: DNAM}
+    docs: "Weapon base damage."
+
+  gold_value:
+    type: countable<Int>
+    args:
+      - {name: F, type: FormRef}
+      - {name: N, type: Int}
+    source: static
+    esp: {subrecord: DATA}
+    docs: "Gold value of an item."
+
+  name:
+    type: scalar<String>
+    args:
+      - {name: F, type: FormRef}
+      - {name: S, type: String}
+    source: static
+    esp: {subrecord: FULL}
+    docs: "Display name."
+
+  base_level:
+    type: countable<Int>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: L, type: Int}
+    source: static
+    esp: {record_type: NPC_, subrecord: ACBS}
+    docs: "NPC base level."
+
+  race:
+    type: const<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: RACE, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: RNAM}
+    docs: "NPC base race."

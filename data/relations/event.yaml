@@ -1,0 +1,19 @@
+namespace: event
+relations:
+  entered_location:
+    type: list<FormRef>
+    args:
+      - {name: R, type: FormRef}
+      - {name: LOC, type: FormRef}
+    source: event
+    hook: {name: OnLocationChange, kind: edge}
+    docs: "Fires when a reference enters a new location."
+
+  combat_state_changed:
+    type: list<Int>
+    args:
+      - {name: R, type: FormRef}
+      - {name: STATE, type: Int}
+    source: event
+    hook: {name: OnCombatStateChanged, kind: edge}
+    docs: "Fires on combat state transitions."

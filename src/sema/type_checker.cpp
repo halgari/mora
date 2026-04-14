@@ -135,8 +135,8 @@ void TypeChecker::check_rule(Rule& rule) {
                 ns, nm, model::kRelations, model::kRelationCount);
             if (!rel) return;
             // Scalar / Countable are naturally reversible (set-prev-value bookkeeping).
-            if (rel->cardinality == model::Cardinality::Scalar ||
-                rel->cardinality == model::Cardinality::Countable) {
+            if (rel->type.ctor == model::TypeCtor::Scalar ||
+                rel->type.ctor == model::TypeCtor::Countable) {
                 return;
             }
             if (rel->retract_handler == model::HandlerId::None) {
@@ -280,12 +280,14 @@ void TypeChecker::check_effect(const Effect& effect) {
         const model::RelationEntry* rel = model::find_relation(
             eff_ns, eff_nm, model::kRelations, model::kRelationCount);
         if (rel) {
-            // Verb vs cardinality legality
-            if (!model::is_legal_verb_for(to_model_verb(effect.verb), rel->cardinality)) {
+            // Verb vs type-constructor legality
+            if (!model::is_legal_verb(to_model_verb(effect.verb), rel->type)) {
                 diags_.error("E035",
                     std::string("verb '") + verb_name_str(effect.verb) +
                         "' is not legal for relation '" +
-                        std::string(eff_ns) + "/" + std::string(eff_nm) + "'",
+                        std::string(eff_ns) + "/" + std::string(eff_nm) +
+                        "' (constructor: " +
+                        std::string(model::ctor_spec(rel->type.ctor).name) + ")",
                     effect.span, source_line(effect.span));
             }
             // Arity check against kRelations
