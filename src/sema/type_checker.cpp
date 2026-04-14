@@ -1,5 +1,6 @@
 #include "mora/sema/type_checker.h"
 #include "mora/data/form_model.h"
+#include "mora/model/builtin_fns.h"
 #include "mora/model/relations.h"
 #include "mora/model/validate.h"
 #include <variant>
@@ -196,7 +197,8 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
                         " args, got " + std::to_string(pattern.args.size()),
                     pattern.span, source_line(pattern.span));
             }
-            // Mark variable arguments as used / bind if unknown.
+            // Mark variable arguments as used / bind if unknown. Recurse into
+            // non-trivial arg exprs so built-in call nodes get validated.
             for (const Expr& arg : pattern.args) {
                 if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
                     MoraType existing = lookup_variable(var->name);
@@ -205,6 +207,10 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
                     } else {
                         var_used_.insert(var->name.index);
                     }
+                } else if (std::get_if<DiscardExpr>(&arg.data)) {
+                    // skip
+                } else {
+                    (void)infer_expr_type(arg);
                 }
             }
             return;
@@ -299,10 +305,16 @@ void TypeChecker::check_effect(const Effect& effect) {
                         " arguments, got " + std::to_string(effect.args.size()),
                     effect.span, source_line(effect.span));
             }
-            // Mark variable arguments as used so unused-variable checks pass.
+            // Mark variable arguments as used so unused-variable checks pass,
+            // and recurse into non-trivial arg exprs so built-in call nodes get
+            // validated (arity, known name).
             for (const Expr& arg : effect.args) {
                 if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
                     var_used_.insert(var->name.index);
+                } else if (std::get_if<DiscardExpr>(&arg.data)) {
+                    // skip
+                } else {
+                    (void)infer_expr_type(arg);
                 }
             }
             // Skip legacy lookup_fact / component-compat flow: this effect is
@@ -432,6 +444,23 @@ void TypeChecker::check_guard(const Expr& expr) {
         using NodeT = std::decay_t<decltype(node)>;
         if constexpr (std::is_same_v<NodeT, VariableExpr>) {
             var_used_.insert(node.name.index);
+        } else if constexpr (std::is_same_v<NodeT, CallExpr>) {
+            // Validate name/arity; recurse into args so vars get marked used.
+            std::string_view nm = pool_.get(node.name);
+            const model::BuiltinFn* b = model::find_builtin(nm);
+            if (!b) {
+                diags_.error("E040",
+                             std::string("unknown function '") + std::string(nm) + "'",
+                             expr.span, source_line(expr.span));
+            } else if (node.args.size() != b->arity) {
+                diags_.error("E041",
+                             std::string("function '") + std::string(nm) +
+                                 "' expects " + std::to_string(b->arity) +
+                                 " argument(s), got " +
+                                 std::to_string(node.args.size()),
+                             expr.span, source_line(expr.span));
+            }
+            for (const auto& a : node.args) check_guard(a);
         } else if constexpr (std::is_same_v<NodeT, BinaryExpr>) {
             if (node.left) check_guard(*node.left);
             if (node.right) check_guard(*node.right);
@@ -499,6 +528,31 @@ MoraType TypeChecker::infer_expr_type(const Expr& expr) {
             return MoraType::make(TypeKind::Unknown);
         } else if constexpr (std::is_same_v<NodeT, DiscardExpr>) {
             return MoraType::make(TypeKind::Unknown);
+        } else if constexpr (std::is_same_v<NodeT, CallExpr>) {
+            // Validate name/arity; infer result type from arg types.
+            std::string_view nm = pool_.get(node.name);
+            const model::BuiltinFn* b = model::find_builtin(nm);
+            if (!b) {
+                diags_.error("E040",
+                             std::string("unknown function '") + std::string(nm) + "'",
+                             expr.span, source_line(expr.span));
+                for (const auto& a : node.args) (void)infer_expr_type(a);
+                return MoraType::make(TypeKind::Unknown);
+            }
+            if (node.args.size() != b->arity) {
+                diags_.error("E041",
+                             std::string("function '") + std::string(nm) +
+                                 "' expects " + std::to_string(b->arity) +
+                                 " argument(s), got " +
+                                 std::to_string(node.args.size()),
+                             expr.span, source_line(expr.span));
+            }
+            bool any_float = false;
+            for (const auto& a : node.args) {
+                MoraType t = infer_expr_type(a);
+                if (t.kind == TypeKind::Float) any_float = true;
+            }
+            return MoraType::make(any_float ? TypeKind::Float : TypeKind::Int);
         } else if constexpr (std::is_same_v<NodeT, BinaryExpr>) {
             MoraType left = node.left ? infer_expr_type(*node.left)
                                       : MoraType::make(TypeKind::Unknown);

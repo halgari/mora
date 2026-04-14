@@ -1,9 +1,11 @@
 #include "mora/eval/evaluator.h"
 #include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
+#include "mora/model/builtin_fns.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <vector>
 
 namespace mora {
 
@@ -509,6 +511,50 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                     default: break;
                 }
             }
+            return Value::make_var();
+        } else if constexpr (std::is_same_v<T, CallExpr>) {
+            // Evaluate all args first.
+            std::vector<Value> vs;
+            vs.reserve(e.args.size());
+            for (const auto& a : e.args) vs.push_back(resolve_expr(a, bindings));
+
+            auto numeric = [&](const Value& v) -> double {
+                if (v.kind() == Value::Kind::Float) return v.as_float();
+                if (v.kind() == Value::Kind::Int)
+                    return static_cast<double>(v.as_int());
+                return 0.0;
+            };
+            auto any_float = [&]() {
+                for (const auto& v : vs)
+                    if (v.kind() == Value::Kind::Float) return true;
+                return false;
+            };
+            auto make_num = [&](double d) {
+                if (any_float()) return Value::make_float(d);
+                return Value::make_int(static_cast<int64_t>(d));
+            };
+
+            std::string_view name = pool_.get(e.name);
+            if (name == "max" && vs.size() == 2) {
+                double a = numeric(vs[0]), b = numeric(vs[1]);
+                return make_num(a > b ? a : b);
+            }
+            if (name == "min" && vs.size() == 2) {
+                double a = numeric(vs[0]), b = numeric(vs[1]);
+                return make_num(a < b ? a : b);
+            }
+            if (name == "abs" && vs.size() == 1) {
+                double a = numeric(vs[0]);
+                return make_num(a < 0 ? -a : a);
+            }
+            if (name == "clamp" && vs.size() == 3) {
+                double x = numeric(vs[0]);
+                double lo = numeric(vs[1]);
+                double hi = numeric(vs[2]);
+                double r = x < lo ? lo : (x > hi ? hi : x);
+                return make_num(r);
+            }
+            // Unknown or arity-wrong built-in: return unbound var.
             return Value::make_var();
         } else {
             return Value::make_var();
