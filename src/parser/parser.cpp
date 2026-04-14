@@ -456,6 +456,14 @@ Expr Parser::parse_primary() {
         return e;
     }
 
+    if (tok.kind == TokenKind::EditorId) {
+        advance();
+        Expr e;
+        e.span = tok.span;
+        e.data = EditorIdExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        return e;
+    }
+
     if (tok.kind == TokenKind::Integer) {
         advance();
         Expr e;
