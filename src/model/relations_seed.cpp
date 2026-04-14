@@ -104,6 +104,44 @@ constexpr RelationEntry kRelations[] = {
       .value_type = RelValueType::Int, .cardinality = Cardinality::Functional,
       .source = RelationSourceKind::Handler,
       .docs = "True when this reference is currently in combat." },
+
+    // ── player/* relations ────────────────────────────────────────────
+    { .namespace_ = "player", .name = "gold",
+      .args = {{RelValueType::FormRef, "P"}, {RelValueType::Int, "N"}}, .arg_count = 2,
+      .value_type = RelValueType::Int, .cardinality = Cardinality::Countable,
+      .source = RelationSourceKind::Handler,
+      .apply_handler = HandlerId::PlayerAddGold,
+      .docs = "Player gold count (additive delta via 'add')." },
+
+    { .namespace_ = "player", .name = "notification",
+      .args = {{RelValueType::FormRef, "P"}, {RelValueType::String, "S"}}, .arg_count = 2,
+      .value_type = RelValueType::String, .cardinality = Cardinality::Set,
+      .source = RelationSourceKind::Handler,
+      .apply_handler = HandlerId::PlayerShowNotification,
+      .docs = "Queue a UI notification string." },
+
+    // ── world/* globals ────────────────────────────────────────────
+    { .namespace_ = "world", .name = "time_of_day",
+      .args = {{RelValueType::Float, "T"}}, .arg_count = 1,
+      .value_type = RelValueType::Float, .cardinality = Cardinality::Functional,
+      .source = RelationSourceKind::Hook,
+      .hook = {"OnTimeOfDayChanged", HookSpec::Kind::State},
+      .docs = "Current in-game hour 0..24." },
+
+    // ── event/* edge-triggered inputs ────────────────────────────
+    { .namespace_ = "event", .name = "entered_location",
+      .args = {{RelValueType::FormRef, "R"}, {RelValueType::FormRef, "LOC"}}, .arg_count = 2,
+      .value_type = RelValueType::FormRef, .cardinality = Cardinality::Set,
+      .source = RelationSourceKind::Event,
+      .hook = {"OnLocationChange", HookSpec::Kind::Edge},
+      .docs = "Fires when a reference enters a new location." },
+
+    { .namespace_ = "event", .name = "combat_state_changed",
+      .args = {{RelValueType::FormRef, "R"}, {RelValueType::Int, "STATE"}}, .arg_count = 2,
+      .value_type = RelValueType::Int, .cardinality = Cardinality::Set,
+      .source = RelationSourceKind::Event,
+      .hook = {"OnCombatStateChanged", HookSpec::Kind::Edge},
+      .docs = "Fires on combat state transitions." },
 };
 
 const size_t kRelationCount = sizeof(kRelations) / sizeof(kRelations[0]);
