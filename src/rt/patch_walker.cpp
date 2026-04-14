@@ -10,6 +10,7 @@
 #include "mora/emit/patch_file_v2.h"
 #include "mora/rt/mapped_patch_file.h"
 #include "mora/rt/dag_runtime.h"
+#include "mora/rt/handler_impls.h"
 
 #include <RE/T/TESForm.h>
 #include <RE/F/FormTraits.h>
@@ -529,9 +530,10 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
     auto strings = g_patch_file.section(mora::emit::SectionId::StringTable);
     g_string_table = strings.data; // may be null if no strings
 
-    // Load DAG bytecode (if present) into the runtime. Handler bindings are
-    // wired in a later task; this just threads the runtime object through.
+    // Load DAG bytecode (if present) into the runtime, then bind effect
+    // handler implementations (CommonLibSSE-NG wrappers on Windows).
     g_dag_runtime.init_from(g_patch_file);
+    mora::rt::bind_all_handlers(g_dag_runtime.registry());
 
     return g_patch_count;
 }

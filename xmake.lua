@@ -21,7 +21,8 @@ target("mora_lib")
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
               "src/data/*.cpp", "src/esp/*.cpp", "src/import/*.cpp",
-              "src/codegen/*.cpp", "src/rt/*.cpp", "src/harness/*.cpp",
+              "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
+              "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
     add_packages("zlib", "fmt")
 target_end()
@@ -78,6 +79,7 @@ target("mora_runtime")
     -- Shared Mora core code (subset — no ESP parser, no CLI, no lexer/parser)
     add_files("src/core/*.cpp", "src/data/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp")
     add_files("src/runtime/*.cpp")
+    add_files("src/rt/handlers/*.cpp")
     add_includedirs("include", {public = true})
 
     -- CommonLibSSE-NG (alandtse/CommonLibVR ng branch)
