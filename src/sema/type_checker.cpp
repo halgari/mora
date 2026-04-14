@@ -1,8 +1,32 @@
 #include "mora/sema/type_checker.h"
 #include "mora/data/form_model.h"
+#include "mora/model/relations.h"
+#include "mora/model/validate.h"
 #include <variant>
 
 namespace mora {
+
+namespace {
+const char* verb_name_str(VerbKind v) {
+    switch (v) {
+        case VerbKind::Set:    return "set";
+        case VerbKind::Add:    return "add";
+        case VerbKind::Sub:    return "sub";
+        case VerbKind::Remove: return "remove";
+    }
+    return "?";
+}
+
+model::VerbKind to_model_verb(VerbKind v) {
+    switch (v) {
+        case VerbKind::Set:    return model::VerbKind::Set;
+        case VerbKind::Add:    return model::VerbKind::Add;
+        case VerbKind::Sub:    return model::VerbKind::Sub;
+        case VerbKind::Remove: return model::VerbKind::Remove;
+    }
+    return model::VerbKind::Set;
+}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -152,6 +176,42 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
 // ---------------------------------------------------------------------------
 
 void TypeChecker::check_effect(const Effect& effect) {
+    // ── New: namespaced-relation validation against kRelations ──
+    std::string_view eff_ns = pool_.get(effect.namespace_);
+    std::string_view eff_nm = pool_.get(effect.name);
+    if (!eff_ns.empty()) {
+        const model::RelationEntry* rel = model::find_relation(
+            eff_ns, eff_nm, model::kRelations, model::kRelationCount);
+        if (rel) {
+            // Verb vs cardinality legality
+            if (!model::is_legal_verb_for(to_model_verb(effect.verb), rel->cardinality)) {
+                diags_.error("E035",
+                    std::string("verb '") + verb_name_str(effect.verb) +
+                        "' is not legal for relation '" +
+                        std::string(eff_ns) + "/" + std::string(eff_nm) + "'",
+                    effect.span, source_line(effect.span));
+            }
+            // Arity check against kRelations
+            if (effect.args.size() != rel->arg_count) {
+                diags_.error("E020",
+                    std::string("arity mismatch for '") +
+                        std::string(eff_ns) + "/" + std::string(eff_nm) +
+                        "': expected " + std::to_string(rel->arg_count) +
+                        " arguments, got " + std::to_string(effect.args.size()),
+                    effect.span, source_line(effect.span));
+            }
+            // Mark variable arguments as used so unused-variable checks pass.
+            for (const Expr& arg : effect.args) {
+                if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
+                    var_used_.insert(var->name.index);
+                }
+            }
+            // Skip legacy lookup_fact / component-compat flow: this effect is
+            // fully described by kRelations.
+            return;
+        }
+    }
+
     const FactSignature* sig = resolver_.lookup_fact(effect.name);
     if (!sig) return;
 
