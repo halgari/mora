@@ -12,7 +12,7 @@ const char* token_kind_name(TokenKind kind) {
     case TokenKind::String:
         return "string";
     case TokenKind::Symbol:
-        return "symbol";
+        return "Keyword";
     case TokenKind::EditorId:
         return "EditorId";
     case TokenKind::Variable:

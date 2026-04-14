@@ -32,3 +32,14 @@ TEST(V2Tokens, EditorIdRequiresIdentifierAfterAt) {
     ASSERT_GE(tokens.size(), 1u);
     EXPECT_EQ(tokens[0].kind, TokenKind::Error);
 }
+
+TEST(V2Tokens, ColonIdentIsSymbolToken) {
+    auto tokens = tokenize(":high\n");
+    ASSERT_GE(tokens.size(), 1u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].text, "high");
+}
+
+TEST(V2Tokens, TokenKindNameForSymbolSaysKeyword) {
+    EXPECT_STREQ(token_kind_name(TokenKind::Symbol), "Keyword");
+}

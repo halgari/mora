@@ -210,10 +210,17 @@ Token Lexer::lex_string() {
 Token Lexer::lex_symbol() {
     advance(); // consume ':'
     if (!at_end() && std::isalpha(static_cast<unsigned char>(peek()))) {
+        size_t ident_start = pos_;
         while (!at_end() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_')) {
             advance();
         }
-        return make_token(TokenKind::Symbol);
+        // Build token with text = identifier only (stripping ':').
+        // Span still covers the ':' + identifier range.
+        size_t saved_start = token_start_;
+        token_start_ = ident_start;
+        Token tok = make_token(TokenKind::Symbol);
+        token_start_ = saved_start;
+        return tok;
     }
     // Check for double colon
     if (!at_end() && peek() == ':') {
