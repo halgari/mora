@@ -583,6 +583,16 @@ constexpr RelationEntry kRelations[] = {
         .hook = {.hook_name = "OnCombatStateChanged", .kind = HookSpec::Kind::Edge},
         .docs = "Fires on combat state transitions.",
     },
+    {
+        .namespace_ = "event",
+        .name = "killed",
+        .args = {{ElemType::FormRef, "VICTIM"}, {ElemType::FormRef, "KILLER"}},
+        .arg_count = 2,
+        .type = {TypeCtor::List, ElemType::FormRef},
+        .source = RelationSourceKind::Event,
+        .hook = {.hook_name = "OnActorKilled", .kind = HookSpec::Kind::Edge},
+        .docs = "Fires when an actor reference is killed. VICTIM is the actor that died; KILLER is the actor that dealt the killing blow.",
+    },
 };
 
 const size_t kRelationCount = sizeof(kRelations) / sizeof(kRelations[0]);

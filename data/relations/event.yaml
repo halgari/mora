@@ -17,3 +17,12 @@ relations:
     source: event
     hook: {name: OnCombatStateChanged, kind: edge}
     docs: "Fires on combat state transitions."
+
+  killed:
+    type: list<FormRef>
+    args:
+      - {name: VICTIM, type: FormRef}
+      - {name: KILLER, type: FormRef}
+    source: event
+    hook: {name: OnActorKilled, kind: edge}
+    docs: "Fires when an actor reference is killed. VICTIM is the actor that died; KILLER is the actor that dealt the killing blow."

@@ -1,0 +1,16 @@
+namespace my_mod.bounty
+
+use ref :as r
+use form :as f
+
+# Pay the player a bounty for killing a bandit, scaled by the victim's
+# level plus a danger bonus when the victim out-levels the player.
+on bandit_bounty(Player, Victim):
+    event/killed(Victim, Player)
+    r/is_player(Player)
+    r/is_npc(Victim)
+    r/base_form(Victim, Base)
+    f/faction(Base, @BanditFaction)
+    r/level(Victim, VL)
+    r/level(Player, PL)
+    => add player/gold(Player, 10 * VL + 5 * max(0, VL - PL))

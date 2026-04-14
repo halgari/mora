@@ -347,3 +347,47 @@ Defines a base predicate `common_weapon` that excludes staves and Daedric artifa
 **Rules do not interact.** `iron_rebalance` and `steel_rebalance` run independently. A weapon with both `WeapMaterialIron` and `WeapMaterialSteel` keywords (unusual but possible from a mod) would receive patches from both rules. If you want mutual exclusion, add a `not has_keyword` guard.
 
 **Multiple effects per rule.** Listing several `=>` lines in one rule is more efficient than writing separate single-effect rules for the same condition. Mora evaluates the conditions once and applies all effects to each matched form.
+
+---
+
+## 3. Bandit Bounty — Arithmetic and `max()`
+
+This example introduces **edge-triggered `on` rules**, **arithmetic expressions**, and the **`max()` built-in**.
+
+```mora
+namespace my_mod.bounty
+
+use ref :as r
+use form :as f
+
+on bandit_bounty(Player, Victim):
+    event/killed(Victim, Player)
+    r/is_player(Player)
+    r/is_npc(Victim)
+    r/base_form(Victim, Base)
+    f/faction(Base, @BanditFaction)
+    r/level(Victim, VL)
+    r/level(Player, PL)
+    => add player/gold(Player, 10 * VL + 5 * max(0, VL - PL))
+```
+
+### What it does
+
+When an actor kills another actor, the `event/killed` relation fires and matches the rule head. If the killer is the player, the victim is an NPC in the `BanditFaction`, and both have levels, the rule pays a bounty:
+
+- A **base reward** of `10 × VL`, scaled with the victim's level.
+- A **danger bonus** of `5 × max(0, VL − PL)`: extra gold when the victim out-levels the player, otherwise zero. The `max(0, …)` idiom clamps the difference from below so a lower-level victim does not subtract from the reward.
+
+For a level-4 victim and a level-1 player: `10 × 4 + 5 × max(0, 3) = 55 gold`. For the same victim killed by a level-10 player: `10 × 4 + 5 × max(0, -6) = 40 gold`.
+
+### Patterns to note
+
+**Namespace aliasing** with `:as` keeps rule bodies compact. `use ref :as r` lets `r/is_player` stand in for `ref/is_player`. The resolver rewrites qualifiers before type checking, so `r/level(…)` and `ref/level(…)` are indistinguishable in diagnostics.
+
+**Edge-triggered rules** (`on …`) fire once each time the event relation produces a new tuple. Unlike `maintain` rules, they do not track retractions; a `+=` to player gold is a one-shot delta, not a bookkept bound.
+
+**The `r/base_form` bridge** is the canonical join from a live reference to its base record. Any `form/*` query on a reference needs to go through `base_form` first.
+
+**Arithmetic precedence** mirrors mainstream languages: `*` and `/` bind tighter than `+` and `-`, so `10 * VL + 5 * max(0, VL - PL)` parses as `(10*VL) + (5*max(...))` and not as a left-to-right chain.
+
+**Built-in functions** are pure and deterministic. The current set is `max`, `min`, `abs`, and `clamp`; they widen to floating-point when any argument is a float, and return integers otherwise. They validate at compile time — an unknown name or wrong arity is a hard error.

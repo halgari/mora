@@ -659,4 +659,14 @@ Fires on combat state transitions.
 Edge-triggered SKSE event.
 Hook: `OnCombatStateChanged`.
 
+### `event/killed(VICTIM: FormRef, KILLER: FormRef)`
+
+**Type:** `list<FormRef>`  
+**Verbs:** `add`, `remove`
+
+Fires when an actor reference is killed. VICTIM is the actor that died; KILLER is the actor that dealt the killing blow.
+
+Edge-triggered SKSE event.
+Hook: `OnActorKilled`.
+
 ---
