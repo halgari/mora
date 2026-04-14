@@ -1,358 +1,171 @@
 # Examples
 
-Annotated real-world `.mora` files. Each example includes the full source, a line-by-line explanation, and the expected compiler output. Read them top to bottom or jump to whichever pattern you need.
+Annotated `.mora` files in current (Mora v2) syntax. Each example shows
+the full source and explains what it does. Read top to bottom or jump to
+the pattern you need.
+
+For a tutorial introduction see the [Language Guide](language-guide.md);
+for the relation catalog see [relations.md](relations.md).
 
 ---
 
-## 1. Tag Bandits with a Keyword
+## 1. Iron weapons damage boost — static
 
-This example introduces **derived rules**, which are rules without effects that name a concept for reuse.
-
-```mora
-namespace my_mod.bandits
-
-requires mod("Skyrim.esm")
-
-bandit(NPC):
-    npc(NPC)
-    has_faction(NPC, :BanditFaction)
-
-tag_bandits(NPC):
-    bandit(NPC)
-    => add_keyword(NPC, :ActorTypeNPC)
-```
-
-### What it does
-
-`bandit(NPC)` defines a reusable predicate: any NPC that belongs to the `BanditFaction`. This rule has no `=>` effects, so it patches nothing on its own. It just names a concept.
-
-`tag_bandits(NPC)` uses `bandit(NPC)` as a clause, exactly like a built-in relation, and applies a keyword to every NPC it matches.
-
-### Line by line
-
-`namespace my_mod.bandits`
-: Declares the namespace. Every `.mora` file must start with one.
-
-`requires mod("Skyrim.esm")`
-: Guards compilation. Mora will refuse to compile if `Skyrim.esm` is not in the Data directory. Both `:BanditFaction` and `:ActorTypeNPC` live in that plugin.
-
-`bandit(NPC):`
-: Head of the derived rule. `NPC` is a logic variable that will be bound to each matching form.
-
-`npc(NPC)`
-: Constrains `NPC` to base NPC records only.
-
-`has_faction(NPC, :BanditFaction)`
-: Further constrains `NPC` to those that belong to the `BanditFaction`. `:BanditFaction` is a form reference; the leading colon means "look this EditorID up in the loaded plugins."
-
-`tag_bandits(NPC):`
-: Head of the patching rule.
-
-`bandit(NPC)`
-: Calls the derived rule defined above. Any NPC that satisfies all of `bandit`'s clauses satisfies this clause too.
-
-`=> add_keyword(NPC, :ActorTypeNPC)`
-: Effect. Adds the `ActorTypeNPC` keyword to every matched NPC. The `=>` separator marks the transition from conditions to actions.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 2 rules
-✓ Type checking 2 rules
-✓ 2 static, 0 dynamic
-✓ 15 plugins, 3 relations → 59522 facts
-✓ 84 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (14.2 KB)
-✓ Compiled 2 rules in 412ms
-```
-
-!!! tip
-    Derived rules are free at runtime. They are fully inlined during compilation. Define as many as you like. Small, named predicates make rules read like plain English and are trivial to update if the definition ever changes.
-
----
-
-## 2. Iron Weapons Damage Boost
-
-A minimal patch: find every iron weapon and set its base damage.
+The simplest useful rule: find every iron weapon and pin its damage.
 
 ```mora
 namespace my_mod.balance
 
-requires mod("Skyrim.esm")
+use form :as f
 
-iron_weapons(Weapon):
-    weapon(Weapon)
-    has_keyword(Weapon, :WeapMaterialIron)
-    => set_damage(Weapon, 99)
+iron_weapons(W):
+    f/weapon(W)
+    f/keyword(W, @WeapMaterialIron)
+    => set form/damage(W, 20)
 ```
 
 ### What it does
 
-Iterates over every weapon record in the loaded plugins, keeps those tagged with the `WeapMaterialIron` material keyword, and sets each one's base damage to `99`.
+Iterates every WEAP record in the load order, keeps those with the
+`WeapMaterialIron` keyword, and sets each one's base damage to `20`.
 
-### Line by line
+Because the body only references `form/*` relations, the phase
+classifier tags this as **static**. The compiler fully evaluates the
+rule against the FactDB and emits one patch entry per match. At game
+load the runtime just applies the patches — no rule evaluation.
 
-`weapon(Weapon)`
-: Constrains `Weapon` to weapon records. Without this clause, `has_keyword` would search across all form types.
+### Patterns
 
-`has_keyword(Weapon, :WeapMaterialIron)`
-: Keeps only weapons that carry the iron material keyword. This is the same keyword the Creation Kit uses to control tempering recipes and display names.
-
-`=> set_damage(Weapon, 99)`
-: Sets base damage to `99` on every matched weapon. The value is a plain integer.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ 1 static, 0 dynamic
-✓ 15 plugins, 2 relations → 59522 facts
-✓ 200 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (16.5 KB)
-✓ Compiled 1 rules in 389ms
-```
+- `=> set` is legal on `form/damage` because its type is
+  `countable<Int>`. `countable` also supports `add` and `sub`, if you
+  wanted to bump or slash damage instead of pinning it.
+- `f/weapon(W)` is the shape-gating predicate. Without it, `f/keyword`
+  would match on any record carrying the keyword (armor, magic effects,
+  NPCs). `form/*` relations are polymorphic across record types; restrict
+  with a predicate like `form/weapon`, `form/npc`, `form/armor`.
 
 ---
 
-## 3. Rename All NPCs
-
-String patching using a string literal effect.
-
-```mora
-namespace test.nazeem
-
-requires mod("Skyrim.esm")
-
-everyone_is_nazeem(NPC):
-    npc(NPC)
-    => set_name(NPC, "Nazeem")
-```
-
-### What it does
-
-Finds every NPC base record and sets its display name to the string `"Nazeem"`. The string is stored as a `BSFixedString` in the output DLL and written to the record's name field at game load.
-
-### Line by line
-
-`npc(NPC)`
-: Matches all NPC base records with no keyword or faction filter, so every NPC in the load order qualifies.
-
-`=> set_name(NPC, "Nazeem")`
-: Sets the display name. The value is a quoted string literal. Mora stores it as a `BSFixedString` in the compiled DLL; no heap allocation occurs at runtime.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ 1 static, 0 dynamic
-✓ 15 plugins, 1 relation → 59522 facts
-✓ 4218 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (22.1 KB)
-✓ Compiled 1 rules in 401ms
-```
-
-!!! tip
-    The DLL grows slightly with each unique string stored. For mods that set hundreds of distinct names, this is still negligible; the compiler deduplicates identical strings automatically.
-
----
-
-## 4. Silver Weapons (Not Greatswords)
-
-Using `not` to exclude a subset of matching forms.
+## 2. Silver weapons except greatswords — static with negation
 
 ```mora
 namespace my_mod.silver
 
-requires mod("Skyrim.esm")
+use form :as f
 
-silver_weapons(Weapon):
-    weapon(Weapon)
-    has_keyword(Weapon, :WeapMaterialSilver)
-    not has_keyword(Weapon, :WeapTypeGreatsword)
-    => add_keyword(Weapon, :WeapMaterialDaedric)
+vampire_bane(W):
+    f/weapon(W)
+    f/keyword(W, @WeapMaterialSilver)
+    not f/keyword(W, @WeapTypeGreatsword)
+    => add form/keyword(W, @VampireBane)
 ```
 
 ### What it does
 
-Finds all silver weapons that are **not** greatswords, then adds the `WeapMaterialDaedric` keyword to each one. The greatsword exclusion lets you treat one-handed and two-handed silver weapons differently without duplicating the rest of the rule.
+Finds silver weapons that are **not** greatswords and adds the
+`VampireBane` keyword to each. The silver keyword is preserved —
+`form/keyword` is a `list<FormRef>`, so keywords accumulate unless you
+explicitly `remove`.
 
-### Line by line
+### Patterns
 
-`has_keyword(Weapon, :WeapMaterialSilver)`
-: Keeps weapons with the silver material keyword.
-
-`not has_keyword(Weapon, :WeapTypeGreatsword)`
-: Excludes weapons that also have the greatsword type keyword. The `not` applies to the single clause that immediately follows it. `Weapon` is already bound by the earlier clauses, so negation is safe here.
-
-`=> add_keyword(Weapon, :WeapMaterialDaedric)`
-: Adds the Daedric material keyword to each matched weapon without removing the silver keyword. A weapon can carry multiple material keywords simultaneously.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ 1 static, 0 dynamic
-✓ 15 plugins, 3 relations → 59522 facts
-✓ 17 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (13.8 KB)
-✓ Compiled 1 rules in 391ms
-```
-
-!!! warning
-    Only negate clauses whose variables are already bound by earlier clauses. Writing `not has_keyword(Weapon, W)` when `W` has not yet been bound produces undefined behavior. Bind first, then negate.
+- `not` applies to the single clause that follows. `W` is already bound
+  by the earlier `f/weapon(W)` clause, so negation is safe.
+- Both `add` and `remove` are legal on `list<_>` relations; `set`
+  is not.
 
 ---
 
-## 5. Elite Bandits (Level 20+)
-
-Combining a derived rule with a numeric comparison.
+## 3. Tag bandits with derived rules
 
 ```mora
-namespace my_mod.elite
+namespace my_mod.bandits
 
-requires mod("Skyrim.esm")
+use form :as f
 
+# Derived rule: name a concept once, reuse it.
 bandit(NPC):
-    npc(NPC)
-    has_faction(NPC, :BanditFaction)
+    f/npc(NPC)
+    f/faction(NPC, @BanditFaction)
 
-elite_bandits(NPC):
+elite_bandit(NPC):
     bandit(NPC)
-    base_level(NPC, Level)
-    Level >= 20
-    => add_keyword(NPC, :ActorTypeNPC)
-    => add_spell(NPC, :FlameCloak)
+    f/base_level(NPC, L)
+    L >= 30
+
+# Patching rule: adds a keyword.
+tag_elite_bandits(NPC):
+    elite_bandit(NPC)
+    => add form/keyword(NPC, @ActorTypeNPC)
 ```
 
 ### What it does
 
-Defines bandits as in Example 1, then further filters to those with a base level of 20 or higher. Every elite bandit receives a keyword and a flame cloak spell, two effects applied to the same matched form.
-
-### Line by line
-
-`base_level(NPC, Level)`
-: Binds the variable `Level` to each NPC's base level. The clause does not filter by itself; it only makes the value available to the next clause.
-
-`Level >= 20`
-: Filters: only NPCs where the bound level is 20 or more pass. Comparison operators (`>=`, `<=`, `>`, `<`, `==`, `!=`) never bind variables; they only accept or reject already-bound values.
-
-`=> add_keyword(NPC, :ActorTypeNPC)`
-: First effect. Adds the keyword to each matched NPC.
-
-`=> add_spell(NPC, :FlameCloak)`
-: Second effect. Gives each matched NPC the Flame Cloak spell. Multiple `=>` lines all apply to the same `NPC`; they are not alternatives.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 2 rules
-✓ Type checking 2 rules
-✓ 2 static, 0 dynamic
-✓ 15 plugins, 4 relations → 59522 facts
-✓ 62 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (14.6 KB)
-✓ Compiled 2 rules in 418ms
-```
-
-!!! tip
-    Patch count reflects the number of individual field writes, not the number of matched forms. Each matched NPC receives two patches (keyword + spell), so 31 elite bandits produce 62 patches.
+`bandit` and `elite_bandit` are **derived rules** (no effects, just
+predicates). They're inlined wherever used. Changing the definition of
+"bandit" once updates every downstream rule automatically.
 
 ---
 
-## 6. Complete Mod: Weapon Rebalance
-
-A realistic multi-rule file combining derived rules, multiple effects, and negation. This is the kind of `.mora` file you might ship as a balance mod.
+## 4. Rename every NPC — scalar `set`
 
 ```mora
-namespace rebalance.weapons
+namespace test.nazeem
 
-requires mod("Skyrim.esm")
+everyone_is_nazeem(NPC):
+    form/npc(NPC)
+    => set form/name(NPC, "Nazeem")
+```
 
-# Derived: all non-unique weapons
-common_weapon(W):
-    weapon(W)
-    not has_keyword(W, :WeapTypeStaff)
-    not has_keyword(W, :DaedricArtifact)
+`form/name` is a `scalar<String>`. Only `set` is legal on a scalar; the
+type checker would reject `=> add form/name(...)` with a verb-mismatch
+error.
 
-# Iron weapons: boost damage, reduce value
-iron_rebalance(W):
-    common_weapon(W)
-    has_keyword(W, :WeapMaterialIron)
-    => set_damage(W, 12)
-    => set_gold_value(W, 15)
+---
 
-# Steel weapons
-steel_rebalance(W):
-    common_weapon(W)
-    has_keyword(W, :WeapMaterialSteel)
-    => set_damage(W, 18)
-    => set_gold_value(W, 45)
+## 5. Maintain a threat marker — auto-retract
+
+```mora
+namespace my_mod.threats
+
+use ref :as r
+use form :as f
+
+# Add a ThreatMarker keyword to every placed reference whose base is
+# an NPC in the bandit faction. The keyword is automatically removed
+# when the reference is unloaded or the faction membership changes.
+maintain threat_marker(R):
+    r/is_npc(R)
+    r/base_form(R, Base)
+    f/faction(Base, @BanditFaction)
+    => add ref/keyword(R, @ThreatMarker)
 ```
 
 ### What it does
 
-Defines a base predicate `common_weapon` that excludes staves and Daedric artifacts (weapons that should not be touched by a material balance pass). The two patching rules then each select a material tier and apply both a damage value and a gold value.
+**`maintain`** tells the compiler this rule tracks truth values
+differentially. The runtime engine tracks every binding: when the body
+becomes satisfied, it calls the `add` handler and records an effect
+handle; when the body stops being satisfied, it uses the handle to call
+the matching retract handler. No removal logic in the rule.
 
-### Line by line
+### Patterns
 
-`common_weapon(W):`
-: Derived rule. The short variable name `W` is fine for a predicate this focused. It will be expanded inline when referenced by the patching rules.
-
-`not has_keyword(W, :WeapTypeStaff)`
-: Excludes staves. Staves use a completely different damage model and should not receive weapon damage patches.
-
-`not has_keyword(W, :DaedricArtifact)`
-: Excludes unique Daedric artifacts. Daedric artifacts are handcrafted and should not be flattened by a balance pass.
-
-`iron_rebalance(W):`
-: Patching rule for iron-tier weapons. Calling `common_weapon(W)` here expands to all three clauses from the derived rule; the exclusions are inherited automatically.
-
-`=> set_damage(W, 12)` and `=> set_gold_value(W, 15)`
-: Two effects applied in order to the same matched weapon. Both patch the same form; neither depends on the other.
-
-`steel_rebalance(W):`
-: Identical structure to `iron_rebalance` but targets a different material tier and sets higher values. Adding a new tier (say, Orcish) means writing one more rule of the same shape.
-
-### Expected output
-
-```
-✓ Parsing 1 files
-✓ Resolving 3 rules
-✓ Type checking 3 rules
-✓ 3 static, 0 dynamic
-✓ 15 plugins, 4 relations → 59522 facts
-✓ 874 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (18.3 KB)
-✓ Compiled 3 rules in 443ms
-```
-
-### Patterns to note
-
-**Single definition, multiple consumers.** `common_weapon` is written once. Both `iron_rebalance` and `steel_rebalance` benefit from its exclusions without repeating them. If you later decide that named weapons should also be excluded, you add one clause to `common_weapon` and all downstream rules update automatically.
-
-**Rules do not interact.** `iron_rebalance` and `steel_rebalance` run independently. A weapon with both `WeapMaterialIron` and `WeapMaterialSteel` keywords (unusual but possible from a mod) would receive patches from both rules. If you want mutual exclusion, add a `not has_keyword` guard.
-
-**Multiple effects per rule.** Listing several `=>` lines in one rule is more efficient than writing separate single-effect rules for the same condition. Mora evaluates the conditions once and applies all effects to each matched form.
+- `r/base_form(R, Base)` is the canonical join from a live reference
+  (`RefId`) to its base record (`FormRef`). Any `form/*` query over a
+  reference must go through `base_form` first.
+- `ref/keyword` is declared `list<FormRef>` with both `apply_handler`
+  (`RefAddKeyword`) and `retract_handler` (`RefRemoveKeyword`) wired
+  up, so using it in `maintain` is legal. A `maintain` rule targeting
+  a list relation that lacks a retract handler is a compile error.
 
 ---
 
-## 3. Bandit Bounty — Arithmetic and `max()`
+## 6. Bandit bounty — `on` rule with arithmetic
 
-This example introduces **edge-triggered `on` rules**, **arithmetic expressions**, and the **`max()` built-in**.
+This is the capstone. It's an edge-triggered rule with arithmetic and
+a built-in function — exactly the file shipped as
+`test_data/bandit_bounty.mora`.
 
 ```mora
 namespace my_mod.bounty
@@ -360,6 +173,8 @@ namespace my_mod.bounty
 use ref :as r
 use form :as f
 
+# Pay the player a bounty for killing a bandit, scaled by the victim's
+# level plus a danger bonus when the victim out-levels the player.
 on bandit_bounty(Player, Victim):
     event/killed(Victim, Player)
     r/is_player(Player)
@@ -373,21 +188,80 @@ on bandit_bounty(Player, Victim):
 
 ### What it does
 
-When an actor kills another actor, the `event/killed` relation fires and matches the rule head. If the killer is the player, the victim is an NPC in the `BanditFaction`, and both have levels, the rule pays a bounty:
+When an actor kills another actor, the `event/killed` relation fires.
+If the killer is the player, the victim is an NPC in `BanditFaction`,
+and both have levels, the rule credits the player:
 
-- A **base reward** of `10 × VL`, scaled with the victim's level.
-- A **danger bonus** of `5 × max(0, VL − PL)`: extra gold when the victim out-levels the player, otherwise zero. The `max(0, …)` idiom clamps the difference from below so a lower-level victim does not subtract from the reward.
+- A base reward of `10 * VL`, scaling with victim level.
+- A danger bonus of `5 * max(0, VL - PL)`: extra gold when the victim
+  out-levels the player, zero otherwise. `max(0, ...)` clamps the
+  difference from below so a lower-level victim doesn't subtract.
 
-For a level-4 victim and a level-1 player: `10 × 4 + 5 × max(0, 3) = 55 gold`. For the same victim killed by a level-10 player: `10 × 4 + 5 × max(0, -6) = 40 gold`.
+Example: level-4 victim, level-1 player → `10*4 + 5*max(0,3) = 55` gold.
+Same victim, level-10 player → `10*4 + 5*max(0,-6) = 40` gold.
 
-### Patterns to note
+### Patterns
 
-**Namespace aliasing** with `:as` keeps rule bodies compact. `use ref :as r` lets `r/is_player` stand in for `ref/is_player`. The resolver rewrites qualifiers before type checking, so `r/level(…)` and `ref/level(…)` are indistinguishable in diagnostics.
+- **`on`** — edge-triggered, fires once per `+1` transition of the body.
+  Unlike `maintain`, there's no retraction; adding gold is a one-shot.
+- `event/killed` drives the edge. Using any `event/*` relation is what
+  makes a rule `on`-eligible; using it in a `maintain` rule is a compile
+  error (events are deltas, not state).
+- `r/base_form` crosses from the live `Victim` reference into
+  `form/faction` on its base. Without the bridge, the type checker
+  would reject `form/faction(Victim, ...)` because `Victim` is a
+  `RefId`, not a `FormRef`.
+- Arithmetic binds with standard precedence: `10 * VL + 5 * max(...)`
+  parses as `(10*VL) + (5*max(...))`, not left-to-right.
+- Built-in `max` widens to `Float` when any argument is a float; here
+  both `VL` and `PL` are `Int`, so the result is `Int`.
 
-**Edge-triggered rules** (`on …`) fire once each time the event relation produces a new tuple. Unlike `maintain` rules, they do not track retractions; a `+=` to player gold is a one-shot delta, not a bookkept bound.
+---
 
-**The `r/base_form` bridge** is the canonical join from a live reference to its base record. Any `form/*` query on a reference needs to go through `base_form` first.
+## 7. Weapon rebalance — multi-rule file
 
-**Arithmetic precedence** mirrors mainstream languages: `*` and `/` bind tighter than `+` and `-`, so `10 * VL + 5 * max(0, VL - PL)` parses as `(10*VL) + (5*max(...))` and not as a left-to-right chain.
+A realistic file combining derived rules, multiple effects per rule,
+and negation.
 
-**Built-in functions** are pure and deterministic. The current set is `max`, `min`, `abs`, and `clamp`; they widen to floating-point when any argument is a float, and return integers otherwise. They validate at compile time — an unknown name or wrong arity is a hard error.
+```mora
+namespace rebalance.weapons
+
+use form :as f
+
+# Derived: all non-unique, non-staff weapons.
+common_weapon(W):
+    f/weapon(W)
+    not f/keyword(W, @WeapTypeStaff)
+    not f/keyword(W, @DaedricArtifact)
+
+# Iron tier: modest damage, low gold value.
+iron_rebalance(W):
+    common_weapon(W)
+    f/keyword(W, @WeapMaterialIron)
+    => set form/damage(W, 12)
+    => set form/gold_value(W, 15)
+
+# Steel tier: better damage, higher value.
+steel_rebalance(W):
+    common_weapon(W)
+    f/keyword(W, @WeapMaterialSteel)
+    => set form/damage(W, 18)
+    => set form/gold_value(W, 45)
+```
+
+### Patterns
+
+- Single definition, multiple consumers. Both tier rules inherit the
+  exclusions in `common_weapon` for free.
+- Multiple effects per rule. Each `=>` line applies to every match;
+  the body only evaluates once.
+- Rules don't interact. A weapon with both `WeapMaterialIron` and
+  `WeapMaterialSteel` (unusual but possible) would be patched by both
+  rules; conflict resolution (last rule wins by file order) is reported
+  by `mora inspect --conflicts`.
+
+---
+
+See [relations.md](relations.md) for the full catalog of relations you
+can reference in bodies and heads; see [language-guide.md](language-guide.md)
+for the tutorial walk-through.
