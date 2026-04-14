@@ -1,212 +1,212 @@
 # Getting Started
 
-This guide walks you through installing Mora, writing your first `.mora` file, compiling it to a DLL, and deploying it to Skyrim. By the end you will have a working SKSE plugin that applies patches at game load.
+This guide walks you through installing Mora, writing your first `.mora`
+file, compiling it into a patch file, and loading it into Skyrim. By the end
+you will have a working setup that applies patches at game load.
 
 ---
 
 ## Prerequisites
 
-Before you can use Mora, you need the following installed and working:
+**Skyrim Special Edition (Steam).** Mora targets SSE. The Game Pass version
+is not supported because it does not allow SKSE.
 
-**Skyrim Special Edition (Steam)**
+**SKSE64.** Mora's runtime DLL is loaded by SKSE. Download and install from
+[skse.silverlock.org](https://skse.silverlock.org); match the version to
+your Skyrim build.
 
-Mora targets Skyrim SE. The Game Pass version is not supported because it does not allow SKSE.
+**Address Library for SKSE Plugins.** Install from
+[Nexus Mods (mod 32444)](https://www.nexusmods.com/skyrimspecialedition/mods/32444).
 
-**SKSE64**
-
-The Skyrim Script Extender is required to load Mora's output DLL. Download and install it from [skse.silverlock.org](https://skse.silverlock.org). Match the version to your Skyrim build number exactly. SKSE will tell you at launch if there is a mismatch.
-
-**Address Library for SKSE Plugins**
-
-Mora's runtime uses the Address Library to locate memory offsets without hardcoding addresses. Install it from [Nexus Mods (mod 32444)](https://www.nexusmods.com/skyrimspecialedition/mods/32444) with your mod manager.
-
-**Mora CLI**
-
-See the next section.
+**Mora itself** — see below.
 
 ---
 
-## Installing Mora
+## Building Mora
 
-Mora is built from source. It is a cross-compiler: it runs on Linux and produces Windows x86-64 DLLs. You do not need a Windows machine.
+Mora is built from source. The compiler runs on Linux (or any POSIX host);
+the runtime DLL is produced by a cross-compiled build using `clang-cl` +
+`lld-link` and the Windows SDK via `xwin`. No Windows machine required.
 
 ### Build dependencies
 
-- [xmake](https://xmake.io): build system
-- `clang-cl` and `lld-link`: Clang's MSVC-compatible compiler and linker
-- Windows SDK headers via [xwin](https://github.com/Jake-Shadle/xwin): provides `windows.h` and MSVC CRT headers on Linux
+- [xmake](https://xmake.io) — build system
+- `clang-cl` and `lld-link` — Clang's MSVC-compatible driver and linker
+- Windows SDK headers via [xwin](https://github.com/Jake-Shadle/xwin)
 
-Once those are on your `PATH`, clone and build:
+Once those are on `PATH`:
 
 ```bash
-# Clone the repository
 git clone https://github.com/halgari/mora.git
 cd mora
 
-# Build with xmake
+# Build the host-side compiler.
 xmake build mora
 
-# The binary is at build/linux/x86_64/release/mora
+# Build and test.
+xmake build && xmake test
+
+# The compiler binary is at build/linux/x86_64/release/mora
 ```
 
-Add the binary to your `PATH` or call it by its full path throughout this guide.
-
-!!! tip
-    Run `mora --version` after the build to confirm everything linked correctly.
+Add the `mora` binary to your `PATH`, or invoke it by its full path for the
+rest of this guide.
 
 ---
 
-## Your First .mora File
+## Your First `.mora` File
 
-Create a file called `balance.mora` anywhere you like:
+Create `balance.mora` anywhere:
 
 ```mora
 namespace my_mod.balance
 
-requires mod("Skyrim.esm")
+use form :as f
 
-# All iron weapons get boosted damage
-iron_weapons(Weapon):
-    weapon(Weapon)
-    has_keyword(Weapon, :WeapMaterialIron)
-    => set_damage(Weapon, 99)
+# All iron weapons get boosted damage.
+iron_weapons(W):
+    f/weapon(W)
+    f/keyword(W, @WeapMaterialIron)
+    => set form/damage(W, 20)
 ```
 
-Here is what each line does:
+Line by line:
 
 `namespace my_mod.balance`
-: Declares the namespace for this file. Use reverse-domain style to avoid collisions with other mods. Every `.mora` file must start with a namespace declaration.
+: Every file starts with a namespace declaration. Reverse-domain style is a
+good convention, but anything unique works.
 
-`requires mod("Skyrim.esm")`
-: Declares that this file depends on `Skyrim.esm` being present in your Data directory. Mora will refuse to compile if the listed plugins are missing. Add one `requires` line per dependency.
+`use form :as f`
+: Clojure-style namespace import. Aliases `form` to `f` so we can write
+`f/weapon` instead of `form/weapon`. `:refer [...]` is the other form,
+for bringing specific names in unqualified.
 
-`# All iron weapons get boosted damage`
-: A comment. Comments begin with `#` and run to the end of the line.
+`iron_weapons(W):`
+: Rule head. `W` is a logic variable — unbound until the first clause
+binds it.
 
-`iron_weapons(Weapon):`
-: The rule head. `iron_weapons` is the rule name. `Weapon` is a logic variable that will be bound to each form that satisfies the clauses below. The colon opens the rule body.
+`f/weapon(W)`
+: Predicate. True when `W` is a weapon base record (a WEAP).
 
-`weapon(Weapon)`
-: A clause. This constrains `Weapon` to forms that are weapons. Mora will only consider records from the weapon category.
+`f/keyword(W, @WeapMaterialIron)`
+: List-valued relation; in body position it's a query. `@WeapMaterialIron`
+is a compile-time EditorID reference — Mora resolves it against your ESPs
+and rejects the compile if the keyword isn't defined.
 
-`has_keyword(Weapon, :WeapMaterialIron)`
-: Another clause. `:WeapMaterialIron` is a form reference. The colon prefix means "look this EditorID up in the loaded plugins." This clause further constrains `Weapon` to only those weapons that carry the iron material keyword.
+`=> set form/damage(W, 20)`
+: Head effect. `form/damage` is a `countable<Int>`; legal verbs are `set`,
+`add`, `sub`. `set` pins base damage to 20 on every matched weapon.
 
-`=> set_damage(Weapon, 99)`
-: The effect. The `=>` separator divides the conditions from the action. `set_damage` sets the base damage field on each matched weapon to `99`. Every `Weapon` that satisfies all clauses above will receive this patch.
+This rule is **static**: all body relations are in the `form/*` namespace,
+which is fully known at compile time. The compiler evaluates it completely
+and emits the resulting patches to the binary output; nothing about this
+rule runs at game time beyond applying the patches.
 
-Together, the rule reads: "for every form that is a weapon and has the iron keyword, set its damage to 99."
+See [language-guide.md](language-guide.md) for the full tour, and
+[relations.md](relations.md) for the catalog of relations you can query.
 
 ---
 
 ## Compiling
 
-Point `mora compile` at your `.mora` file and your Skyrim Data directory:
+Point `mora compile` at your file and your Skyrim Data directory:
 
 ```bash
-mora compile balance.mora --data-dir /path/to/Skyrim Special Edition/Data
+mora compile balance.mora --data-dir "/path/to/Skyrim Special Edition/Data"
 ```
 
-Replace `/path/to/Skyrim Special Edition/Data` with the actual path on your system. On a typical Steam install on Linux this is something like `~/.steam/steam/steamapps/common/Skyrim Special Edition/Data`.
+On a typical Steam install on Linux that's
+`~/.steam/steam/steamapps/common/Skyrim Special Edition/Data`.
 
 Expected output:
 
 ```
-✓ Parsing 1 files
-✓ Resolving 1 rules
-✓ Type checking 1 rules
-✓ 1 static, 0 dynamic
-✓ 15 plugins, 3 relations → 59522 facts
-✓ 200 patches generated
-✓ 428461 entries (Address Library)
-✓ MoraRuntime.dll (16.5 KB)
-✓ Compiled 1 rules in 389ms
+  Mora v0.1.0
+
+  [OK] Parsing 1 files
+  [OK] Resolving 1 rules
+  [OK] Type checking 1 rules
+  [OK] 1 static, 0 dynamic
+  [OK] 15 plugins, 3 relations -> 59522 facts
+  [OK] Evaluating (.mora rules) done
+  [OK] 200 patches -> mora_patches.bin (4.1 KB)
+  [OK] Wrote MoraCache/mora_patches.bin
 ```
 
-What each line means:
-
-`Parsing 1 files`
-: Mora parsed `balance.mora` without syntax errors.
-
-`Resolving 1 rules`
-: All form references (like `:WeapMaterialIron`) were found in the loaded plugins.
-
-`Type checking 1 rules`
-: All clauses and effects have consistent types. `set_damage` expects a weapon form and an integer, and both match.
-
 `1 static, 0 dynamic`
-: The rule was classified as **static**: it depends only on plugin data, not on runtime game state. Static rules are fully evaluated at compile time. Dynamic rules (future feature) would require a runtime evaluator.
+: Phase classifier output. Unannotated rules whose bodies touch only static
+namespaces are static. Rules referencing `ref/*`, `player/*`, `world/*`,
+or `event/*` must be annotated `maintain` or `on`.
 
-`15 plugins, 3 relations → 59522 facts`
-: Mora loaded 15 plugins from your Data directory, extracted the `weapon`, `has_keyword`, and `set_damage` relations, and produced 59,522 facts to evaluate against.
+`15 plugins, 3 relations -> 59522 facts`
+: ESP load summary: how many plugins loaded, how many fact relations the
+compiler needed to extract, and the total fact count.
 
-`200 patches generated`
-: The Datalog engine found 200 weapons that matched all clauses. Each one gets a `set_damage(99)` patch.
+`200 patches -> mora_patches.bin`
+: The Datalog engine found 200 weapons that matched all clauses. Each one
+gets a 16-byte patch entry in the binary output.
 
-`428461 entries (Address Library)`
-: Mora loaded the Address Library database. This is used to find the memory offsets where the patches are applied at runtime.
+The output file is `MoraCache/mora_patches.bin` by default (override with
+`--output DIR`).
 
-`MoraRuntime.dll (16.5 KB)`
-: The compiled output. A 16.5 KB native x86-64 DLL containing the pre-computed patches as direct memory writes. Only the results are baked in; no rules are evaluated at runtime.
-
-`Compiled 1 rules in 389ms`
-: Total wall-clock time for the full compilation pipeline.
+If you'd like to see exactly what patches would be produced without touching
+the filesystem, use [`mora inspect`](cli-reference.md#mora-inspect).
 
 !!! warning
-    If you see `Error: form :WeapMaterialIron not found`, the keyword EditorID is not present in any of your loaded plugins. Double-check the spelling and confirm that `Skyrim.esm` (or the plugin that defines it) is in your Data directory.
+    If you see `form not found: @WeapMaterialIron`, the keyword's EditorID
+    isn't present in any loaded plugin. Double-check the spelling and make
+    sure the plugin that defines it is in your Data directory.
 
 ---
 
 ## Deploying
 
-Copy the output DLL into Skyrim's SKSE plugins folder:
+Copy both the patch file **and** the runtime DLL into SKSE's plugin folder:
 
 ```
-Data/SKSE/Plugins/MoraRuntime.dll
+Data/SKSE/Plugins/
+  mora_patches.bin     <-- from MoraCache/
+  MoraRuntime.dll      <-- from the xmake build
 ```
 
-Create the `Plugins` directory if it does not exist. The full path from your Skyrim root looks like:
+Launch the game through SKSE (via `skse64_loader.exe` or your mod manager's
+SKSE option). Launching plain `SkyrimSE.exe` will not load SKSE plugins.
 
-```
-Skyrim Special Edition/
-  Data/
-    SKSE/
-      Plugins/
-        MoraRuntime.dll   ← place it here
-```
-
-Then launch the game through SKSE, either `skse64_loader.exe` directly or via your mod manager's SKSE launch option. Launching through the standard `SkyrimSE.exe` will not load SKSE plugins.
-
-!!! tip
-    If you use Mod Organizer 2, deploy the DLL into your mod's folder under the same `SKSE/Plugins/` path. MO2 will virtualize it into the Data directory automatically.
+!!! tip "Mod Organizer 2 users"
+    Deploy both files into a mod folder under the same `SKSE/Plugins/`
+    path. MO2 will virtualize them into the Data directory automatically.
 
 ---
 
 ## Verifying
 
-After loading a save (or starting a new game), Mora writes a log file:
+On load, the runtime writes a log file at:
 
 ```
 Data/SKSE/Plugins/MoraRuntime.log
 ```
 
-Open it and look for a line like:
+You should see something like:
 
 ```
-[Mora] Applied 200 patches in 0.42 ms
+[Mora] mmap'd mora_patches.bin (4.1 KB)
+[Mora] applied 200 patches in 0.42 ms
+[Mora] dynamic rules: 0 (nothing to register)
 ```
 
-This confirms the DLL loaded, SKSE called it at the right point, and all 200 patches were written to memory. If the file is missing, SKSE did not load the plugin. Check that SKSE itself is working by looking for `skse64.log` in the same folder.
-
-!!! tip
-    The patch count in the log should match the count shown at compile time. If the numbers differ, your Address Library version may not match your Skyrim build. Re-download Address Library for your exact Skyrim version.
+If the file is missing, SKSE didn't load the plugin. Check `skse64.log` in
+the same folder for SKSE's own diagnostics.
 
 ---
 
 ## Next Steps
 
-You have a working Mora plugin. From here:
-
-- [Language Guide](language-guide.md): learn the full syntax: negation, disjunction, comparison operators, and every built-in relation
-- [Examples](examples.md): annotated real-world `.mora` files covering NPCs, factions, level checks, and more
-- [How Mora Works](how-mora-works.md): understand why Mora is fast and how it differs from SPID, SkyPatcher, and Synthesis
+- [Language Guide](language-guide.md) — negation, disjunction, arithmetic,
+  `maintain` and `on` rules, namespaces, `:keyword` tag values.
+- [Examples](examples.md) — annotated `.mora` files including the bandit
+  bounty capstone.
+- [How Mora Works](how-mora-works.md) — the architectural overview: why
+  Mora splits rules across static/maintain/on, and how the runtime loads
+  the patch file.
+- [Relation Reference](relations.md) — the full inventory of built-in
+  relations, auto-generated from the YAML declarations.
