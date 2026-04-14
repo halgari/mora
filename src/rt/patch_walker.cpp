@@ -1,20 +1,47 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Patch walker — loads and applies patches using typed CommonLibSSE-NG access.
+// No raw pointer math or memcpy-based field writes.
+// ═══════════════════════════════════════════════════════════════════════════
+
 #ifdef _WIN32
-#include "mora/rt/form_ops.h"
-#include "mora/data/form_model.h"
+
 #include "mora/data/action_names.h"
 #include "mora/emit/patch_table.h"
+
+#include <RE/T/TESForm.h>
+#include <RE/T/TESNPC.h>
+#include <RE/T/TESActorBaseData.h>
+#include <RE/T/TESObjectWEAP.h>
+#include <RE/T/TESObjectARMO.h>
+#include <RE/B/BGSKeywordForm.h>
+#include <RE/B/BGSKeyword.h>
+#include <RE/T/TESLevItem.h>
+#include <RE/T/TESLevCharacter.h>
+#include <RE/S/SpellItem.h>
+#include <RE/B/BGSPerk.h>
+#include <RE/T/TESFaction.h>
+#include <RE/T/TESShout.h>
+#include <RE/T/TESFullName.h>
+#include <RE/T/TESValueForm.h>
+#include <RE/T/TESWeightForm.h>
+#include <RE/T/TESAttackDamageForm.h>
+#include <RE/T/TESEnchantableForm.h>
+#include <RE/T/TESRaceForm.h>
+#include <RE/B/BGSSkinForm.h>
+#include <RE/B/BGSOutfit.h>
+#include <RE/M/MemoryManager.h>
+
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 
 using mora::fid;
 using mora::fop;
 using mora::FieldId;
 using mora::FieldOp;
 
-// Patch data loaded from mora_patches.bin at runtime
-#include <filesystem>
-#include <fstream>
-#include <vector>
 static std::vector<uint8_t> g_patch_data;
 
 struct PatchTableHeader {
@@ -33,135 +60,431 @@ struct PatchEntry {
     uint64_t value;
 };
 
-// ── Template helpers for scalar field application ──────────────────────
+// ── Component extraction helpers ───────────────────────────────────────
+// As<T>() only works for form types, not component base classes,
+// so we cast through the concrete form type.
 
-template<typename T>
-static void apply_scalar(void* form, uint64_t off, const PatchEntry& e) {
-    if (!off) return;
-    if (e.op == fop(FieldOp::Multiply)) {
-        T cur; std::memcpy(&cur, (char*)form + off, sizeof(T));
-        double d; std::memcpy(&d, &e.value, 8);
-        T v = static_cast<T>(cur * d);
-        std::memcpy((char*)form + off, &v, sizeof(T));
-    } else {
-        T v = static_cast<T>(e.value);
-        std::memcpy((char*)form + off, &v, sizeof(T));
-    }
+template<typename ComponentT>
+ComponentT* get_component(RE::TESForm* form) {
+    if (auto* npc = form->As<RE::TESNPC>())
+        return static_cast<ComponentT*>(npc);
+    if (auto* weap = form->As<RE::TESObjectWEAP>())
+        return static_cast<ComponentT*>(weap);
+    if (auto* armo = form->As<RE::TESObjectARMO>())
+        return static_cast<ComponentT*>(armo);
+    return nullptr;
 }
 
-static void apply_scalar_float(void* form, uint64_t off, const PatchEntry& e) {
-    if (!off) return;
+// ── Leveled list helper ────────────────────────────────────────────────
+
+static RE::TESLeveledList* get_leveled_list(RE::TESForm* form) {
+    if (auto* li = form->As<RE::TESLevItem>())
+        return static_cast<RE::TESLeveledList*>(li);
+    if (auto* lc = form->As<RE::TESLevCharacter>())
+        return static_cast<RE::TESLeveledList*>(lc);
+    return nullptr;
+}
+
+// ── Scalar field setters ───────────────────────────────────────────────
+// Each operates on typed CommonLibSSE-NG members.
+
+static void apply_name(RE::TESForm* form, const PatchEntry& e,
+                        const uint8_t* string_table) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::StringIndex)) return;
+    auto* named = get_component<RE::TESFullName>(form);
+    if (!named) return;
+
+    uint32_t str_off = static_cast<uint32_t>(e.value);
+    uint16_t len = 0;
+    std::memcpy(&len, string_table + str_off, 2);
+    char buf[mora::kPatchStringBufSize];
+    uint16_t copy_len = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
+    std::memcpy(buf, string_table + str_off + 2, copy_len);
+    buf[copy_len] = '\0';
+    named->fullName = buf;
+}
+
+static void apply_gold_value(RE::TESForm* form, const PatchEntry& e) {
+    auto* vf = get_component<RE::TESValueForm>(form);
+    if (!vf) return;
+    vf->value = static_cast<std::int32_t>(e.value);
+}
+
+static void apply_weight(RE::TESForm* form, const PatchEntry& e) {
+    auto* wf = get_component<RE::TESWeightForm>(form);
+    if (!wf) return;
     double d; std::memcpy(&d, &e.value, 8);
-    if (e.op == fop(FieldOp::Multiply)) {
-        float cur; std::memcpy(&cur, (char*)form + off, 4);
-        float v = cur * static_cast<float>(d);
-        std::memcpy((char*)form + off, &v, 4);
-    } else {
-        float v = static_cast<float>(d);
-        std::memcpy((char*)form + off, &v, 4);
+    wf->weight = static_cast<float>(d);
+}
+
+static void apply_damage(RE::TESForm* form, const PatchEntry& e) {
+    auto* weap = form->As<RE::TESObjectWEAP>();
+    if (!weap) return;
+    auto* df = static_cast<RE::TESAttackDamageForm*>(weap);
+    df->attackDamage = static_cast<std::uint16_t>(e.value);
+}
+
+static void apply_enchantment(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* ef = get_component<RE::TESEnchantableForm>(form);
+    if (!ef) return;
+    auto* ench = RE::TESForm::LookupByID(static_cast<uint32_t>(e.value));
+    if (ench) ef->formEnchanting = static_cast<RE::EnchantmentItem*>(ench);
+}
+
+// ── Weapon-specific fields ─────────────────────────────────────────────
+
+static void apply_weapon_field(RE::TESObjectWEAP* weap, FieldId field, const PatchEntry& e) {
+    double d; std::memcpy(&d, &e.value, 8);
+    float fval = static_cast<float>(d);
+
+    switch (field) {
+        case FieldId::Speed:     weap->weaponData.speed = fval; break;
+        case FieldId::Reach:     weap->weaponData.reach = fval; break;
+        case FieldId::RangeMin:  weap->weaponData.minRange = fval; break;
+        case FieldId::RangeMax:  weap->weaponData.maxRange = fval; break;
+        case FieldId::Stagger:   weap->weaponData.staggerValue = fval; break;
+        case FieldId::CritDamage:
+            weap->criticalData.damage = static_cast<std::uint16_t>(e.value);
+            break;
+        default: break;
     }
 }
 
-// apply_patch_entry dispatches to the appropriate RT function
-static void apply_patch_entry(void* form, const PatchEntry& e,
-                               const uint8_t* string_table) {
-    using namespace mora::rt;
-    using namespace mora;
-    namespace m = mora::model;
+// ── Armor-specific fields ──────────────────────────────────────────────
 
-    uint8_t ft = get_form_type(form);
+static void apply_armor_field(RE::TESObjectARMO* armo, FieldId field, const PatchEntry& e) {
+    switch (field) {
+        case FieldId::ArmorRating:
+            armo->armorRating = static_cast<std::uint32_t>(e.value);
+            break;
+        default: break;
+    }
+}
+
+// ── NPC scalar fields ──────────────────────────────────────────────────
+
+static void apply_npc_scalar(RE::TESNPC* npc, FieldId field, const PatchEntry& e) {
+    switch (field) {
+        case FieldId::Level:
+            npc->actorData.level = static_cast<std::uint16_t>(e.value);
+            break;
+        case FieldId::CalcLevelMin:
+            npc->actorData.calcLevelMin = static_cast<std::uint16_t>(e.value);
+            break;
+        case FieldId::CalcLevelMax:
+            npc->actorData.calcLevelMax = static_cast<std::uint16_t>(e.value);
+            break;
+        case FieldId::SpeedMult:
+            npc->actorData.speedMult = static_cast<std::uint16_t>(e.value);
+            break;
+        default: break;
+    }
+}
+
+// ── NPC form reference fields ──────────────────────────────────────────
+
+static void apply_npc_form_ref(RE::TESNPC* npc, FieldId field, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* ref = RE::TESForm::LookupByID(static_cast<uint32_t>(e.value));
+    if (!ref) return;
+
+    switch (field) {
+        case FieldId::RaceForm: {
+            auto* rf = static_cast<RE::TESRaceForm*>(npc);
+            rf->race = ref->As<RE::TESRace>();
+            break;
+        }
+        case FieldId::ClassForm:
+            npc->npcClass = static_cast<RE::TESClass*>(ref);
+            break;
+        case FieldId::VoiceTypeForm:
+            npc->voiceType = static_cast<RE::BGSVoiceType*>(ref);
+            break;
+        case FieldId::SkinForm: {
+            auto* sf = static_cast<RE::BGSSkinForm*>(npc);
+            sf->skin = ref->As<RE::TESObjectARMO>();
+            break;
+        }
+        case FieldId::OutfitForm:
+            npc->defaultOutfit = static_cast<RE::BGSOutfit*>(ref);
+            break;
+        default: break;
+    }
+}
+
+// ── NPC boolean flags ──────────────────────────────────────────────────
+
+static void apply_npc_flag(RE::TESNPC* npc, FieldId field, bool set) {
+    using Flag = RE::ACTOR_BASE_DATA::Flag;
+    Flag flag{};
+    switch (field) {
+        case FieldId::Essential:    flag = Flag::kEssential; break;
+        case FieldId::Protected:    flag = Flag::kProtected; break;
+        case FieldId::AutoCalcStats:flag = Flag::kAutoCalcStats; break;
+        default: return;
+    }
+    if (set)
+        npc->actorData.actorBaseFlags.set(flag);
+    else
+        npc->actorData.actorBaseFlags.reset(flag);
+}
+
+// ── Keyword operations ─────────────────────────────────────────────────
+
+static void apply_keyword(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* kw = RE::TESForm::LookupByID<RE::BGSKeyword>(static_cast<uint32_t>(e.value));
+    if (!kw) return;
+    auto* kf = get_component<RE::BGSKeywordForm>(form);
+    if (!kf) return;
+
+    if (e.op == fop(FieldOp::Add)) {
+        if (!kf->HasKeyword(kw)) kf->AddKeyword(kw);
+    } else if (e.op == fop(FieldOp::Remove)) {
+        kf->RemoveKeyword(kw);
+    }
+}
+
+// ── Spell operations ───────────────────────────────────────────────────
+
+static void apply_spell(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* npc = form->As<RE::TESNPC>();
+    auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(static_cast<uint32_t>(e.value));
+    if (!npc || !spell) return;
+
+    auto* data = npc->GetSpellList();
+    if (!data) return;
+
+    if (e.op == fop(FieldOp::Add)) {
+        for (std::uint32_t i = 0; i < data->numSpells; i++)
+            if (data->spells[i] == spell) return;
+
+        std::uint32_t newCount = data->numSpells + 1;
+        auto* fresh = static_cast<RE::SpellItem**>(RE::malloc(newCount * sizeof(RE::SpellItem*)));
+        if (!fresh) return;
+        if (data->spells && data->numSpells > 0)
+            std::memcpy(fresh, data->spells, data->numSpells * sizeof(RE::SpellItem*));
+        fresh[data->numSpells] = spell;
+        RE::free(data->spells);
+        data->spells = fresh;
+        data->numSpells = newCount;
+    } else if (e.op == fop(FieldOp::Remove)) {
+        std::uint32_t found = UINT32_MAX;
+        for (std::uint32_t i = 0; i < data->numSpells; i++)
+            if (data->spells[i] == spell) { found = i; break; }
+        if (found == UINT32_MAX) return;
+        for (std::uint32_t i = found; i + 1 < data->numSpells; i++)
+            data->spells[i] = data->spells[i + 1];
+        data->numSpells--;
+    }
+}
+
+// ── Perk operations ────────────────────────────────────────────────────
+
+static void apply_perk(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* npc = form->As<RE::TESNPC>();
+    auto* perk = RE::TESForm::LookupByID<RE::BGSPerk>(static_cast<uint32_t>(e.value));
+    if (!npc || !perk) return;
+
+    for (std::uint32_t i = 0; i < npc->perkCount; i++)
+        if (npc->perks[i].perk == perk) return;
+
+    std::uint32_t newCount = npc->perkCount + 1;
+    auto* fresh = static_cast<RE::PerkRankData*>(RE::malloc(newCount * sizeof(RE::PerkRankData)));
+    if (!fresh) return;
+    if (npc->perkCount > 0)
+        std::memcpy(fresh, &npc->perks[0], npc->perkCount * sizeof(RE::PerkRankData));
+    fresh[npc->perkCount] = {perk, 0};
+    RE::free(&npc->perks[0]);
+    npc->perks = fresh;
+    npc->perkCount = newCount;
+}
+
+// ── Faction operations ─────────────────────────────────────────────────
+
+static void apply_faction(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* npc = form->As<RE::TESNPC>();
+    auto* faction = RE::TESForm::LookupByID<RE::TESFaction>(static_cast<uint32_t>(e.value));
+    if (!npc || !faction) return;
+
+    for (auto& fr : npc->factions)
+        if (fr.faction == faction) return;
+    npc->factions.push_back({faction, 0});
+}
+
+// ── Shout operations ───────────────────────────────────────────────────
+
+static void apply_shout(RE::TESForm* form, const PatchEntry& e) {
+    if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::FormID)) return;
+    auto* npc = form->As<RE::TESNPC>();
+    auto* shout = RE::TESForm::LookupByID<RE::TESShout>(static_cast<uint32_t>(e.value));
+    if (!npc || !shout) return;
+
+    auto* data = npc->GetSpellList();
+    if (!data) return;
+
+    for (std::uint32_t i = 0; i < data->numShouts; i++)
+        if (data->shouts[i] == shout) return;
+
+    std::uint32_t newCount = data->numShouts + 1;
+    auto* fresh = static_cast<RE::TESShout**>(RE::malloc(newCount * sizeof(RE::TESShout*)));
+    if (!fresh) return;
+    if (data->shouts && data->numShouts > 0)
+        std::memcpy(fresh, data->shouts, data->numShouts * sizeof(RE::TESShout*));
+    fresh[data->numShouts] = shout;
+    RE::free(data->shouts);
+    data->shouts = fresh;
+    data->numShouts = newCount;
+}
+
+// ── Leveled list operations ────────────────────────────────────────────
+
+static void apply_leveled_list(RE::TESForm* form, const PatchEntry& e) {
+    auto* levList = get_leveled_list(form);
+    if (!levList) return;
+
+    if (e.op == fop(FieldOp::Add)) {
+        auto* entryForm = RE::TESForm::LookupByID(static_cast<uint32_t>(e.value));
+        if (!entryForm) return;
+        uint16_t level = static_cast<uint16_t>(e.value >> 32);
+        uint16_t count = static_cast<uint16_t>(e.value >> 48);
+        if (count == 0) count = 1;
+
+        std::uint8_t n = levList->numEntries;
+        for (std::uint8_t i = 0; i < n; i++)
+            if (levList->entries[i].form == entryForm && levList->entries[i].level == level) return;
+        if (n >= 255) return;
+
+        std::uint8_t newN = n + 1;
+        auto* fresh = static_cast<RE::LEVELED_OBJECT*>(RE::malloc(newN * sizeof(RE::LEVELED_OBJECT)));
+        if (!fresh) return;
+        if (n > 0)
+            std::memcpy(fresh, &levList->entries[0], n * sizeof(RE::LEVELED_OBJECT));
+
+        std::memset(&fresh[n], 0, sizeof(RE::LEVELED_OBJECT));
+        fresh[n].form = entryForm;
+        fresh[n].count = count;
+        fresh[n].level = level;
+
+        // Insertion sort by level
+        for (std::uint8_t i = 1; i < newN; i++) {
+            if (fresh[i].level < fresh[i - 1].level) {
+                RE::LEVELED_OBJECT tmp = fresh[i];
+                std::uint8_t j = i;
+                while (j > 0 && fresh[j - 1].level > tmp.level) {
+                    fresh[j] = fresh[j - 1];
+                    j--;
+                }
+                fresh[j] = tmp;
+            }
+        }
+
+        RE::free(&levList->entries[0]);
+        *reinterpret_cast<RE::LEVELED_OBJECT**>(
+            reinterpret_cast<char*>(&levList->entries)) = fresh;
+        levList->numEntries = newN;
+
+    } else if (e.op == fop(FieldOp::Remove)) {
+        uint32_t target_fid = static_cast<uint32_t>(e.value);
+        std::uint8_t write = 0;
+        for (std::uint8_t i = 0; i < levList->numEntries; i++) {
+            std::uint32_t fid = levList->entries[i].form ? levList->entries[i].form->formID : 0;
+            if (fid != target_fid) {
+                if (write != i) levList->entries[write] = levList->entries[i];
+                write++;
+            }
+        }
+        levList->numEntries = write;
+
+    } else if (e.op == fop(FieldOp::Set)) {
+        if (levList->numEntries > 0)
+            levList->entries.clear();
+        levList->numEntries = 0;
+    }
+}
+
+// ── Main dispatch ──────────────────────────────────────────────────────
+
+static void apply_patch_entry(RE::TESForm* form, const PatchEntry& e,
+                               const uint8_t* string_table) {
     FieldId field = static_cast<FieldId>(e.field_id);
 
-    // Try scalar fields from the model
-    auto* fdef = m::find_field(field);
-    if (fdef) {
-        auto& comp = m::kComponents[fdef->component_idx];
-        auto& member = comp.members[fdef->member_idx];
-        uint64_t off = m::field_offset_for(ft, field);
+    switch (field) {
+        // Shared component fields (polymorphic)
+        case FieldId::Name:       apply_name(form, e, string_table); return;
+        case FieldId::GoldValue:  apply_gold_value(form, e); return;
+        case FieldId::Weight:     apply_weight(form, e); return;
+        case FieldId::Damage:     apply_damage(form, e); return;
+        case FieldId::EnchantmentForm: apply_enchantment(form, e); return;
 
-        if (comp.kind == m::ComponentDef::Kind::String) {
-            // Name write
-            if (e.value_type != static_cast<uint8_t>(PatchValueType::StringIndex)) return;
-            uint32_t str_off = static_cast<uint32_t>(e.value);
-            uint16_t len = 0;
-            std::memcpy(&len, string_table + str_off, 2);
-            char buf[kPatchStringBufSize];
-            uint16_t copy_len = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-            std::memcpy(buf, string_table + str_off + 2, copy_len);
-            buf[copy_len] = '\0';
-            mora_rt_write_name(form, buf);
+        // Keywords (polymorphic)
+        case FieldId::Keywords:   apply_keyword(form, e); return;
+
+        // NPC collection operations
+        case FieldId::Spells:     apply_spell(form, e); return;
+        case FieldId::Perks:      apply_perk(form, e); return;
+        case FieldId::Factions:   apply_faction(form, e); return;
+        case FieldId::Shouts:     apply_shout(form, e); return;
+
+        // Leveled list operations
+        case FieldId::LeveledEntries: apply_leveled_list(form, e); return;
+        case FieldId::ChanceNone: {
+            auto* ll = get_leveled_list(form);
+            if (ll) ll->chanceNone = static_cast<std::int8_t>(e.value);
             return;
         }
 
-        if (comp.kind == m::ComponentDef::Kind::Scalar && off != 0) {
-            if (member.value_type == m::ValueType::FormRef) {
-                // Form reference field
-                if (e.value_type != static_cast<uint8_t>(PatchValueType::FormID)) return;
-                void* ref_form = mora_rt_lookup_form(static_cast<uint32_t>(e.value));
-                if (ref_form) {
-                    std::memcpy((char*)form + off, &ref_form, sizeof(void*));
-                }
-            } else if (member.value_type == m::ValueType::Float32) {
-                apply_scalar_float(form, off, e);
-            } else if (member.value_type == m::ValueType::UInt16 ||
-                       member.value_type == m::ValueType::Int16) {
-                apply_scalar<uint16_t>(form, off, e);
-            } else if (member.value_type == m::ValueType::Int32) {
-                apply_scalar<int32_t>(form, off, e);
-            } else if (member.value_type == m::ValueType::UInt32) {
-                apply_scalar<uint32_t>(form, off, e);
-            }
+        // NPC boolean flags
+        case FieldId::Essential:
+        case FieldId::Protected:
+        case FieldId::AutoCalcStats: {
+            auto* npc = form->As<RE::TESNPC>();
+            if (npc) apply_npc_flag(npc, field, e.value != 0);
             return;
         }
-        // off == 0 means this form type doesn't have the component — skip
-        if (comp.kind == m::ComponentDef::Kind::Scalar) return;
+
+        default: break;
     }
 
-    // Try form array fields from the model
-    auto* fa = m::find_form_array(field);
-    if (fa) {
-        if (e.value_type != static_cast<uint8_t>(PatchValueType::FormID)) return;
-        void* target_form = mora_rt_lookup_form(static_cast<uint32_t>(e.value));
-        if (!target_form) return;
+    // Weapon-specific fields
+    if (auto* weap = form->As<RE::TESObjectWEAP>()) {
+        apply_weapon_field(weap, field, e);
+        return;
+    }
 
-        // Dispatch to the appropriate RT function by matching function name
-        if (e.op == fop(FieldOp::Add)) {
-            if (field == FieldId::Keywords) mora_rt_add_keyword(form, target_form);
-            else if (field == FieldId::Spells) mora_rt_add_spell(form, target_form);
-            else if (field == FieldId::Perks) mora_rt_add_perk(form, target_form);
-            else if (field == FieldId::Factions) mora_rt_add_faction(form, target_form);
-            else if (field == FieldId::Shouts) mora_rt_add_shout(form, target_form);
-        } else if (e.op == fop(FieldOp::Remove)) {
-            if (field == FieldId::Keywords) mora_rt_remove_keyword(form, target_form);
-            else if (field == FieldId::Spells) mora_rt_remove_spell(form, target_form);
+    // Armor-specific fields
+    if (auto* armo = form->As<RE::TESObjectARMO>()) {
+        apply_armor_field(armo, field, e);
+        return;
+    }
+
+    // NPC-specific scalar and form-ref fields
+    if (auto* npc = form->As<RE::TESNPC>()) {
+        switch (field) {
+            case FieldId::Level:
+            case FieldId::CalcLevelMin:
+            case FieldId::CalcLevelMax:
+            case FieldId::SpeedMult:
+                apply_npc_scalar(npc, field, e);
+                return;
+            case FieldId::RaceForm:
+            case FieldId::ClassForm:
+            case FieldId::VoiceTypeForm:
+            case FieldId::SkinForm:
+            case FieldId::OutfitForm:
+                apply_npc_form_ref(npc, field, e);
+                return;
+            default: break;
         }
-        return;
-    }
-
-    // Leveled list operations (special handling)
-    if (field == FieldId::LeveledEntries) {
-        if (e.op == fop(FieldOp::Add)) {
-            uint32_t entry_fid = static_cast<uint32_t>(e.value);
-            uint16_t level_val = static_cast<uint16_t>(e.value >> 32);
-            uint16_t count_val = static_cast<uint16_t>(e.value >> 48);
-            if (count_val == 0) count_val = 1;
-            mora_rt_add_to_leveled_list(form, entry_fid, level_val, count_val);
-        } else if (e.op == fop(FieldOp::Remove)) {
-            mora_rt_remove_from_leveled_list(form, static_cast<uint32_t>(e.value));
-        } else if (e.op == fop(FieldOp::Set)) {
-            mora_rt_clear_leveled_list(form);
-        }
-        return;
-    }
-
-    if (field == FieldId::ChanceNone) {
-        mora_rt_set_chance_none(form, static_cast<int8_t>(e.value));
-        return;
     }
 }
 
-// Load patch data from a binary file.
-// Returns the number of patches loaded, or 0 on failure.
+// ── Public API ─────────────────────────────────────────────────────────
+
 uint32_t load_patches(const std::filesystem::path& patch_file) {
     std::ifstream ifs(patch_file, std::ios::binary | std::ios::ate);
     if (!ifs) return 0;
@@ -181,7 +504,6 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
     return hdr->patch_count;
 }
 
-// Apply all loaded patches. Call after load_patches() and after game data is loaded.
 void apply_all_patches() {
     if (g_patch_data.empty()) return;
 
@@ -191,13 +513,13 @@ void apply_all_patches() {
         string_table + hdr->string_table_size);
 
     uint32_t current_fid = 0;
-    void* current_form = nullptr;
+    RE::TESForm* current_form = nullptr;
 
     for (uint32_t i = 0; i < hdr->patch_count; i++) {
         const auto& e = entries[i];
         if (e.formid != current_fid) {
             current_fid = e.formid;
-            current_form = mora_rt_lookup_form(current_fid);
+            current_form = RE::TESForm::LookupByID(current_fid);
         }
         if (!current_form) continue;
         apply_patch_entry(current_form, e, string_table);
