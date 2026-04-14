@@ -195,6 +195,39 @@ UseDecl Parser::parse_use() {
         expect(TokenKind::RBracket, "expected ']' after only list");
     }
 
+    // Handle v2 :as / :refer clauses.  The lexer emits `:foo` as a single
+    // Symbol token whose string_id holds "foo", so we inspect the text to
+    // dispatch between :as and :refer.
+    while (check(TokenKind::Symbol)) {
+        Token sym = peek();
+        std::string_view text = pool_.get(sym.string_id);
+        if (text == "as") {
+            advance();
+            Token alias_tok = expect(TokenKind::Identifier,
+                "expected alias identifier after ':as'");
+            if (alias_tok.kind == TokenKind::Identifier) {
+                decl.alias = alias_tok.string_id;
+            }
+        } else if (text == "refer") {
+            advance();
+            expect(TokenKind::LBracket, "expected '[' after ':refer'");
+            while (!check(TokenKind::RBracket) && !check(TokenKind::Eof) &&
+                   !check(TokenKind::Newline)) {
+                Token name_tok = expect(TokenKind::Identifier,
+                    "expected identifier in :refer list");
+                if (name_tok.kind == TokenKind::Identifier) {
+                    decl.refer.push_back(name_tok.string_id);
+                }
+                if (!match(TokenKind::Comma)) {
+                    break;
+                }
+            }
+            expect(TokenKind::RBracket, "expected ']' after :refer list");
+        } else {
+            break;
+        }
+    }
+
     return decl;
 }
 
@@ -388,16 +421,38 @@ FactPattern Parser::parse_fact_pattern(bool negated) {
 }
 
 Effect Parser::parse_effect() {
-    Token name_tok = expect(TokenKind::Identifier, "expected effect name");
-
     Effect eff;
+
+    // Expect a verb keyword: set | add | sub | remove
+    VerbKind verb = VerbKind::Set;
+    SourceSpan start_span = peek().span;
+    switch (peek().kind) {
+        case TokenKind::KwSet:    verb = VerbKind::Set;    advance(); break;
+        case TokenKind::KwAdd:    verb = VerbKind::Add;    advance(); break;
+        case TokenKind::KwSub:    verb = VerbKind::Sub;    advance(); break;
+        case TokenKind::KwRemove: verb = VerbKind::Remove; advance(); break;
+        default:
+            diags_.error("P0007",
+                "expected verb (set/add/sub/remove) after '=>'",
+                peek().span, "");
+            break;
+    }
+    eff.verb = verb;
+
+    // Parse namespaced name: identifier '/' identifier
+    Token ns_tok = expect(TokenKind::Identifier, "expected namespace identifier");
+    expect(TokenKind::Slash, "expected '/' after effect namespace");
+    Token name_tok = expect(TokenKind::Identifier, "expected effect name after '/'");
+
+    eff.namespace_ = ns_tok.string_id;
     eff.name = name_tok.string_id;
-    eff.span = name_tok.span;
 
     expect(TokenKind::LParen, "expected '(' after effect name");
     eff.args = parse_arg_list();
+    Token rparen = peek();
     expect(TokenKind::RParen, "expected ')' in effect");
 
+    eff.span = merge_spans(start_span, rparen.span);
     return eff;
 }
 

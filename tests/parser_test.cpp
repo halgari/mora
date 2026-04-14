@@ -65,12 +65,14 @@ TEST_F(ParserTest, RuleWithEffect) {
         "vampire_bane(Weapon):\n"
         "    weapon(Weapon)\n"
         "    has_keyword(Weapon, :WeapMaterialSilver)\n"
-        "    => add_keyword(Weapon, :VampireBane)\n"
+        "    => add form/keyword(Weapon, :VampireBane)\n"
     );
     ASSERT_EQ(mod.rules.size(), 1u);
     EXPECT_EQ(mod.rules[0].body.size(), 2u);
     EXPECT_EQ(mod.rules[0].effects.size(), 1u);
-    EXPECT_EQ(pool.get(mod.rules[0].effects[0].name), "add_keyword");
+    EXPECT_EQ(mod.rules[0].effects[0].verb, mora::VerbKind::Add);
+    EXPECT_EQ(pool.get(mod.rules[0].effects[0].namespace_), "form");
+    EXPECT_EQ(pool.get(mod.rules[0].effects[0].name), "keyword");
     EXPECT_FALSE(diags.has_errors());
 }
 
@@ -93,8 +95,8 @@ TEST_F(ParserTest, RuleWithConditionalEffects) {
         "bandit_weapons(NPC):\n"
         "    npc(NPC)\n"
         "    level(NPC, Level)\n"
-        "    Level >= 20 => add_item(NPC, :SilverSword)\n"
-        "    Level < 20 => add_item(NPC, :IronSword)\n"
+        "    Level >= 20 => add form/item(NPC, :SilverSword)\n"
+        "    Level < 20 => add form/item(NPC, :IronSword)\n"
     );
     ASSERT_EQ(mod.rules.size(), 1u);
     EXPECT_EQ(mod.rules[0].body.size(), 2u);
@@ -134,7 +136,7 @@ TEST_F(ParserTest, FullFile) {
         "    weapon(Weapon)\n"
         "    has_keyword(Weapon, :WeapMaterialSilver)\n"
         "    not has_keyword(Weapon, :WeapTypeGreatsword)\n"
-        "    => add_keyword(Weapon, :VampireBane)\n"
+        "    => add form/keyword(Weapon, :VampireBane)\n"
     );
     ASSERT_TRUE(mod.ns.has_value());
     EXPECT_EQ(mod.requires_decls.size(), 1u);

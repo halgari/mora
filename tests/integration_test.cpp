@@ -44,13 +44,13 @@ TEST_F(IntegrationTest, CompleteValidFile) {
         "    weapon(Weapon)\n"
         "    has_keyword(Weapon, :WeapMaterialSilver)\n"
         "    not has_keyword(Weapon, :WeapTypeGreatsword)\n"
-        "    => add_keyword(Weapon, :VampireBane)\n"
+        "    => add form/keyword(Weapon, :VampireBane)\n"
         "\n"
         "bandit_weapons(NPC):\n"
         "    bandit(NPC)\n"
         "    level(NPC, Level)\n"
-        "    Level >= 20 => add_item(NPC, :SilverSword)\n"
-        "    Level < 20 => add_item(NPC, :IronSword)\n"
+        "    Level >= 20 => add form/item(NPC, :SilverSword)\n"
+        "    Level < 20 => add form/item(NPC, :IronSword)\n"
     ));
 }
 
@@ -78,7 +78,7 @@ TEST_F(IntegrationTest, RuleCompositionWorks) {
         "\n"
         "c(X):\n"
         "    b(X)\n"
-        "    => add_keyword(X, :TestKeyword)\n"
+        "    => add form/keyword(X, :TestKeyword)\n"
     ));
 }
 
