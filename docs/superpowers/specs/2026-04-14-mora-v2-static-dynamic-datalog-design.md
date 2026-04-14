@@ -145,14 +145,15 @@ on city_welcome(P):
 
 Verbs: `set`, `add`, `sub`, `remove`. Legal verbs per relation are determined by the relation's value type and cardinality in the constexpr table:
 
-| Value type × cardinality | Legal verbs |
-|--------------------------|-------------|
-| Float, scalar | `set` |
-| Int, scalar (countable) | `set`, `add`, `sub` |
-| Any, set-valued | `add`, `remove` |
-| Any, functional (1:1) | read-only |
+| Cardinality | Value type | Legal verbs |
+|-------------|-----------|-------------|
+| Scalar | Float | `set` |
+| Scalar | Int, String, FormID, Keyword | `set` |
+| Countable | Int | `set`, `add`, `sub` |
+| Set | any | `add`, `remove` |
+| Functional (1:1) | any | read-only |
 
-Verb/shape mismatches are compile errors pointing at the source location, derived from the constexpr shape metadata.
+Countable is distinct from plain Int scalar — it's used for relations where additive deltas make sense (e.g. `player/gold`). Plain scalars can only be `set`. The constexpr entry for each relation declares its cardinality; verb/shape mismatches are compile errors pointing at the source location.
 
 ### Body grammar
 
