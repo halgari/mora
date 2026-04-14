@@ -538,6 +538,10 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
     return g_patch_count;
 }
 
+mora::rt::DagRuntime& mora::rt::get_global_dag_runtime() {
+    return g_dag_runtime;
+}
+
 void apply_all_patches() {
     if (!g_patch_entries || g_patch_count == 0) return;
 
@@ -558,6 +562,15 @@ void apply_all_patches() {
 }
 
 #else
-// Linux stub -- patch_walker is only meaningful when cross-compiled for Windows
-namespace mora::rt { void patch_walker_stub() {} }
+// Linux stub -- patch_walker is only meaningful when cross-compiled for Windows.
+// Provide a process-local DagRuntime so Linux tests that link against mora_lib
+// can still call get_global_dag_runtime() if needed.
+#include "mora/rt/skse_hooks.h"
+namespace mora::rt {
+void patch_walker_stub() {}
+DagRuntime& get_global_dag_runtime() {
+    static DagRuntime g_dag_runtime;
+    return g_dag_runtime;
+}
+} // namespace mora::rt
 #endif

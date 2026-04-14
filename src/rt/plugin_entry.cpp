@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <windows.h>
 
+#include "mora/rt/skse_hooks.h"
+
 // Defined in patch_walker.cpp
 uint32_t load_patches(const std::filesystem::path& patch_file);
 void apply_all_patches();
@@ -46,6 +48,10 @@ void on_data_loaded() {
 
     double ms = std::chrono::duration<double, std::milli>(end - start).count();
     SKSE::log::info("[Mora] Applied {} patches in {:.2f} ms", count, ms);
+
+    // Install SKSE event sinks so gameplay events inject deltas into the DAG.
+    mora::rt::register_skse_hooks(mora::rt::get_global_dag_runtime());
+    SKSE::log::info("[Mora] SKSE event hooks registered");
 }
 
 void message_handler(SKSE::MessagingInterface::Message* msg) {
