@@ -1,6 +1,7 @@
 #include "mora/rt/dag_engine.h"
 #include "mora/rt/handler_registry.h"
 #include "mora/dag/graph.h"
+#include "mora/emit/arrangement_emit.h"
 #include <gtest/gtest.h>
 
 using namespace mora::rt;
@@ -80,4 +81,59 @@ TEST(DagEngine, MultipleBindingsTrackedIndependently) {
 
     ASSERT_EQ(retracted.size(), 1u);
     EXPECT_EQ(retracted[0].id, 101u);
+}
+
+TEST(DagEngine, StaticProbeFiltersAndPasses) {
+    // Arrangement: Loc=100 exists, Loc=200 does not.
+    auto bytes = mora::emit::build_u32_arrangement(
+        /*relation_id=*/0,
+        std::vector<std::array<uint32_t, 2>>{{{100u, 999u}}},
+        /*key_column=*/0);
+
+    DagGraph g;
+    auto src   = g.add_node({.opcode = DagOpcode::EventSource, .relation_id = 0});
+    auto probe = g.add_node({.opcode = DagOpcode::StaticProbe, .relation_id = 1});
+    auto sink  = g.add_node({.opcode = DagOpcode::OnSink,
+                             .handler_id = HandlerId::PlayerAddGold});
+    g.set_input(probe, 0, src);
+    g.set_input(sink, 0, probe);
+
+    HandlerRegistry reg;
+    int calls = 0;
+    reg.bind_effect(HandlerId::PlayerAddGold,
+        [&](const EffectArgs&){ ++calls; return EffectHandle{1}; });
+
+    DagEngine engine(g, reg);
+    engine.register_arrangement(probe, bytes.data(), bytes.size(), /*key_col_in_delta=*/1);
+
+    // Delta (Player=14, Loc=100) matches; (Player=14, Loc=200) does not.
+    engine.inject_delta(src, Delta{.tuple = {14u, 100u}, .diff = +1});
+    engine.run_to_quiescence();
+    EXPECT_EQ(calls, 1);
+
+    engine.inject_delta(src, Delta{.tuple = {14u, 200u}, .diff = +1});
+    engine.run_to_quiescence();
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(DagEngine, StaticProbeWithoutArrangementIsNoOp) {
+    DagGraph g;
+    auto src   = g.add_node({.opcode = DagOpcode::EventSource, .relation_id = 0});
+    auto probe = g.add_node({.opcode = DagOpcode::StaticProbe, .relation_id = 1});
+    auto sink  = g.add_node({.opcode = DagOpcode::OnSink,
+                             .handler_id = HandlerId::PlayerAddGold});
+    g.set_input(probe, 0, src);
+    g.set_input(sink, 0, probe);
+
+    HandlerRegistry reg;
+    int calls = 0;
+    reg.bind_effect(HandlerId::PlayerAddGold,
+        [&](const EffectArgs&){ ++calls; return EffectHandle{1}; });
+
+    DagEngine engine(g, reg);
+    // No register_arrangement call.
+    engine.inject_delta(src, Delta{.tuple = {14u, 100u}, .diff = +1});
+    engine.run_to_quiescence();
+    // Probe without arrangement drops deltas — effect should not fire.
+    EXPECT_EQ(calls, 0);
 }
