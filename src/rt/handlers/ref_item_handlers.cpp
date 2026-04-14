@@ -1,6 +1,7 @@
 #ifdef _WIN32
 #include "mora/rt/handler_impls.h"
 
+#include <RE/F/FormTraits.h>
 #include <RE/T/TESForm.h>
 #include <RE/T/TESObjectREFR.h>
 #include <RE/E/ExtraDataList.h>

@@ -35,24 +35,24 @@ void on_data_loaded() {
     auto patch_file = dll_dir / "mora_patches.bin";
     SKSE::log::info("[Mora] Looking for patches at: {}", patch_file.string());
 
+    // load_patches opens the mapped file and initializes the DAG runtime
+    // regardless of whether any static patches are present. A pure on/maintain
+    // rule file has count == 0 but still needs the DAG engine + hooks.
     uint32_t count = load_patches(patch_file);
-    if (count == 0) {
-        SKSE::log::info("[Mora] No patches loaded from {}", patch_file.string());
-        return;
+    SKSE::log::info("[Mora] Loaded {} static patches", count);
+
+    if (count > 0) {
+        auto start = std::chrono::steady_clock::now();
+        apply_all_patches();
+        auto end = std::chrono::steady_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+        SKSE::log::info("[Mora] Applied {} patches in {:.2f} ms", count, ms);
     }
-
-    SKSE::log::info("[Mora] Loaded {} patches", count);
-
-    auto start = std::chrono::steady_clock::now();
-    apply_all_patches();
-    auto end = std::chrono::steady_clock::now();
-
-    double ms = std::chrono::duration<double, std::milli>(end - start).count();
-    SKSE::log::info("[Mora] Applied {} patches in {:.2f} ms", count, ms);
 
     // Install SKSE event sinks so gameplay events inject deltas into the DAG.
     // Only hooks whose name appears in the loaded DAG are installed.
     auto& dr = mora::rt::get_global_dag_runtime();
+    SKSE::log::info("[Mora] DAG loaded: {} nodes", dr.dag().node_count());
     auto needed_hooks = mora::rt::needed_hook_names(dr.dag());
     mora::rt::register_skse_hooks(dr, needed_hooks);
     SKSE::log::info("[Mora] SKSE event hooks registered ({} needed)", needed_hooks.size());

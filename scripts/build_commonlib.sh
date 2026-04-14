@@ -27,6 +27,7 @@ MSVC_FLAGS=(
     /DENABLE_SKYRIM_AE=1
     /I"$COMMONLIB_DIR/include"
     /I"$PROJECT_DIR/extern/spdlog-shim"
+    /I"$PROJECT_DIR/extern/simplemath-shim"
     /FI"SKSE/Impl/PCH.h"
     /w  # suppress warnings for CommonLib code
 )
@@ -37,30 +38,64 @@ mkdir -p "$BUILD_DIR"
 SOURCES=($(find "$COMMONLIB_DIR/src" -name "*.cpp" | sort))
 echo "Building CommonLibSSE-NG (${#SOURCES[@]} source files)..."
 
-# Compile in parallel batches
-OBJ_FILES=()
-FAILED=0
+# Parallel compile via xargs. JOBS defaults to nproc but capped at 16 —
+# wine-msvc has some per-process fixed overhead and throughput plateaus
+# above ~16 workers on most boxes.
+JOBS="${JOBS:-$(( $(nproc) < 16 ? $(nproc) : 16 ))}"
+echo "  using $JOBS parallel workers"
+
+# Emit a tab-separated (src, obj) list so xargs can pass both to a worker.
+JOBLIST=$(mktemp)
 for src in "${SOURCES[@]}"; do
-    base=$(basename "$src" .cpp)
-    # Prefix with relative path to avoid name collisions
     relpath="${src#$COMMONLIB_DIR/src/}"
     objname=$(echo "$relpath" | tr '/' '_' | sed 's/\.cpp$//')
     obj="$BUILD_DIR/$objname.obj"
-
+    # Skip already-current objs
     if [ -f "$obj" ] && [ "$obj" -nt "$src" ]; then
-        OBJ_FILES+=("$obj")
         continue
     fi
-
-    "$MSVC/cl" "${MSVC_FLAGS[@]}" /c "/Fo$obj" "$src" >/dev/null 2>&1 && {
-        OBJ_FILES+=("$obj")
-    } || {
-        echo "  SKIP $relpath (compile error)"
-        FAILED=$((FAILED + 1))
-    }
+    printf '%s\t%s\n' "$src" "$obj" >> "$JOBLIST"
 done
 
+TO_BUILD=$(wc -l < "$JOBLIST")
+echo "  ($TO_BUILD files need compiling; the rest are cached)"
+
+if [ "$TO_BUILD" -gt 0 ]; then
+    # Export env the worker needs.
+    export MSVC
+    MSVC_FLAGS_STR=$(printf '%q ' "${MSVC_FLAGS[@]}")
+    export MSVC_FLAGS_STR
+    export BUILD_LOG="$BUILD_DIR/compile.log"
+    : > "$BUILD_LOG"
+
+    # Worker reads "src<TAB>obj", runs cl, logs errors on failure.
+    awk -F'\t' '{print $1 "\t" $2}' "$JOBLIST" | \
+        xargs -n1 -P"$JOBS" -I{} bash -c '
+            line="{}"
+            src="${line%%$'"'"'\t'"'"'*}"
+            obj="${line##*$'"'"'\t'"'"'}"
+            rel="${src#'"$COMMONLIB_DIR"'/src/}"
+            if eval "\"$MSVC/cl\" $MSVC_FLAGS_STR /c /Fo\"$obj\" \"$src\"" >/dev/null 2>>"$BUILD_LOG"; then
+                :
+            else
+                echo "  SKIP $rel" >&2
+            fi
+        '
+fi
+
+# Re-walk the source list to assemble the final .obj list from whatever
+# survived (either cached or just-built).
+OBJ_FILES=()
+for src in "${SOURCES[@]}"; do
+    relpath="${src#$COMMONLIB_DIR/src/}"
+    objname=$(echo "$relpath" | tr '/' '_' | sed 's/\.cpp$//')
+    obj="$BUILD_DIR/$objname.obj"
+    [ -f "$obj" ] && OBJ_FILES+=("$obj")
+done
+FAILED=$((${#SOURCES[@]} - ${#OBJ_FILES[@]}))
+
 echo "Compiled ${#OBJ_FILES[@]}/${#SOURCES[@]} files ($FAILED skipped)"
+rm -f "$JOBLIST"
 
 # Archive
 echo "Creating CommonLibSSE.lib..."

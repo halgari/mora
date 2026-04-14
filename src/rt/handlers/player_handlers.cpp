@@ -4,6 +4,7 @@
 #include <RE/P/PlayerCharacter.h>
 #include <RE/T/TESForm.h>
 #include <RE/T/TESBoundObject.h>
+#include <RE/F/FormTraits.h>
 
 #include <cstdint>
 #include <unordered_set>

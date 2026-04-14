@@ -24,7 +24,10 @@ echo "  LINK MoraRuntime.dll"
     /def:"$SCRIPT_DIR/MoraRuntime.def" \
     /wholearchive:"$RT_LIB" \
     "$COMMONLIB" \
-    msvcrt.lib ucrt.lib vcruntime.lib kernel32.lib user32.lib advapi32.lib ole32.lib shell32.lib
+    msvcrt.lib ucrt.lib vcruntime.lib kernel32.lib user32.lib advapi32.lib \
+    ole32.lib shell32.lib \
+    dxgi.lib version.lib d3dcompiler.lib dbghelp.lib \
+    d3d11.lib bcrypt.lib
 
 echo ""
 echo "Done: $OUTPUT ($(du -h "$OUTPUT" | awk '{print $1}'))"

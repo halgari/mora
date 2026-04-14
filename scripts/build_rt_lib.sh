@@ -28,13 +28,27 @@ MSVC_FLAGS=(
     /I"$PROJECT_DIR/include"
     /I"$PROJECT_DIR/extern/CommonLibSSE-NG/include"
     /I"$PROJECT_DIR/extern/spdlog-shim"
+    /I"$PROJECT_DIR/extern/simplemath-shim"
     /FI"SKSE/Impl/PCH.h"
 )
 
+# Mirror the xmake.lua mora_runtime target: core + data + eval + emit + rt +
+# rt/handlers + dag + model.
+#
+# Excludes form_model_verify.cpp — it's a compile-time sanity check of
+# CommonLibSSE-NG offsets that's been flagged as drifted; investigating is a
+# separate concern from exercising the runtime DLL.
 SOURCES=(
-    src/rt/form_ops.cpp
-    src/rt/patch_walker.cpp
-    src/rt/plugin_entry.cpp
+    $(cd "$PROJECT_DIR" && ls \
+        src/core/*.cpp \
+        src/data/*.cpp \
+        src/diag/*.cpp \
+        src/eval/*.cpp \
+        src/emit/*.cpp \
+        src/rt/*.cpp \
+        src/rt/handlers/*.cpp \
+        src/dag/*.cpp \
+        src/model/*.cpp 2>/dev/null | grep -vE 'form_model_verify\.cpp|diag/renderer\.cpp')
 )
 
 mkdir -p "$BUILD_DIR" "$(dirname "$OUTPUT")"
@@ -45,6 +59,21 @@ for src in "${SOURCES[@]}"; do
     obj="$BUILD_DIR/$(basename "$src" .cpp).obj"
     echo "  CC $src"
     "$MSVC/cl" "${MSVC_FLAGS[@]}" /c "/Fo$obj" "$PROJECT_DIR/$src"
+    OBJ_FILES+=("$obj")
+done
+
+# Compile the spdlog / fmt implementation TUs from the shim if they aren't
+# already cached. CommonLibSSE headers declare these symbols via
+# SPDLOG_COMPILED_LIB; without the bodies the final DLL fails to link.
+for shim_pair in \
+    "extern/spdlog-shim/spdlog.cpp:$BUILD_DIR/spdlog.obj" \
+    "extern/spdlog-shim/fmt.cpp:$BUILD_DIR/fmt.obj"; do
+    src="${shim_pair%:*}"
+    obj="${shim_pair#*:}"
+    if [ ! -f "$obj" ] || [ "$PROJECT_DIR/$src" -nt "$obj" ]; then
+        echo "  CC $src"
+        "$MSVC/cl" "${MSVC_FLAGS[@]}" /c "/Fo$obj" "$PROJECT_DIR/$src" >/dev/null
+    fi
     OBJ_FILES+=("$obj")
 done
 

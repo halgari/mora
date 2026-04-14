@@ -71,19 +71,20 @@ fi
 # Wait for patches to be applied (typically ~20s for DataLoaded)
 for i in $(seq 1 45); do
     sleep 2
-    if [ -f "$MORA_LOG" ] && grep -q "Applied\|No patches" "$MORA_LOG" 2>/dev/null; then
+    if [ -f "$MORA_LOG" ] && grep -q "SKSE event hooks registered\|No patches" "$MORA_LOG" 2>/dev/null; then
         echo ""
         echo "════════════════════════════════════════"
         cat "$MORA_LOG"
         echo "════════════════════════════════════════"
         echo ""
         "$PROTON/bin/wineserver" -k 2>/dev/null
-        # Check for success
-        if grep -q "Applied.*patches" "$MORA_LOG"; then
+        # Check for success: either static patches applied, or DAG loaded for
+        # dynamic rules (pure on/maintain files have no static patches).
+        if grep -qE "Applied.*patches|DAG loaded: [1-9]" "$MORA_LOG"; then
             echo "PASS"
             exit 0
         else
-            echo "FAIL — patches not applied"
+            echo "FAIL — nothing loaded"
             exit 1
         fi
     fi
