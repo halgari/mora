@@ -265,7 +265,7 @@ std::vector<Rule> SpidParser::parse_line(const std::string& line,
 
     // Effect
     Effect effect;
-    effect.action = pool_.intern(action);
+    effect.name = pool_.intern(action);
     effect.args.push_back(make_var("NPC"));
     effect.args.push_back(make_sym(target_sym));
     effect.span = span;

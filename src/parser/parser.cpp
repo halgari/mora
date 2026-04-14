@@ -184,7 +184,7 @@ UseDecl Parser::parse_use() {
         while (!check(TokenKind::RBracket) && !check(TokenKind::Eof) && !check(TokenKind::Newline)) {
             Token name_tok = expect(TokenKind::Identifier, "expected identifier in only list");
             if (name_tok.kind == TokenKind::Identifier) {
-                decl.only.push_back(name_tok.string_id);
+                decl.refer.push_back(name_tok.string_id);
             }
             if (!match(TokenKind::Comma)) {
                 break;
@@ -356,7 +356,7 @@ Effect Parser::parse_effect() {
     Token name_tok = expect(TokenKind::Identifier, "expected effect name");
 
     Effect eff;
-    eff.action = name_tok.string_id;
+    eff.name = name_tok.string_id;
     eff.span = name_tok.span;
 
     expect(TokenKind::LParen, "expected '(' after effect name");

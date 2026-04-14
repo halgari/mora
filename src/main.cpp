@@ -206,10 +206,10 @@ static std::unordered_set<uint32_t> collect_used_relations(
             }
             // Effects (actions map to relations too)
             for (auto& eff : rule.effects) {
-                used.insert(eff.action.index);
+                used.insert(eff.name.index);
             }
             for (auto& ce : rule.conditional_effects) {
-                used.insert(ce.effect.action.index);
+                used.insert(ce.effect.name.index);
             }
         }
     }

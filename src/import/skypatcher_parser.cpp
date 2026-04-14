@@ -507,7 +507,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
     case OpKind::SetInt: {
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(intlit(std::stoi(value)));
         rule.effects.push_back(std::move(eff));
@@ -516,7 +516,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
     case OpKind::SetFloat: {
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(floatlit(std::stof(value)));
         rule.effects.push_back(std::move(eff));
@@ -526,7 +526,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         // Additive: treated as set (adding to base requires knowing base at compile time)
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(intlit(std::stoi(value)));
         rule.effects.push_back(std::move(eff));
@@ -538,7 +538,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         if (set_action.empty()) break;
         // Convert "set_damage" → "mul_damage"
         std::string action = "mul_" + set_action.substr(4); // strip "set_"
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(floatlit(std::stof(value)));
         rule.effects.push_back(std::move(eff));
@@ -546,7 +546,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
     }
     case OpKind::SetName: {
         std::string name = strip_tildes(value);
-        Effect eff; eff.action = pool_.intern(action::kSetName); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action::kSetName); eff.span = span;
         eff.args.push_back(var(v));
         Expr str_expr; str_expr.data = StringLiteral{pool_.intern(name), {}};
         eff.args.push_back(std::move(str_expr));
@@ -559,7 +559,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         auto items = split_commas(value);
         for (auto& item : items) {
             auto ref = parse_formref(item);
-            Effect eff; eff.action = pool_.intern(action); eff.span = span;
+            Effect eff; eff.name = pool_.intern(action); eff.span = span;
             eff.args.push_back(var(v));
             eff.args.push_back(sym(resolve_sym(ref)));
             rule.effects.push_back(std::move(eff));
@@ -572,7 +572,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         auto items = split_commas(value);
         for (auto& item : items) {
             auto ref = parse_formref(item);
-            Effect eff; eff.action = pool_.intern(action); eff.span = span;
+            Effect eff; eff.name = pool_.intern(action); eff.span = span;
             eff.args.push_back(var(v));
             eff.args.push_back(sym(resolve_sym(ref)));
             rule.effects.push_back(std::move(eff));
@@ -583,7 +583,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
         auto ref = parse_formref(value);
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(sym(resolve_sym(ref)));
         rule.effects.push_back(std::move(eff));
@@ -593,14 +593,14 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
         std::string action = sky_field_to_action(field, kind);
         if (action.empty()) break;
         bool val = (value == "true" || value == "1" || value == "yes");
-        Effect eff; eff.action = pool_.intern(action); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action); eff.span = span;
         eff.args.push_back(var(v));
         eff.args.push_back(intlit(val ? 1 : 0));
         rule.effects.push_back(std::move(eff));
         break;
     }
     case OpKind::ClearFlag: {
-        Effect eff; eff.action = pool_.intern(action::kClearAll); eff.span = span;
+        Effect eff; eff.name = pool_.intern(action::kClearAll); eff.span = span;
         eff.args.push_back(var(v));
         rule.effects.push_back(std::move(eff));
         break;
@@ -624,7 +624,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
             }
             auto ref = parse_formref(form_str);
             Effect eff;
-            eff.action = pool_.intern(action::kAddToLeveledList);
+            eff.name = pool_.intern(action::kAddToLeveledList);
             eff.span = span;
             eff.args.push_back(var(v));
             eff.args.push_back(sym(resolve_sym(ref)));
@@ -642,7 +642,7 @@ void SkyPatcherParser::emit_operation(Rule& rule, OpKind kind, SkyField field,
             std::string form_str = (tilde != std::string::npos) ? part.substr(0, tilde) : part;
             auto ref = parse_formref(form_str);
             Effect eff;
-            eff.action = pool_.intern(action::kRemoveFromLeveledList);
+            eff.name = pool_.intern(action::kRemoveFromLeveledList);
             eff.span = span;
             eff.args.push_back(var(v));
             eff.args.push_back(sym(resolve_sym(ref)));

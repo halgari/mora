@@ -55,7 +55,7 @@ std::string MoraPrinter::print_fact_pattern(const FactPattern& fp) const {
 
 std::string MoraPrinter::print_effect(const Effect& eff) const {
     std::ostringstream oss;
-    oss << "=> " << pool_.get(eff.action) << "(";
+    oss << "=> " << pool_.get(eff.name) << "(";
     for (size_t i = 0; i < eff.args.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << print_expr(eff.args[i]);

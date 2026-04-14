@@ -62,7 +62,7 @@ static Clause make_in_clause(Expr variable, Expr list_var) {
 static Effect make_effect2(StringPool& pool, const char* action,
                            Expr a0, Expr a1) {
     Effect eff;
-    eff.action = pool.intern(action);
+    eff.name = pool.intern(action);
     eff.args.push_back(std::move(a0));
     eff.args.push_back(std::move(a1));
     return eff;

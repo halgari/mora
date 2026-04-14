@@ -152,13 +152,13 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
 // ---------------------------------------------------------------------------
 
 void TypeChecker::check_effect(const Effect& effect) {
-    const FactSignature* sig = resolver_.lookup_fact(effect.action);
+    const FactSignature* sig = resolver_.lookup_fact(effect.name);
     if (!sig) return;
 
     if (effect.args.size() != sig->param_types.size()) {
         diags_.error("E020",
                      std::string("arity mismatch for '") +
-                         std::string(pool_.get(effect.action)) +
+                         std::string(pool_.get(effect.name)) +
                          "': expected " +
                          std::to_string(sig->param_types.size()) +
                          " arguments, got " +
@@ -180,7 +180,7 @@ void TypeChecker::check_effect(const Effect& effect) {
                 !expected.is_subtype_of(existing)) {
                 diags_.error("E030",
                              std::string("type mismatch in effect '") +
-                                 std::string(pool_.get(effect.action)) +
+                                 std::string(pool_.get(effect.name)) +
                                  "': variable '" +
                                  std::string(pool_.get(var->name)) +
                                  "' is " + existing.to_string() +
@@ -196,7 +196,7 @@ void TypeChecker::check_effect(const Effect& effect) {
                 !actual.is_subtype_of(expected)) {
                 diags_.error("E031",
                              std::string("type mismatch in effect '") +
-                                 std::string(pool_.get(effect.action)) +
+                                 std::string(pool_.get(effect.name)) +
                                  "': expected " + expected.to_string() +
                                  " but got " + actual.to_string(),
                              arg.span, source_line(arg.span));
@@ -213,7 +213,7 @@ void TypeChecker::check_effect(const Effect& effect) {
     }
     if (!first_type.is_formid() || first_type.kind == TypeKind::FormID) return;
 
-    auto action_name = pool_.get(effect.action);
+    auto action_name = pool_.get(effect.name);
     namespace m = model;
 
     // Check scalar fields

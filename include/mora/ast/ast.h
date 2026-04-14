@@ -13,9 +13,13 @@ namespace mora {
 // Forward declarations
 struct Expr;
 
+enum class RuleKind : uint8_t { Static, Maintain, On };
+enum class VerbKind : uint8_t { Set, Add, Sub, Remove };
+
 // ── Expressions ──
 struct VariableExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
 struct SymbolExpr   { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
+struct EditorIdExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
 struct IntLiteral   { int64_t value; SourceSpan span; };
 struct FloatLiteral { double value;  SourceSpan span; };
 struct StringLiteral{ StringId value; SourceSpan span; };
@@ -30,7 +34,7 @@ struct BinaryExpr {
 };
 
 struct Expr {
-    std::variant<VariableExpr, SymbolExpr, IntLiteral, FloatLiteral,
+    std::variant<VariableExpr, SymbolExpr, EditorIdExpr, IntLiteral, FloatLiteral,
                  StringLiteral, DiscardExpr, BinaryExpr> data;
     SourceSpan span;
 };
@@ -63,7 +67,9 @@ struct InClause {
 };
 
 struct Effect {
-    StringId action;
+    VerbKind  verb = VerbKind::Set;
+    StringId  namespace_;   // e.g. "form"
+    StringId  name;         // e.g. "keyword"
     std::vector<Expr> args;
     SourceSpan span;
 };
@@ -81,6 +87,7 @@ struct Clause {
 
 // ── Top-level declarations ──
 struct Rule {
+    RuleKind kind = RuleKind::Static;
     StringId name;
     std::vector<Expr> head_args;
     std::vector<Clause> body;
@@ -91,7 +98,12 @@ struct Rule {
 
 struct NamespaceDecl  { StringId name; SourceSpan span; };
 struct RequiresDecl   { StringId mod_name; SourceSpan span; };
-struct UseDecl        { StringId namespace_path; std::vector<StringId> only; SourceSpan span; };
+struct UseDecl        {
+    StringId namespace_path;
+    StringId alias;                     // 0 if no :as
+    std::vector<StringId> refer;        // names from :refer [...] (empty if none)
+    SourceSpan span;
+};
 struct ImportIniDecl  { enum class Kind { Spid, Kid }; Kind kind; StringId path; SourceSpan span; };
 struct FactDecl       { StringId name; std::vector<MoraType> param_types; SourceSpan span; };
 

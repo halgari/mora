@@ -169,7 +169,7 @@ std::vector<Rule> KidParser::parse_line(const std::string& line,
 
     // Effect: => add_keyword(Item, :KeywordName)
     Effect effect;
-    effect.action = pool_.intern("add_keyword");
+    effect.name = pool_.intern("add_keyword");
     effect.args.push_back(make_var("Item"));
     effect.args.push_back(make_sym(keyword_name));
     effect.span = span;

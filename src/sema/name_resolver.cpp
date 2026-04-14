@@ -242,10 +242,10 @@ void NameResolver::resolve_rule(Rule& rule) {
     }
     // Also check any top-level effects listed separately on the rule.
     for (const Effect& eff : rule.effects) {
-        check_action_name(eff.action, eff.span, *this, diags_, pool_, source_line(eff.span));
+        check_action_name(eff.name, eff.span, *this, diags_, pool_, source_line(eff.span));
     }
     for (const ConditionalEffect& ce : rule.conditional_effects) {
-        check_action_name(ce.effect.action, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
+        check_action_name(ce.effect.name, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
     }
 }
 
@@ -255,9 +255,9 @@ void NameResolver::resolve_clause(Clause& clause) {
         if constexpr (std::is_same_v<NodeT, FactPattern>) {
             check_fact_exists(node);
         } else if constexpr (std::is_same_v<NodeT, Effect>) {
-            check_action_name(node.action, node.span, *this, diags_, pool_, source_line(node.span));
+            check_action_name(node.name, node.span, *this, diags_, pool_, source_line(node.span));
         } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
-            check_action_name(node.effect.action, node.effect.span,
+            check_action_name(node.effect.name, node.effect.span,
                               *this, diags_, pool_, source_line(node.effect.span));
         } else if constexpr (std::is_same_v<NodeT, OrClause>) {
             for (auto& branch : node.branches) {

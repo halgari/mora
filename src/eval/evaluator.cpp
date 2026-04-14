@@ -403,7 +403,7 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
                                PatchSet& patches, uint32_t priority) {
     // Unconditional effects
     for (const Effect& effect : rule.effects) {
-        auto [field, op] = action_to_field(effect.action);
+        auto [field, op] = action_to_field(effect.name);
         if (effect.args.size() < 2) continue;
 
         Value target = resolve_expr(effect.args[0], bindings);
@@ -434,7 +434,7 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
     // Conditional effects
     for (const ConditionalEffect& ce : rule.conditional_effects) {
         if (evaluate_guard(*ce.guard, bindings)) {
-            auto [field, op] = action_to_field(ce.effect.action);
+            auto [field, op] = action_to_field(ce.effect.name);
             if (ce.effect.args.size() < 2) continue;
 
             Value target = resolve_expr(ce.effect.args[0], bindings);

@@ -230,7 +230,7 @@ TEST_F(EvaluatorTest, ElementInListVar) {
     // Effect: add_keyword(NPC, :Result)
     {
         mora::Effect eff;
-        eff.action = pool.intern("add_keyword");
+        eff.name = pool.intern("add_keyword");
         eff.args.push_back(var_expr(v_npc));
         // :Result as a symbol expr — evaluator resolves it via set_symbol_formid
         eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}, {}}, {}});

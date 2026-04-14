@@ -29,7 +29,7 @@ TEST_F(MoraPrinterTest, SimpleRule) {
 
     // Effect: => add_keyword(NPC, :Tag)
     mora::Effect eff;
-    eff.action = pool.intern("add_keyword");
+    eff.name = pool.intern("add_keyword");
     mora::Expr e1, e2;
     e1.data = mora::VariableExpr{pool.intern("NPC"), {}, {}};
     e2.data = mora::SymbolExpr{pool.intern("Tag"), {}, {}};

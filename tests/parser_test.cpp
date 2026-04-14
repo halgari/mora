@@ -36,15 +36,15 @@ TEST_F(ParserTest, UseDecl) {
     auto mod = parse("use skyrim.record\n");
     ASSERT_EQ(mod.use_decls.size(), 1u);
     EXPECT_EQ(pool.get(mod.use_decls[0].namespace_path), "skyrim.record");
-    EXPECT_TRUE(mod.use_decls[0].only.empty());
+    EXPECT_TRUE(mod.use_decls[0].refer.empty());
 }
 
 TEST_F(ParserTest, UseDeclWithOnly) {
     auto mod = parse("use requiem.combat only [is_lethal, damage_mult]\n");
     ASSERT_EQ(mod.use_decls.size(), 1u);
-    ASSERT_EQ(mod.use_decls[0].only.size(), 2u);
-    EXPECT_EQ(pool.get(mod.use_decls[0].only[0]), "is_lethal");
-    EXPECT_EQ(pool.get(mod.use_decls[0].only[1]), "damage_mult");
+    ASSERT_EQ(mod.use_decls[0].refer.size(), 2u);
+    EXPECT_EQ(pool.get(mod.use_decls[0].refer[0]), "is_lethal");
+    EXPECT_EQ(pool.get(mod.use_decls[0].refer[1]), "damage_mult");
 }
 
 TEST_F(ParserTest, SimpleRule) {
@@ -70,7 +70,7 @@ TEST_F(ParserTest, RuleWithEffect) {
     ASSERT_EQ(mod.rules.size(), 1u);
     EXPECT_EQ(mod.rules[0].body.size(), 2u);
     EXPECT_EQ(mod.rules[0].effects.size(), 1u);
-    EXPECT_EQ(pool.get(mod.rules[0].effects[0].action), "add_keyword");
+    EXPECT_EQ(pool.get(mod.rules[0].effects[0].name), "add_keyword");
     EXPECT_FALSE(diags.has_errors());
 }
 
