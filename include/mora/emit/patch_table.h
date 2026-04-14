@@ -43,4 +43,10 @@ std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entrie
 std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries,
                                             const std::array<uint8_t, 32>& esp_digest);
 
+// Fourth overload: accept pre-built arrangements section bytes and an optional digest.
+std::vector<uint8_t> serialize_patch_table(
+    const std::vector<PatchEntry>& entries,
+    const std::array<uint8_t, 32>& esp_digest,
+    const std::vector<uint8_t>& arrangements_section);
+
 } // namespace mora

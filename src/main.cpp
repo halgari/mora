@@ -14,6 +14,8 @@
 #include "mora/eval/evaluator.h"
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
+#include "mora/emit/arrangement_emit.h"
+#include "mora/model/relations.h"
 #include "mora/core/digest.h"
 #include <algorithm>
 #include "mora/esp/load_order.h"
@@ -672,11 +674,70 @@ static void evaluate_mora_rules(
     patch_buf.sort_and_dedup();
 }
 
+// Build arrangements section from FactDB for Static Set-valued relations.
+// Plan 2: hard-coded mapping for form/keyword and form/faction.
+static std::vector<uint8_t> build_static_arrangements_section(
+    const mora::FactDB& facts, mora::StringPool& pool) {
+
+    struct Mapping {
+        std::string_view ns;
+        std::string_view name;
+        std::string_view factdb_key;
+    };
+    constexpr Mapping kMappings[] = {
+        {"form", "keyword", "has_keyword"},
+        {"form", "faction", "has_faction"},
+    };
+
+    std::vector<std::vector<uint8_t>> arrangements;
+    for (size_t i = 0; i < mora::model::kRelationCount; ++i) {
+        const auto& r = mora::model::kRelations[i];
+        if (r.source != mora::model::RelationSourceKind::Static) continue;
+        if (r.cardinality != mora::model::Cardinality::Set) continue;
+
+        std::string_view fdb_key;
+        for (const auto& m : kMappings) {
+            if (r.namespace_ == m.ns && r.name == m.name) {
+                fdb_key = m.factdb_key;
+                break;
+            }
+        }
+        if (fdb_key.empty()) continue;
+
+        auto rel_id = pool.intern(std::string{fdb_key});
+        const auto& tuples = facts.get_relation(rel_id);
+        if (tuples.empty()) continue;
+
+        std::vector<std::array<uint32_t, 2>> rows;
+        rows.reserve(tuples.size());
+        for (const auto& t : tuples) {
+            if (t.size() < 2) continue;
+            uint32_t c0 = 0;
+            uint32_t c1 = 0;
+            if (t[0].kind() == mora::Value::Kind::FormID) c0 = t[0].as_formid();
+            else if (t[0].kind() == mora::Value::Kind::Int) c0 = static_cast<uint32_t>(t[0].as_int());
+            if (t[1].kind() == mora::Value::Kind::FormID) c1 = t[1].as_formid();
+            else if (t[1].kind() == mora::Value::Kind::Int) c1 = static_cast<uint32_t>(t[1].as_int());
+            rows.push_back({c0, c1});
+        }
+        if (rows.empty()) continue;
+
+        arrangements.push_back(mora::emit::build_u32_arrangement(
+            static_cast<uint32_t>(i), rows, /*key_col*/ 0));
+        arrangements.push_back(mora::emit::build_u32_arrangement(
+            static_cast<uint32_t>(i), rows, /*key_col*/ 1));
+    }
+
+    if (arrangements.empty()) return {};
+    return mora::emit::build_arrangements_section(arrangements);
+}
+
 // Write serialized patch table to a binary file
 static int write_patch_file(
     mora::PatchBuffer& patch_buf, const std::string& target_path,
     const std::string& output_dir, mora::Output& out,
-    const mora::PluginSet& loaded_plugins)
+    const mora::PluginSet& loaded_plugins,
+    const mora::FactDB& facts, mora::StringPool& pool)
 {
     fs::path out_path(output_dir);
     if (out_path.is_relative()) {
@@ -698,8 +759,11 @@ static int write_patch_file(
     }
     auto digest = mora::compute_digest(manifest);
 
+    auto arrangements_section = build_static_arrangements_section(facts, pool);
+
     out.phase_start("Serializing patches");
-    auto patch_data = mora::serialize_patch_table(patch_buf.entries(), digest);
+    auto patch_data = mora::serialize_patch_table(
+        patch_buf.entries(), digest, arrangements_section);
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
@@ -880,7 +944,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins);
+    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins, db, cr.pool);
     if (write_rc != 0) return write_rc;
 
     // Summary
