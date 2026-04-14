@@ -48,6 +48,6 @@ nav:
   - How Mora Works: how-mora-works.md
   - Language Guide: language-guide.md
   - Language Reference: language-reference.md
+  - Relation Reference: relations.md
   - CLI Reference: cli-reference.md
-  - Importing: importing.md
   - Examples: examples.md
