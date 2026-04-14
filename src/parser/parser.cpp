@@ -497,15 +497,40 @@ Expr Parser::parse_comparison() {
 }
 
 Expr Parser::parse_additive() {
-    Expr left = parse_primary();
+    Expr left = parse_multiplicative();
 
-    while (check(TokenKind::Plus) || check(TokenKind::Minus) ||
-           check(TokenKind::Star) || check(TokenKind::Slash)) {
+    while (check(TokenKind::Plus) || check(TokenKind::Minus)) {
         Token op_tok = advance();
         BinaryExpr::Op op;
         switch (op_tok.kind) {
             case TokenKind::Plus:  op = BinaryExpr::Op::Add; break;
             case TokenKind::Minus: op = BinaryExpr::Op::Sub; break;
+            default: __builtin_unreachable();
+        }
+        Expr right = parse_multiplicative();
+
+        BinaryExpr bin;
+        bin.op = op;
+        bin.span = merge_spans(left.span, right.span);
+        bin.left = std::make_unique<Expr>(std::move(left));
+        bin.right = std::make_unique<Expr>(std::move(right));
+
+        Expr result;
+        result.span = bin.span;
+        result.data = std::move(bin);
+        left = std::move(result);
+    }
+
+    return left;
+}
+
+Expr Parser::parse_multiplicative() {
+    Expr left = parse_primary();
+
+    while (check(TokenKind::Star) || check(TokenKind::Slash)) {
+        Token op_tok = advance();
+        BinaryExpr::Op op;
+        switch (op_tok.kind) {
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
             case TokenKind::Slash: op = BinaryExpr::Op::Div; break;
             default: __builtin_unreachable();

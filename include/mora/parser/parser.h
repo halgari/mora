@@ -32,6 +32,7 @@ private:
     Expr parse_expr();
     Expr parse_comparison();
     Expr parse_additive();
+    Expr parse_multiplicative();
     Expr parse_primary();
 
     StringId parse_dotted_name();
