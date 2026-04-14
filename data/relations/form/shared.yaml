@@ -1,0 +1,41 @@
+namespace: form
+# Polymorphic relations that apply across multiple record types.
+# Extraction for these is driven by form_model.h; YAML esp blocks here
+# are declarative-only (no 'extract:' key, so the SchemaRegistry skips
+# registering a duplicate YAML-sourced schema).
+relations:
+  keyword:
+    type: list<FormRef>
+    args:
+      - {name: F, type: FormRef}
+      - {name: KW, type: FormRef}
+    source: static
+    esp: {subrecord: KWDA}
+    docs: "Keyword membership on a base record (body: query; head: add/remove)."
+
+  faction:
+    type: list<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: FAC, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: SNAM}
+    docs: "Faction membership on an NPC base record."
+
+  gold_value:
+    type: countable<Int>
+    args:
+      - {name: F, type: FormRef}
+      - {name: N, type: Int}
+    source: static
+    esp: {subrecord: DATA}
+    docs: "Gold value of an item."
+
+  name:
+    type: scalar<String>
+    args:
+      - {name: F, type: FormRef}
+      - {name: S, type: String}
+    source: static
+    esp: {subrecord: FULL}
+    docs: "Display name."

@@ -1,4 +1,7 @@
 namespace: form
+# NPC_ record (TESNPC). ACBS layout:
+#   flags(u32@0) magicka(u16@4) stamina(u16@6) level(u16@8)
+#   calcMin(u16@10) calcMax(u16@12) speedMult(u16@14) ...
 relations:
   npc:
     type: predicate
@@ -7,65 +10,7 @@ relations:
     esp: {record_type: NPC_}
     docs: "True when F is a base NPC record."
 
-  weapon:
-    type: predicate
-    args: [{name: F, type: FormRef}]
-    source: static
-    esp: {record_type: WEAP}
-    docs: "True when F is a weapon base record."
-
-  armor:
-    type: predicate
-    args: [{name: F, type: FormRef}]
-    source: static
-    esp: {record_type: ARMO}
-    docs: "True when F is an armor base record."
-
-  keyword:
-    type: list<FormRef>
-    args:
-      - {name: F, type: FormRef}
-      - {name: KW, type: FormRef}
-    source: static
-    esp: {subrecord: KWDA}
-    docs: "Keyword membership on a base record (body: query; head: add/remove)."
-
-  faction:
-    type: list<FormRef>
-    args:
-      - {name: NPC, type: FormRef}
-      - {name: FAC, type: FormRef}
-    source: static
-    esp: {record_type: NPC_, subrecord: SNAM}
-    docs: "Faction membership on an NPC base record."
-
-  damage:
-    type: countable<Int>
-    args:
-      - {name: W, type: FormRef}
-      - {name: N, type: Int}
-    source: static
-    esp: {record_type: WEAP, subrecord: DNAM}
-    docs: "Weapon base damage."
-
-  gold_value:
-    type: countable<Int>
-    args:
-      - {name: F, type: FormRef}
-      - {name: N, type: Int}
-    source: static
-    esp: {subrecord: DATA}
-    docs: "Gold value of an item."
-
-  name:
-    type: scalar<String>
-    args:
-      - {name: F, type: FormRef}
-      - {name: S, type: String}
-    source: static
-    esp: {subrecord: FULL}
-    docs: "Display name."
-
+  # ── Scalar stats (ACBS packed fields) ──
   base_level:
     type: countable<Int>
     args:
@@ -75,18 +20,6 @@ relations:
     esp: {record_type: NPC_, subrecord: ACBS}
     docs: "NPC base level."
 
-  race:
-    type: const<FormRef>
-    args:
-      - {name: NPC, type: FormRef}
-      - {name: RACE, type: FormRef}
-    source: static
-    esp: {record_type: NPC_, subrecord: RNAM}
-    docs: "NPC base race."
-
-  # ── NPC-specific scalar fields (ACBS = Actor Configuration Base Stats) ──
-  # ACBS layout: flags(u32@0) magicka(u16@4) stamina(u16@6) level(u16@8)
-  #              calcMin(u16@10) calcMax(u16@12) speedMult(u16@14) ...
   calc_level_min:
     type: countable<Int>
     args:
@@ -129,6 +62,16 @@ relations:
       read_as: uint16
     docs: "NPC movement speed multiplier (100 = normal)."
 
+  # ── Const FormRef lookups ──
+  race:
+    type: const<FormRef>
+    args:
+      - {name: NPC, type: FormRef}
+      - {name: RACE, type: FormRef}
+    source: static
+    esp: {record_type: NPC_, subrecord: RNAM}
+    docs: "NPC base race."
+
   npc_class:
     type: const<FormRef>
     args:
@@ -168,7 +111,7 @@ relations:
       read_as: formid
     docs: "NPC default outfit (Outfit record)."
 
-  # ── NPC flags (bits in the ACBS flags word at offset 0) ──
+  # ── Flag predicates (bits in the ACBS flags word at offset 0) ──
   female:
     type: predicate
     args: [{name: NPC, type: FormRef}]
@@ -221,7 +164,7 @@ relations:
       bit: 11
     docs: "True when this NPC has the Protected flag (killable only by player)."
 
-  # ── NPC collections (repeating subrecords) ──
+  # ── Collections (repeating subrecords) ──
   spell:
     type: list<FormRef>
     args:

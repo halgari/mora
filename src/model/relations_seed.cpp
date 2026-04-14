@@ -1,5 +1,5 @@
 // GENERATED FILE — DO NOT EDIT BY HAND.
-// Source: data/relations/*.yaml
+// Source: data/relations/**/*.yaml
 // Regenerate with: python3 tools/gen_relations.py
 
 #include "mora/model/relations.h"
@@ -9,6 +9,18 @@ namespace mora::model {
 
 constexpr RelationEntry kRelations[] = {
     // ── form/* ──
+    //   from data/relations/form/armor.yaml
+    {
+        .namespace_ = "form",
+        .name = "armor",
+        .args = {{ElemType::FormRef, "F"}},
+        .arg_count = 1,
+        .type = {TypeCtor::Predicate, ElemType::Int},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "ARMO", .subrecord = ""},
+        .docs = "True when F is an armor base record.",
+    },
+    //   from data/relations/form/npc.yaml
     {
         .namespace_ = "form",
         .name = "npc",
@@ -21,76 +33,6 @@ constexpr RelationEntry kRelations[] = {
     },
     {
         .namespace_ = "form",
-        .name = "weapon",
-        .args = {{ElemType::FormRef, "F"}},
-        .arg_count = 1,
-        .type = {TypeCtor::Predicate, ElemType::Int},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "WEAP", .subrecord = ""},
-        .docs = "True when F is a weapon base record.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "armor",
-        .args = {{ElemType::FormRef, "F"}},
-        .arg_count = 1,
-        .type = {TypeCtor::Predicate, ElemType::Int},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "ARMO", .subrecord = ""},
-        .docs = "True when F is an armor base record.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "keyword",
-        .args = {{ElemType::FormRef, "F"}, {ElemType::FormRef, "KW"}},
-        .arg_count = 2,
-        .type = {TypeCtor::List, ElemType::FormRef},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "", .subrecord = "KWDA"},
-        .docs = "Keyword membership on a base record (body: query; head: add/remove).",
-    },
-    {
-        .namespace_ = "form",
-        .name = "faction",
-        .args = {{ElemType::FormRef, "NPC"}, {ElemType::FormRef, "FAC"}},
-        .arg_count = 2,
-        .type = {TypeCtor::List, ElemType::FormRef},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "NPC_", .subrecord = "SNAM"},
-        .docs = "Faction membership on an NPC base record.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "damage",
-        .args = {{ElemType::FormRef, "W"}, {ElemType::Int, "N"}},
-        .arg_count = 2,
-        .type = {TypeCtor::Countable, ElemType::Int},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "WEAP", .subrecord = "DNAM"},
-        .docs = "Weapon base damage.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "gold_value",
-        .args = {{ElemType::FormRef, "F"}, {ElemType::Int, "N"}},
-        .arg_count = 2,
-        .type = {TypeCtor::Countable, ElemType::Int},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "", .subrecord = "DATA"},
-        .docs = "Gold value of an item.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "name",
-        .args = {{ElemType::FormRef, "F"}, {ElemType::String, "S"}},
-        .arg_count = 2,
-        .type = {TypeCtor::Scalar, ElemType::String},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "", .subrecord = "FULL"},
-        .docs = "Display name.",
-    },
-    {
-        .namespace_ = "form",
         .name = "base_level",
         .args = {{ElemType::FormRef, "NPC"}, {ElemType::Int, "L"}},
         .arg_count = 2,
@@ -98,16 +40,6 @@ constexpr RelationEntry kRelations[] = {
         .source = RelationSourceKind::Static,
         .esp_source = {.record_type = "NPC_", .subrecord = "ACBS"},
         .docs = "NPC base level.",
-    },
-    {
-        .namespace_ = "form",
-        .name = "race",
-        .args = {{ElemType::FormRef, "NPC"}, {ElemType::FormRef, "RACE"}},
-        .arg_count = 2,
-        .type = {TypeCtor::Const, ElemType::FormRef},
-        .source = RelationSourceKind::Static,
-        .esp_source = {.record_type = "NPC_", .subrecord = "RNAM"},
-        .docs = "NPC base race.",
     },
     {
         .namespace_ = "form",
@@ -138,6 +70,16 @@ constexpr RelationEntry kRelations[] = {
         .source = RelationSourceKind::Static,
         .esp_source = {.record_type = "NPC_", .subrecord = "ACBS", .extract = EspExtract::PackedField, .offset = 14, .read_as = EspReadType::UInt16},
         .docs = "NPC movement speed multiplier (100 = normal).",
+    },
+    {
+        .namespace_ = "form",
+        .name = "race",
+        .args = {{ElemType::FormRef, "NPC"}, {ElemType::FormRef, "RACE"}},
+        .arg_count = 2,
+        .type = {TypeCtor::Const, ElemType::FormRef},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "NPC_", .subrecord = "RNAM"},
+        .docs = "NPC base race.",
     },
     {
         .namespace_ = "form",
@@ -239,7 +181,70 @@ constexpr RelationEntry kRelations[] = {
         .esp_source = {.record_type = "NPC_", .subrecord = "CNTO", .extract = EspExtract::ListField, .element_size = 8, .read_as = EspReadType::FormID},
         .docs = "Items in this NPC's default inventory (CNTO is form+count).",
     },
+    //   from data/relations/form/shared.yaml
+    {
+        .namespace_ = "form",
+        .name = "keyword",
+        .args = {{ElemType::FormRef, "F"}, {ElemType::FormRef, "KW"}},
+        .arg_count = 2,
+        .type = {TypeCtor::List, ElemType::FormRef},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "", .subrecord = "KWDA"},
+        .docs = "Keyword membership on a base record (body: query; head: add/remove).",
+    },
+    {
+        .namespace_ = "form",
+        .name = "faction",
+        .args = {{ElemType::FormRef, "NPC"}, {ElemType::FormRef, "FAC"}},
+        .arg_count = 2,
+        .type = {TypeCtor::List, ElemType::FormRef},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "NPC_", .subrecord = "SNAM"},
+        .docs = "Faction membership on an NPC base record.",
+    },
+    {
+        .namespace_ = "form",
+        .name = "gold_value",
+        .args = {{ElemType::FormRef, "F"}, {ElemType::Int, "N"}},
+        .arg_count = 2,
+        .type = {TypeCtor::Countable, ElemType::Int},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "", .subrecord = "DATA"},
+        .docs = "Gold value of an item.",
+    },
+    {
+        .namespace_ = "form",
+        .name = "name",
+        .args = {{ElemType::FormRef, "F"}, {ElemType::String, "S"}},
+        .arg_count = 2,
+        .type = {TypeCtor::Scalar, ElemType::String},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "", .subrecord = "FULL"},
+        .docs = "Display name.",
+    },
+    //   from data/relations/form/weapon.yaml
+    {
+        .namespace_ = "form",
+        .name = "weapon",
+        .args = {{ElemType::FormRef, "F"}},
+        .arg_count = 1,
+        .type = {TypeCtor::Predicate, ElemType::Int},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "WEAP", .subrecord = ""},
+        .docs = "True when F is a weapon base record.",
+    },
+    {
+        .namespace_ = "form",
+        .name = "damage",
+        .args = {{ElemType::FormRef, "W"}, {ElemType::Int, "N"}},
+        .arg_count = 2,
+        .type = {TypeCtor::Countable, ElemType::Int},
+        .source = RelationSourceKind::Static,
+        .esp_source = {.record_type = "WEAP", .subrecord = "DNAM"},
+        .docs = "Weapon base damage.",
+    },
     // ── ref/* ──
+    //   from data/relations/ref.yaml
     {
         .namespace_ = "ref",
         .name = "keyword",
@@ -279,6 +284,7 @@ constexpr RelationEntry kRelations[] = {
         .docs = "True when this reference is currently in combat.",
     },
     // ── player/* ──
+    //   from data/relations/player.yaml
     {
         .namespace_ = "player",
         .name = "gold",
@@ -300,6 +306,7 @@ constexpr RelationEntry kRelations[] = {
         .docs = "Queue a UI notification string.",
     },
     // ── world/* ──
+    //   from data/relations/world.yaml
     {
         .namespace_ = "world",
         .name = "time_of_day",
@@ -311,6 +318,7 @@ constexpr RelationEntry kRelations[] = {
         .docs = "Current in-game hour 0..24.",
     },
     // ── event/* ──
+    //   from data/relations/event.yaml
     {
         .namespace_ = "event",
         .name = "entered_location",

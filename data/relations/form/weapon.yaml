@@ -1,0 +1,19 @@
+namespace: form
+# WEAP record (TESObjectWEAP). DATA: gold_value(i32@0) weight(f32@4) damage(i16@8).
+# DNAM carries the rest of the weapon data (speed, reach, etc.).
+relations:
+  weapon:
+    type: predicate
+    args: [{name: F, type: FormRef}]
+    source: static
+    esp: {record_type: WEAP}
+    docs: "True when F is a weapon base record."
+
+  damage:
+    type: countable<Int>
+    args:
+      - {name: W, type: FormRef}
+      - {name: N, type: Int}
+    source: static
+    esp: {record_type: WEAP, subrecord: DNAM}
+    docs: "Weapon base damage."

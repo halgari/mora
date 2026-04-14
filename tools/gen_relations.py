@@ -109,21 +109,36 @@ def emit_entry(namespace, rname, rel, out):
     out.append(f"    }},")
 
 def main():
-    # Deterministic order: form, ref, player, world, event (matches prior hand-authored order)
-    PREFERRED_ORDER = ["form", "ref", "player", "world", "event"]
-    files = list(RELATIONS_DIR.glob("*.yaml"))
+    # Recursively discover YAML files anywhere under data/relations/.
+    # Files can be organized by namespace (ref.yaml) or by record type
+    # (form/npc.yaml, form/weapon.yaml, ...) — the generator doesn't care.
+    files = sorted(RELATIONS_DIR.rglob("*.yaml"))
     if not files:
         print(f"No YAML files in {RELATIONS_DIR}", file=sys.stderr)
         sys.exit(1)
 
-    def ns_key(p):
-        name = p.stem
-        return (PREFERRED_ORDER.index(name) if name in PREFERRED_ORDER else 999, name)
-    files.sort(key=ns_key)
+    # Group relations by namespace so emitted output stays grouped regardless
+    # of how YAML source is split across files. Within a namespace, preserve
+    # file+entry order for determinism (rglob result is already sorted above).
+    PREFERRED_ORDER = ["form", "ref", "player", "world", "event"]
+    by_namespace = {}  # namespace -> [(source_file, entry_name, entry_data), ...]
+    for f in files:
+        with open(f) as fh:
+            data = yaml.safe_load(fh)
+        if not data or "namespace" not in data:
+            raise ValueError(f"{f}: missing top-level 'namespace' key")
+        ns = data["namespace"]
+        for rname, rel in (data.get("relations") or {}).items():
+            by_namespace.setdefault(ns, []).append((f, rname, rel))
+
+    def ns_rank(ns):
+        return (PREFERRED_ORDER.index(ns) if ns in PREFERRED_ORDER else 999, ns)
+
+    sorted_namespaces = sorted(by_namespace.keys(), key=ns_rank)
 
     lines = [
         "// GENERATED FILE — DO NOT EDIT BY HAND.",
-        "// Source: data/relations/*.yaml",
+        "// Source: data/relations/**/*.yaml",
         "// Regenerate with: python3 tools/gen_relations.py",
         "",
         '#include "mora/model/relations.h"',
@@ -134,13 +149,14 @@ def main():
         "constexpr RelationEntry kRelations[] = {",
     ]
     total = 0
-    for f in files:
-        with open(f) as fh:
-            data = yaml.safe_load(fh)
-        namespace = data["namespace"]
-        lines.append(f"    // ── {namespace}/* ──")
-        for rname, rel in data.get("relations", {}).items():
-            emit_entry(namespace, rname, rel, lines)
+    for ns in sorted_namespaces:
+        lines.append(f"    // ── {ns}/* ──")
+        last_file = None
+        for src_file, rname, rel in by_namespace[ns]:
+            if src_file != last_file:
+                lines.append(f"    //   from {src_file.relative_to(ROOT)}")
+                last_file = src_file
+            emit_entry(ns, rname, rel, lines)
             total += 1
     lines.append("};")
     lines.append("")

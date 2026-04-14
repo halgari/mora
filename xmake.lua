@@ -25,21 +25,21 @@ target("mora_lib")
               "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
     add_packages("zlib", "fmt")
-    -- Regenerate src/model/relations_seed.cpp from data/relations/*.yaml
+    -- Regenerate src/model/relations_seed.cpp from data/relations/**/*.yaml
     -- when any YAML source is newer than the generated file.
     before_build(function (target)
         import("core.project.project")
         local out = path.join(os.projectdir(), "src/model/relations_seed.cpp")
         local out_mtime = os.exists(out) and os.mtime(out) or 0
         local stale = false
-        for _, yaml in ipairs(os.files(path.join(os.projectdir(), "data/relations/*.yaml"))) do
+        for _, yaml in ipairs(os.files(path.join(os.projectdir(), "data/relations/**/*.yaml"))) do
             if os.mtime(yaml) > out_mtime then
                 stale = true
                 break
             end
         end
         if stale then
-            print("regenerating src/model/relations_seed.cpp from data/relations/*.yaml")
+            print("regenerating src/model/relations_seed.cpp from data/relations/**/*.yaml")
             os.vrunv("python3", {path.join(os.projectdir(), "tools/gen_relations.py")})
         end
     end)
