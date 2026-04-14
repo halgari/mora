@@ -152,4 +152,4 @@ current state of each subsystem.
 
 ## License
 
-TBD.
+[MPL 2.0](LICENSE.md)
