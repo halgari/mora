@@ -138,4 +138,25 @@ std::vector<uint8_t> serialize_patch_table(
     return w.finish();
 }
 
+std::vector<uint8_t> serialize_patch_table(
+    const std::vector<PatchEntry>& entries,
+    const std::array<uint8_t, 32>& esp_digest,
+    const std::vector<uint8_t>& arrangements_section,
+    const std::vector<uint8_t>& dag_bytecode) {
+
+    emit::FlatFileWriter w;
+    w.set_esp_digest(esp_digest);
+    w.add_section(emit::SectionId::Patches,
+                  entries.data(), entries.size() * sizeof(PatchEntry));
+    if (!arrangements_section.empty()) {
+        w.add_section(emit::SectionId::Arrangements,
+                      arrangements_section.data(), arrangements_section.size());
+    }
+    if (!dag_bytecode.empty()) {
+        w.add_section(emit::SectionId::DagBytecode,
+                      dag_bytecode.data(), dag_bytecode.size());
+    }
+    return w.finish();
+}
+
 } // namespace mora

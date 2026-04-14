@@ -15,6 +15,8 @@
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
 #include "mora/emit/arrangement_emit.h"
+#include "mora/dag/compile.h"
+#include "mora/dag/bytecode.h"
 #include "mora/model/relations.h"
 #include "mora/core/digest.h"
 #include <algorithm>
@@ -737,7 +739,8 @@ static int write_patch_file(
     mora::PatchBuffer& patch_buf, const std::string& target_path,
     const std::string& output_dir, mora::Output& out,
     const mora::PluginSet& loaded_plugins,
-    const mora::FactDB& facts, mora::StringPool& pool)
+    const mora::FactDB& facts, mora::StringPool& pool,
+    const std::vector<mora::Module>& modules)
 {
     fs::path out_path(output_dir);
     if (out_path.is_relative()) {
@@ -761,9 +764,19 @@ static int write_patch_file(
 
     auto arrangements_section = build_static_arrangements_section(facts, pool);
 
+    // Compile dynamic rules to an operator DAG and emit as DagBytecode section.
+    mora::dag::DagGraph dag_graph;
+    for (const auto& m : modules) {
+        mora::dag::compile_dynamic_rules(m, pool, dag_graph);
+    }
+    std::vector<uint8_t> dag_payload;
+    if (dag_graph.node_count() > 0) {
+        dag_payload = mora::dag::serialize_dag(dag_graph);
+    }
+
     out.phase_start("Serializing patches");
     auto patch_data = mora::serialize_patch_table(
-        patch_buf.entries(), digest, arrangements_section);
+        patch_buf.entries(), digest, arrangements_section, dag_payload);
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
@@ -944,7 +957,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins, db, cr.pool);
+    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
     if (write_rc != 0) return write_rc;
 
     // Summary

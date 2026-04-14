@@ -49,4 +49,11 @@ std::vector<uint8_t> serialize_patch_table(
     const std::array<uint8_t, 32>& esp_digest,
     const std::vector<uint8_t>& arrangements_section);
 
+// Fifth overload: also emit a DagBytecode section when non-empty.
+std::vector<uint8_t> serialize_patch_table(
+    const std::vector<PatchEntry>& entries,
+    const std::array<uint8_t, 32>& esp_digest,
+    const std::vector<uint8_t>& arrangements_section,
+    const std::vector<uint8_t>& dag_bytecode);
+
 } // namespace mora
