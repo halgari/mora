@@ -45,6 +45,60 @@ True when F is an armor base record.
 Extracted from ESP data at compile time.
 From record `ARMO`.
 
+### `form/armor_rating(A: FormRef, V: Float)`
+
+**Type:** `countable<Float>`  
+**Verbs:** `set`, `add`, `sub`
+
+Armor rating. Raw ESP value is the display rating × 100.
+
+Extracted from ESP data at compile time.
+From record `ARMO`, subrecord `DNAM`.
+
+*Source: `data/relations/form/leveled_list.yaml`*
+
+### `form/leveled_list(F: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when F is a Leveled Item list (registered via form_model.h).
+
+Extracted from ESP data at compile time.
+From record `LVLI`.
+
+### `form/leveled_char(F: FormRef)`
+
+**Type:** `predicate`  
+**Verbs:** *(read-only; body-position only)*
+
+True when F is a Leveled Character list (registered via form_model.h).
+
+Extracted from ESP data at compile time.
+From record `LVLN`.
+
+### `form/chance_none(LIST: FormRef, PCT: Int)`
+
+**Type:** `countable<Int>`  
+**Verbs:** `set`, `add`, `sub`
+
+Percent chance (0..100) that a leveled list returns nothing.
+
+Extracted from ESP data at compile time.
+From record `LVLI`, subrecord `LVLD`.
+Extraction: `subrecord`, read as `uint8`.
+
+### `form/leveled_entry(LIST: FormRef, ENTRY: FormRef)`
+
+**Type:** `list<FormRef>`  
+**Verbs:** `add`, `remove`
+
+Leveled-item entries — the pool of references the list can produce. (Level and count are not captured yet.)
+
+Extracted from ESP data at compile time.
+From record `LVLI`, subrecord `LVLO`.
+Extraction: `list_field`, offset `4`, read as `formid`.
+
 *Source: `data/relations/form/npc.yaml`*
 
 ### `form/npc(F: FormRef)`
@@ -279,10 +333,32 @@ From record `WEAP`.
 **Type:** `countable<Int>`  
 **Verbs:** `set`, `add`, `sub`
 
-Weapon base damage.
+Weapon base damage (registered via form_model.h from DATA@8).
 
 Extracted from ESP data at compile time.
 From record `WEAP`, subrecord `DNAM`.
+
+### `form/speed(W: FormRef, V: Float)`
+
+**Type:** `countable<Float>`  
+**Verbs:** `set`, `add`, `sub`
+
+Weapon swing speed multiplier (1.0 = normal).
+
+Extracted from ESP data at compile time.
+From record `WEAP`, subrecord `DNAM`.
+Extraction: `packed_field`, offset `4`, read as `float32`.
+
+### `form/reach(W: FormRef, V: Float)`
+
+**Type:** `countable<Float>`  
+**Verbs:** `set`, `add`, `sub`
+
+Weapon reach multiplier (1.0 = normal).
+
+Extracted from ESP data at compile time.
+From record `WEAP`, subrecord `DNAM`.
+Extraction: `packed_field`, offset `8`, read as `float32`.
 
 ---
 

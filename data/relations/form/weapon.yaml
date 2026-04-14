@@ -1,6 +1,10 @@
 namespace: form
-# WEAP record (TESObjectWEAP). DATA: gold_value(i32@0) weight(f32@4) damage(i16@8).
-# DNAM carries the rest of the weapon data (speed, reach, etc.).
+# WEAP record (TESObjectWEAP).
+# DATA subrecord: gold_value(i32@0) weight(f32@4) damage(u16@8).
+#   gold_value, weight, damage are registered by form_model.h — the YAML
+#   declarations for them live in form/shared.yaml (polymorphic) with no
+#   extract: block, so the SchemaRegistry's YAML bridge skips them.
+# DNAM subrecord: animationType(u8@0) speed(f32@4) reach(f32@8) flags(u16@12) ...
 relations:
   weapon:
     type: predicate
@@ -16,4 +20,32 @@ relations:
       - {name: N, type: Int}
     source: static
     esp: {record_type: WEAP, subrecord: DNAM}
-    docs: "Weapon base damage."
+    docs: "Weapon base damage (registered via form_model.h from DATA@8)."
+
+  speed:
+    type: countable<Float>
+    args:
+      - {name: W, type: FormRef}
+      - {name: V, type: Float}
+    source: static
+    esp:
+      record_type: WEAP
+      subrecord: DNAM
+      extract: packed_field
+      offset: 4
+      read_as: float32
+    docs: "Weapon swing speed multiplier (1.0 = normal)."
+
+  reach:
+    type: countable<Float>
+    args:
+      - {name: W, type: FormRef}
+      - {name: V, type: Float}
+    source: static
+    esp:
+      record_type: WEAP
+      subrecord: DNAM
+      extract: packed_field
+      offset: 8
+      read_as: float32
+    docs: "Weapon reach multiplier (1.0 = normal)."

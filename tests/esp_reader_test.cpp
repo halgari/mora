@@ -127,3 +127,143 @@ TEST_F(EspReaderTest, ReadSkyrimFactions) {
     printf("  Factions: %zu\n", faction_count);
     printf("  has_faction facts: %zu\n", has_faction_count);
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// End-to-end tests for YAML-declared extractions (Plan-2-phase follow-up).
+// These exercise the YAML → SchemaRegistry bridge against real plugin
+// data, validating that the new extraction kinds (BitTest, PackedField at
+// declared offsets, ListField on LVLO, Subrecord reads for const<FormRef>)
+// produce the expected facts.
+// ══════════════════════════════════════════════════════════════════════
+
+TEST_F(EspReaderTest, NPCFlagPredicatesExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    // Every ACBS flag bit predicate should be populated for SOME NPCs.
+    auto essential_count = db.fact_count(pool.intern("essential"));
+    auto protected_count = db.fact_count(pool.intern("protected"));
+    auto unique_count    = db.fact_count(pool.intern("unique"));
+    auto female_count    = db.fact_count(pool.intern("female"));
+
+    EXPECT_GT(essential_count, 0u);
+    EXPECT_GT(protected_count, 0u);
+    EXPECT_GT(unique_count, 0u);
+    EXPECT_GT(female_count, 0u);
+
+    printf("  essential: %zu  protected: %zu  unique: %zu  female: %zu\n",
+           essential_count, protected_count, unique_count, female_count);
+}
+
+TEST_F(EspReaderTest, NPCPackedStatsExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    auto calc_min = db.fact_count(pool.intern("calc_level_min"));
+    auto calc_max = db.fact_count(pool.intern("calc_level_max"));
+    auto speed    = db.fact_count(pool.intern("speed_mult"));
+
+    // Every NPC record should produce one fact for each of these.
+    auto npc_count = db.fact_count(pool.intern("npc"));
+    EXPECT_EQ(calc_min, npc_count);
+    EXPECT_EQ(calc_max, npc_count);
+    EXPECT_EQ(speed,    npc_count);
+
+    printf("  NPCs: %zu   calc_min/max/speed facts: %zu/%zu/%zu\n",
+           npc_count, calc_min, calc_max, speed);
+}
+
+TEST_F(EspReaderTest, NPCConstRefsExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    auto cls = db.fact_count(pool.intern("npc_class"));
+    auto vtp = db.fact_count(pool.intern("voice_type"));
+    auto out = db.fact_count(pool.intern("default_outfit"));
+
+    EXPECT_GT(cls, 100u);  // almost every NPC has a class
+    EXPECT_GT(vtp, 0u);
+    EXPECT_GT(out, 0u);
+
+    printf("  npc_class: %zu  voice_type: %zu  default_outfit: %zu\n",
+           cls, vtp, out);
+}
+
+TEST_F(EspReaderTest, NPCSpellAndPerkListsExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    auto spell_count = db.fact_count(pool.intern("spell"));
+    auto perk_count  = db.fact_count(pool.intern("perk"));
+    auto inv_count   = db.fact_count(pool.intern("inventory_item"));
+
+    EXPECT_GT(spell_count, 0u);
+    EXPECT_GT(perk_count, 0u);
+    EXPECT_GT(inv_count, 0u);
+
+    printf("  spell: %zu  perk: %zu  inventory_item: %zu\n",
+           spell_count, perk_count, inv_count);
+}
+
+TEST_F(EspReaderTest, WeaponPackedFieldsExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    auto speed_count = db.fact_count(pool.intern("speed"));
+    auto reach_count = db.fact_count(pool.intern("reach"));
+    auto weapon_count = db.fact_count(pool.intern("weapon"));
+
+    // Most weapons have a DNAM subrecord carrying both speed and reach.
+    EXPECT_GT(speed_count, 0u);
+    EXPECT_GT(reach_count, 0u);
+    EXPECT_GE(weapon_count, speed_count);
+
+    printf("  weapons: %zu  speed: %zu  reach: %zu\n",
+           weapon_count, speed_count, reach_count);
+}
+
+TEST_F(EspReaderTest, LeveledListsExtract) {
+    if (!skyrim_available()) GTEST_SKIP();
+    mora::SchemaRegistry schema(pool);
+    schema.register_defaults();
+    mora::FactDB db(pool);
+    schema.configure_fact_db(db);
+    mora::EspReader reader(pool, diags, schema);
+    reader.read_plugin(SKYRIM_ESM, db);
+
+    auto list_count  = db.fact_count(pool.intern("leveled_list"));
+    auto entry_count = db.fact_count(pool.intern("leveled_entry"));
+    auto chance_none_count = db.fact_count(pool.intern("chance_none"));
+
+    EXPECT_GT(list_count, 100u);
+    EXPECT_GT(entry_count, list_count);  // each list typically has several entries
+    EXPECT_GT(chance_none_count, 0u);
+
+    printf("  leveled_list: %zu  leveled_entry: %zu  chance_none: %zu\n",
+           list_count, entry_count, chance_none_count);
+}
