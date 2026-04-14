@@ -25,22 +25,31 @@ target("mora_lib")
               "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
     add_packages("zlib", "fmt")
-    -- Regenerate src/model/relations_seed.cpp from data/relations/**/*.yaml
-    -- when any YAML source is newer than the generated file.
+    -- Regenerate src/model/relations_seed.cpp and docs/src/relations.md from
+    -- data/relations/**/*.yaml whenever any source YAML is newer than its
+    -- generated output.
     before_build(function (target)
         import("core.project.project")
-        local out = path.join(os.projectdir(), "src/model/relations_seed.cpp")
-        local out_mtime = os.exists(out) and os.mtime(out) or 0
-        local stale = false
-        for _, yaml in ipairs(os.files(path.join(os.projectdir(), "data/relations/**/*.yaml"))) do
-            if os.mtime(yaml) > out_mtime then
-                stale = true
-                break
+        local yamls = os.files(path.join(os.projectdir(), "data/relations/**/*.yaml"))
+        local function newest_yaml_mtime()
+            local m = 0
+            for _, y in ipairs(yamls) do
+                if os.mtime(y) > m then m = os.mtime(y) end
             end
+            return m
         end
-        if stale then
-            print("regenerating src/model/relations_seed.cpp from data/relations/**/*.yaml")
-            os.vrunv("python3", {path.join(os.projectdir(), "tools/gen_relations.py")})
+        local newest = newest_yaml_mtime()
+        local targets = {
+            {out = "src/model/relations_seed.cpp", gen = "tools/gen_relations.py"},
+            {out = "docs/src/relations.md",        gen = "tools/gen_docs.py"},
+        }
+        for _, t in ipairs(targets) do
+            local out_path = path.join(os.projectdir(), t.out)
+            local out_mtime = os.exists(out_path) and os.mtime(out_path) or 0
+            if newest > out_mtime then
+                print("regenerating " .. t.out .. " from data/relations/**/*.yaml")
+                os.vrunv("python3", {path.join(os.projectdir(), t.gen)})
+            end
         end
     end)
 target_end()
