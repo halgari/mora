@@ -1,6 +1,12 @@
 #include "mora/parser/parser.h"
 #include <sstream>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#define MORA_UNREACHABLE() __assume(0)
+#else
+#define MORA_UNREACHABLE() __builtin_unreachable()
+#endif
+
 namespace mora {
 
 Parser::Parser(Lexer& lexer, StringPool& pool, DiagBag& diags)
@@ -477,7 +483,7 @@ Expr Parser::parse_comparison() {
             case TokenKind::Gt:   op = BinaryExpr::Op::Gt;   break;
             case TokenKind::LtEq: op = BinaryExpr::Op::LtEq; break;
             case TokenKind::GtEq: op = BinaryExpr::Op::GtEq; break;
-            default: __builtin_unreachable();
+            default: MORA_UNREACHABLE();
         }
         Expr right = parse_additive();
 
@@ -505,7 +511,7 @@ Expr Parser::parse_additive() {
         switch (op_tok.kind) {
             case TokenKind::Plus:  op = BinaryExpr::Op::Add; break;
             case TokenKind::Minus: op = BinaryExpr::Op::Sub; break;
-            default: __builtin_unreachable();
+            default: MORA_UNREACHABLE();
         }
         Expr right = parse_multiplicative();
 
@@ -533,7 +539,7 @@ Expr Parser::parse_multiplicative() {
         switch (op_tok.kind) {
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
             case TokenKind::Slash: op = BinaryExpr::Op::Div; break;
-            default: __builtin_unreachable();
+            default: MORA_UNREACHABLE();
         }
         Expr right = parse_primary();
 
