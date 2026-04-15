@@ -1,0 +1,72 @@
+{
+  "name": "mora",
+  "displayName": "Mora",
+  "description": "Syntax highlighting and language support for the Mora declarative-Datalog language for Skyrim Special Edition.",
+  "version": "0.1.0",
+  "publisher": "halgari",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/halgari/mora.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages"],
+  "keywords": ["mora", "skyrim", "skse", "datalog"],
+  "main": "out/extension.js",
+  "activationEvents": ["onLanguage:mora"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "mora",
+        "aliases": ["Mora", "mora"],
+        "extensions": [".mora"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mora",
+        "scopeName": "source.mora",
+        "path": "./syntaxes/mora.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Mora",
+      "properties": {
+        "mora.path": {
+          "type": "string",
+          "default": "mora",
+          "description": "Path to the mora binary; falls back to PATH lookup."
+        },
+        "mora.dataDir": {
+          "type": "string",
+          "default": "",
+          "description": "Skyrim Data/ folder for atom (@Foo) resolution."
+        },
+        "mora.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "LSP protocol logging level."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test:grammar": "vscode-tmgrammar-test \"tests/grammar/**/*.test.mora\"",
+    "test": "npm run compile && npm run test:grammar",
+    "package": "vsce package --no-dependencies -o ./mora-vscode-${npm_package_version}.vsix"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "ovsx": "^0.10.0",
+    "typescript": "^5.6.0",
+    "vscode-tmgrammar-test": "^0.1.3"
+  }
+}
