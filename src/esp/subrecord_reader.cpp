@@ -2,6 +2,7 @@
 #include "mora/esp/record_types.h"
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <zlib.h>
 
 namespace mora {
