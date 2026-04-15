@@ -14,13 +14,17 @@ TEST(V2EndToEnd, CliBinaryRunsHelp) {
     // `mora` binary regardless of whether we were launched from the
     // project root or from a build directory.
     std::filesystem::path bin;
+    const char* modes[] = {"release", "releasedbg", "debug"};
     for (std::filesystem::path p = std::filesystem::current_path();
          !p.empty(); p = p.parent_path()) {
-        auto candidate = p / "build" / "linux" / "x86_64" / "release" / "mora";
-        if (std::filesystem::exists(candidate)) {
-            bin = candidate;
-            break;
+        for (const char* mode : modes) {
+            auto candidate = p / "build" / "linux" / "x86_64" / mode / "mora";
+            if (std::filesystem::exists(candidate)) {
+                bin = candidate;
+                break;
+            }
         }
+        if (!bin.empty()) break;
         if (p == p.parent_path()) break;
     }
     ASSERT_FALSE(bin.empty())
