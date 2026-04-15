@@ -9,6 +9,8 @@
     { "include": "#keywords-body" },
     { "include": "#namespaces-builtin" },
     { "include": "#strings" },
+    { "include": "#operators-arrow" },
+    { "include": "#operators-comparison" },
     { "include": "#numbers" },
     { "include": "#atoms" },
     { "include": "#variables" },
@@ -30,6 +32,14 @@
     "namespaces-builtin": {
       "match": "\\b(form|ref|player|world|event)(?=/)",
       "name": "entity.name.namespace.builtin.mora"
+    },
+    "operators-arrow": {
+      "match": "=>",
+      "name": "keyword.operator.arrow.mora"
+    },
+    "operators-comparison": {
+      "match": "==|!=|<=|>=|<|>",
+      "name": "keyword.operator.comparison.mora"
     },
     "numbers": {
       "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b",

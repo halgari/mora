@@ -1,0 +1,12 @@
+# SYNTAX TEST "source.mora"
+
+elite(NPC):
+    form/level(NPC, Level)
+    Level >= 20
+#         ^^ keyword.operator.comparison.mora
+    Level == 50
+#         ^^ keyword.operator.comparison.mora
+    Level != 0
+#         ^^ keyword.operator.comparison.mora
+    => add form/keyword(NPC, @Foo)
+#   ^^ keyword.operator.arrow.mora
