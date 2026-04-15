@@ -5,11 +5,8 @@ set_languages("c++20")
 set_warnings("all", "error")
 
 -- ══════════════════════════════════════════════════════════════
--- Linux: CLI compiler + tests
+-- CLI compiler (Linux + Windows)
 -- ══════════════════════════════════════════════════════════════
-if not is_plat("windows") then
-
-add_requires("gtest")
 add_requires("zlib")
 add_requires("fmt")
 
@@ -39,6 +36,7 @@ target("mora_lib")
             return m
         end
         local newest = newest_yaml_mtime()
+        local py = is_host("windows") and "python" or "python3"
         local targets = {
             {out = "src/model/relations_seed.cpp", gen = "tools/gen_relations.py"},
             {out = "docs/src/relations.md",        gen = "tools/gen_docs.py"},
@@ -48,7 +46,7 @@ target("mora_lib")
             local out_mtime = os.exists(out_path) and os.mtime(out_path) or 0
             if newest > out_mtime then
                 print("regenerating " .. t.out .. " from data/relations/**/*.yaml")
-                os.vrunv("python3", {path.join(os.projectdir(), t.gen)})
+                os.vrunv(py, {path.join(os.projectdir(), t.gen)})
             end
         end
     end)
@@ -61,7 +59,13 @@ target("mora")
     add_deps("mora_lib")
 target_end()
 
--- Tests
+-- ══════════════════════════════════════════════════════════════
+-- Tests (Linux only — rely on POSIX-specific gtest setup)
+-- ══════════════════════════════════════════════════════════════
+if not is_plat("windows") then
+
+add_requires("gtest")
+
 for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
     local name = path.basename(testfile)
     target(name)

@@ -234,9 +234,51 @@ jobs:
 
           Get-Item "$outDir/MoraRuntime.dll" | Format-List Name,Length,LastWriteTime
 
-      - name: Upload MoraRuntime.dll
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Cache xmake packages (Windows)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/.xmake
+            build/.packages
+          key: xmake-windows-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-windows-
+
+      - name: Build mora.exe (CLI compiler)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          xmake f -p windows -a x64 -m release -y
+          if ($LASTEXITCODE -ne 0) { throw "xmake f failed" }
+          xmake build -y mora
+          if ($LASTEXITCODE -ne 0) { throw "xmake build mora failed" }
+          $exe = Get-ChildItem -Recurse -Path build -Filter mora.exe | Select-Object -First 1
+          if (-not $exe) { throw "mora.exe not found under build/" }
+          Write-Host "Built $($exe.FullName)"
+          "MORA_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Package release archive
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = $PWD.Path
+          $sha  = "${{ github.sha }}".Substring(0,7)
+          $stage = "$proj/dist/Mora-$sha-windows"
+          New-Item -ItemType Directory -Force -Path "$stage/tools/Mora" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/Data/SKSE/Plugins" | Out-Null
+          Copy-Item "$env:MORA_EXE"                     "$stage/tools/Mora/mora.exe"
+          Copy-Item "$proj/build/runtime/MoraRuntime.dll" "$stage/Data/SKSE/Plugins/MoraRuntime.dll"
+          $zip = "$proj/dist/Mora-$sha-windows.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
+          Write-Host "Packaged $zip"
+          Get-ChildItem $stage -Recurse | ForEach-Object {
+            Write-Host ("  " + $_.FullName.Substring($stage.Length + 1))
+          }
+
+      - name: Upload release archive
         uses: actions/upload-artifact@v4
         with:
-          name: MoraRuntime-dll
-          path: build/runtime/MoraRuntime.dll
+          name: Mora-windows
+          path: dist/Mora-*-windows.zip
           if-no-files-found: error
