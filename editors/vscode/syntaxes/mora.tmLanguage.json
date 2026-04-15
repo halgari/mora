@@ -3,5 +3,13 @@
   "name": "Mora",
   "scopeName": "source.mora",
   "fileTypes": ["mora"],
-  "patterns": []
+  "patterns": [
+    { "include": "#comments" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.mora"
+    }
+  }
 }
