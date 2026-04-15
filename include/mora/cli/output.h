@@ -54,7 +54,7 @@ private:
     bool is_tty_;
     std::chrono::steady_clock::time_point phase_start_;
 
-    static std::string format_duration(long ms);
+    static std::string format_duration(long long ms);
     std::string dot_pad(std::string_view left, std::string_view right, size_t width = 72) const;
 };
 

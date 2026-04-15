@@ -7,7 +7,7 @@ namespace mora {
 Output::Output(bool use_color, bool is_tty)
     : color_(use_color), is_tty_(is_tty), phase_start_(std::chrono::steady_clock::now()) {}
 
-std::string Output::format_duration(long ms) {
+std::string Output::format_duration(long long ms) {
     if (ms < 1) return "<1ms";
     if (ms < 1000) return fmt::format("{}ms", ms);
     return fmt::format("{:.1f}s", double(ms) / 1000.0);
