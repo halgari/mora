@@ -15,6 +15,9 @@ jobs:
   linux:
     name: Linux (xmake + gtest)
     runs-on: [self-hosted, linux]
+    env:
+      # myoung34/github-runner containers run as root; xmake refuses unless told.
+      XMAKE_ROOT: y
     steps:
       - uses: actions/checkout@v4
 
