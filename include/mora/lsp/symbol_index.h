@@ -8,7 +8,7 @@
 #include "mora/core/string_pool.h"
 
 namespace mora {
-class Module;
+struct Module;
 class NameResolver;
 class TypeChecker;
 }
