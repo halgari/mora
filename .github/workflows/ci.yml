@@ -98,71 +98,55 @@ jobs:
           key: commonlib-${{ runner.os }}-${{ hashFiles('extern/CommonLibSSE-NG/**/*.cpp', 'extern/CommonLibSSE-NG/**/*.h') }}
           restore-keys: commonlib-${{ runner.os }}-
 
-      - name: Build CommonLibSSE-NG static lib
+      - name: Build CommonLibSSE-NG static lib (ninja)
         run: |
           $ErrorActionPreference = 'Stop'
-          $proj = $PWD.Path
+          $proj = $PWD.Path -replace '\\','/'
           $commonlib = "$proj/extern/CommonLibSSE-NG"
           $buildDir = "$proj/build/commonlib"
           New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
-          $flags = @(
-            '/nologo','/std:c++latest','/O2','/EHsc','/utf-8','/MD',
-            '/Zc:preprocessor',
-            '/DWIN32','/D_WIN32','/DNOMINMAX',
-            '/DSPDLOG_COMPILED_LIB',
-            '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
-            "/I$commonlib/include",
-            "/I$proj/extern/spdlog-shim",
-            "/I$proj/extern/simplemath-shim",
-            '/FISKSE/Impl/PCH.h',
-            '/w'
-          )
+          # Shared flags (compile-only; no /Fo).
+          $flags = "/nologo /std:c++latest /O2 /EHsc /utf-8 /MD /Zc:preprocessor " +
+                   "/DWIN32 /D_WIN32 /DNOMINMAX /DSPDLOG_COMPILED_LIB " +
+                   "/DENABLE_SKYRIM_SE=1 /DENABLE_SKYRIM_AE=1 " +
+                   "/I`"$commonlib/include`" /I`"$proj/extern/spdlog-shim`" " +
+                   "/I`"$proj/extern/simplemath-shim`" " +
+                   "/FISKSE/Impl/PCH.h /w"
 
           $sources = Get-ChildItem -Path "$commonlib/src" -Recurse -Filter *.cpp
-          Write-Host "Compiling $($sources.Count) CommonLibSSE source files..."
+          Write-Host "Generating ninja build for $($sources.Count) CommonLibSSE source files..."
 
-          $jobs = @()
-          $maxJobs = [Math]::Min([Environment]::ProcessorCount, 8)
-          $queue = [System.Collections.Generic.Queue[object]]::new()
-          foreach ($s in $sources) { $queue.Enqueue($s) }
+          $ninja = [System.Collections.Generic.List[string]]::new()
+          $ninja.Add("ninja_required_version = 1.8")
+          $ninja.Add("rule cxx")
+          $ninja.Add("  command = cl.exe $flags /c /Fo`$out `$in")
+          $ninja.Add("  description = CXX `$out")
+          $ninja.Add("  deps = msvc")
 
-          $objFiles = @()
-          $failed = 0
-
-          while ($queue.Count -gt 0 -or $jobs.Count -gt 0) {
-            while ($jobs.Count -lt $maxJobs -and $queue.Count -gt 0) {
-              $src = $queue.Dequeue()
-              $rel = $src.FullName.Substring("$commonlib/src/".Replace('/','\').Length)
-              $objName = ($rel -replace '[\\/]','_') -replace '\.cpp$',''
-              $obj = "$buildDir/$objName.obj"
-              $objFiles += $obj
-              if ((Test-Path $obj) -and ((Get-Item $obj).LastWriteTime -gt $src.LastWriteTime)) {
-                continue
-              }
-              $args = $flags + @('/c',"/Fo$obj",$src.FullName)
-              $jobs += Start-Job -ScriptBlock {
-                param($exe,$a,$rel)
-                $p = Start-Process -FilePath $exe -ArgumentList $a -NoNewWindow -Wait -PassThru `
-                     -RedirectStandardOutput ([System.IO.Path]::GetTempFileName()) `
-                     -RedirectStandardError ([System.IO.Path]::GetTempFileName())
-                if ($p.ExitCode -ne 0) { Write-Output "FAIL $rel" } else { Write-Output "OK" }
-              } -ArgumentList 'cl.exe',$args,$rel
-            }
-            Start-Sleep -Milliseconds 50
-            $done = $jobs | Where-Object { $_.State -ne 'Running' }
-            foreach ($j in $done) {
-              $r = Receive-Job $j
-              if ($r -like 'FAIL*') { $failed++; Write-Host $r }
-              Remove-Job $j
-            }
-            $jobs = $jobs | Where-Object { $_.State -eq 'Running' }
+          $objFiles = [System.Collections.Generic.List[string]]::new()
+          $prefix = ("$commonlib/src/").Replace('/','\')
+          foreach ($s in $sources) {
+            $rel = $s.FullName.Substring($prefix.Length)
+            $objName = (($rel -replace '[\\/]','_') -replace '\.cpp$','.obj')
+            $obj = "$buildDir/$objName"
+            $objFiles.Add($obj)
+            $srcN = $s.FullName -replace '\\','/'
+            # Escape $ and : in ninja paths.
+            $ninja.Add("build ${obj}: cxx $srcN")
           }
+          Set-Content -Path "$buildDir/build.ninja" -Value $ninja -Encoding ascii
+
+          & ninja -f "$buildDir/build.ninja"
+          if ($LASTEXITCODE -ne 0) { throw "ninja failed" }
 
           $existing = $objFiles | Where-Object { Test-Path $_ }
-          Write-Host "Compiled $($existing.Count)/$($sources.Count) files ($failed failed this run)"
+          Write-Host "Compiled $($existing.Count)/$($sources.Count) object files"
 
-          & lib.exe /nologo "/out:$commonlib/CommonLibSSE.lib" $existing
+          # Response file — too many args for the command line otherwise.
+          $rsp = "$buildDir/lib.rsp"
+          Set-Content -Path $rsp -Value ($existing -join "`n") -Encoding ascii
+          & lib.exe /nologo "/out:$commonlib/CommonLibSSE.lib" "@$rsp"
           if ($LASTEXITCODE -ne 0) { throw "lib.exe failed" }
           Write-Host "Produced $commonlib/CommonLibSSE.lib"
 
@@ -204,22 +188,19 @@ jobs:
           python tools/gen_relations.py
           if ($LASTEXITCODE -ne 0) { throw "gen_relations.py failed" }
 
-          $objFiles = @()
-          foreach ($s in $sources) {
-            $obj = "$buildDir/$($s.BaseName).obj"
-            Write-Host "  CC $($s.FullName.Substring($proj.Length + 1))"
-            & cl.exe @flags '/c' "/Fo$obj" $s.FullName
-            if ($LASTEXITCODE -ne 0) { throw "cl.exe failed on $($s.FullName)" }
-            $objFiles += $obj
-          }
+          # cl /MP compiles all inputs in parallel in a single invocation.
+          $allSources = @($sources.FullName) + @(
+            "$proj/extern/spdlog-shim/spdlog.cpp",
+            "$proj/extern/spdlog-shim/fmt.cpp"
+          )
+          $nproc = [Environment]::ProcessorCount
+          Write-Host "Compiling $($allSources.Count) files with /MP$nproc ..."
+          & cl.exe @flags "/MP$nproc" '/c' "/Fo$buildDir/" @allSources
+          if ($LASTEXITCODE -ne 0) { throw "cl.exe failed" }
 
-          foreach ($shim in @('extern/spdlog-shim/spdlog.cpp','extern/spdlog-shim/fmt.cpp')) {
-            $src = "$proj/$shim"
-            $obj = "$buildDir/$([System.IO.Path]::GetFileNameWithoutExtension($shim)).obj"
-            Write-Host "  CC $shim"
-            & cl.exe @flags '/c' "/Fo$obj" $src
-            if ($LASTEXITCODE -ne 0) { throw "cl.exe failed on $shim" }
-            $objFiles += $obj
+          $objFiles = @()
+          foreach ($p in $allSources) {
+            $objFiles += "$buildDir/$([System.IO.Path]::GetFileNameWithoutExtension($p)).obj"
           }
 
           & lib.exe /nologo "/out:$proj/data/mora_rt.lib" $objFiles
