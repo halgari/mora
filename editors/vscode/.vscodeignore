@@ -5,6 +5,7 @@ tests/**
 **/*.map
 **/*.ts
 !out/**/*.js
+!LICENSE
 .gitignore
 .vscodeignore
 tsconfig.json
