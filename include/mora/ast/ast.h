@@ -102,6 +102,7 @@ struct Rule {
     std::vector<Effect> effects;
     std::vector<ConditionalEffect> conditional_effects;
     SourceSpan span;
+    std::optional<std::string> doc_comment; // leading # comments above the rule head
 };
 
 struct NamespaceDecl  { StringId name; SourceSpan span; };

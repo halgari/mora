@@ -16,7 +16,28 @@ Parser::Parser(Lexer& lexer, StringPool& pool, DiagBag& diags)
 
 Token Parser::peek() {
     if (!has_current_) {
-        current_ = lexer_.next();
+        for (;;) {
+            current_ = lexer_.next();
+            if (current_.kind == TokenKind::Comment) {
+                // Accumulate comment text (without the leading '#') into pending.
+                pending_comments_.push_back(std::string(pool_.get(current_.string_id)));
+                last_was_newline_ = false; // comment resets the newline tracker
+                continue;
+            }
+            if (current_.kind == TokenKind::Newline) {
+                if (last_was_newline_ && !pending_comments_.empty()) {
+                    // Two consecutive newlines while we have pending comments
+                    // means a blank line separates the comment from the rule.
+                    pending_comments_.clear();
+                }
+                last_was_newline_ = true;
+                // Fall through: return the Newline to the caller (parser grammar
+                // requires seeing Newline tokens).
+                break;
+            }
+            last_was_newline_ = false;
+            break;
+        }
         has_current_ = true;
     }
     return current_;
@@ -144,6 +165,7 @@ Module Parser::parse_module() {
 // ── Top-level declarations ──
 
 NamespaceDecl Parser::parse_namespace() {
+    pending_comments_.clear();
     Token kw = advance(); // consume 'namespace'
     StringId name = parse_dotted_name();
     NamespaceDecl decl;
@@ -153,6 +175,7 @@ NamespaceDecl Parser::parse_namespace() {
 }
 
 RequiresDecl Parser::parse_requires() {
+    pending_comments_.clear();
     Token kw = advance(); // consume 'requires'
     expect(TokenKind::KwMod, "expected 'mod' after 'requires'");
     expect(TokenKind::LParen, "expected '(' after 'mod'");
@@ -180,6 +203,7 @@ RequiresDecl Parser::parse_requires() {
 }
 
 UseDecl Parser::parse_use() {
+    pending_comments_.clear();
     Token kw = advance(); // consume 'use'
     StringId ns_path = parse_dotted_name();
 
@@ -238,6 +262,7 @@ UseDecl Parser::parse_use() {
 }
 
 ImportIniDecl Parser::parse_import_ini(ImportIniDecl::Kind kind) {
+    pending_comments_.clear();
     Token kw = advance(); // consume keyword
     Token path_tok = expect(TokenKind::String, "expected string path");
 
@@ -252,6 +277,17 @@ ImportIniDecl Parser::parse_import_ini(ImportIniDecl::Kind kind) {
 
 Rule Parser::parse_rule() {
     Rule rule;
+
+    // Attach any accumulated doc-comments to this rule.
+    if (!pending_comments_.empty()) {
+        std::string joined;
+        for (size_t i = 0; i < pending_comments_.size(); ++i) {
+            if (i > 0) joined.push_back('\n');
+            joined += pending_comments_[i];
+        }
+        rule.doc_comment = std::move(joined);
+        pending_comments_.clear();
+    }
 
     // Optional rule-kind annotation: 'maintain' or 'on' precedes the rule name.
     if (check(TokenKind::KwMaintain)) {

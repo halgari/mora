@@ -2,6 +2,7 @@
 #include "mora/core/source_location.h"
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mora {
@@ -33,6 +34,10 @@ public:
     bool has_errors() const { return error_count_ > 0; }
     bool at_error_limit() const { return error_count_ >= kMaxErrors; }
     const std::vector<Diagnostic>& all() const { return diags_; }
+
+    // Remove and return all diagnostics whose span.file corresponds to the
+    // given file:// URI. Other diagnostics remain in the bag.
+    std::vector<Diagnostic> drain_for_uri(std::string_view uri);
 
 private:
     std::vector<Diagnostic> diags_;

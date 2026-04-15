@@ -78,6 +78,18 @@ void Lexer::skip_comment() {
     }
 }
 
+Token Lexer::lex_comment() {
+    // Pre: peek() == '#'. Reads '#' followed by everything until end of
+    // line (excluding the newline). The token's text excludes the '#'.
+    advance(); // consume '#'
+    size_t saved_start = token_start_;
+    token_start_ = pos_;
+    while (!at_end() && peek() != '\n') advance();
+    Token tok = make_token(TokenKind::Comment);
+    token_start_ = saved_start;
+    return tok;
+}
+
 Token Lexer::make_token(TokenKind kind) {
     std::string_view text(source_.data() + token_start_, pos_ - token_start_);
     SourceSpan span{filename_, token_start_line_, token_start_col_,
@@ -267,8 +279,15 @@ Token Lexer::next() {
         // Skip blank lines and comment-only lines - don't change indentation
         if (at_end() || peek() == '\n' || peek() == '#') {
             // Don't change indent for blank/comment lines
-            // If it's a comment, skip it
+            // If it's a comment, skip or emit it
             if (!at_end() && peek() == '#') {
+                if (keep_trivia_) {
+                    // Record start so the comment token has correct span
+                    token_start_ = pos_;
+                    token_start_line_ = line_;
+                    token_start_col_ = col_;
+                    return lex_comment();
+                }
                 skip_comment();
             }
             // If there's a newline, we'll pick it up on the next call
@@ -327,6 +346,9 @@ Token Lexer::next() {
 
     // Comment
     if (c == '#') {
+        if (keep_trivia_) {
+            return lex_comment();
+        }
         skip_comment();
         // After comment, check if at end or newline
         if (!at_end() && peek() == '\n') {

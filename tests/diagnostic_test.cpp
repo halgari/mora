@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "mora/diag/diagnostic.h"
 #include "mora/diag/renderer.h"
+#include "mora/lsp/uri.h"
 
 TEST(DiagnosticTest, CreateError) {
     mora::Diagnostic diag;
@@ -60,4 +61,23 @@ TEST(DiagnosticRendererTest, RenderErrorPlainText) {
     EXPECT_NE(output.find("weapons.mora:14:21"), std::string::npos);
     EXPECT_NE(output.find("has_faction"), std::string::npos);
     EXPECT_NE(output.find("expected FactionID"), std::string::npos);
+}
+
+TEST(DiagBag, DrainForUriReturnsOnlyMatching) {
+    using namespace mora;
+    DiagBag bag;
+    SourceSpan a{}; a.file = "/home/u/a.mora";
+    SourceSpan b{}; b.file = "/home/u/b.mora";
+    bag.error("E001", "in a", a, "");
+    bag.error("E001", "in b", b, "");
+    bag.error("E001", "also a", a, "");
+
+    auto for_a = bag.drain_for_uri("file:///home/u/a.mora");
+    EXPECT_EQ(for_a.size(), 2u);
+    EXPECT_EQ(for_a[0].message, "in a");
+    EXPECT_EQ(for_a[1].message, "also a");
+
+    // After drain, b's diagnostics remain in the bag.
+    auto for_b = bag.drain_for_uri("file:///home/u/b.mora");
+    EXPECT_EQ(for_b.size(), 1u);
 }

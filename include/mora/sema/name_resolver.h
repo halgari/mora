@@ -17,6 +17,10 @@ public:
     void resolve(Module& mod);
     const FactSignature* lookup_fact(StringId name) const;
 
+    // Read-only views of registered facts/rules. Valid after resolve() has run.
+    const std::unordered_map<uint32_t, FactSignature>& facts() const { return facts_; }
+    const std::unordered_map<uint32_t, bool>& rules() const { return rules_; }
+
 private:
     void register_builtins();
     void register_rule_as_fact(const Rule& rule);

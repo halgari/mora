@@ -13,6 +13,12 @@ public:
     TypeChecker(StringPool& pool, DiagBag& diags, const NameResolver& resolver);
     void check(Module& mod);
 
+    // Read-only view of variable definition spans (keyed by StringId::index).
+    // Valid only after check() has run.
+    const std::unordered_map<uint32_t, SourceSpan>& variable_definition_spans() const {
+        return var_def_spans_;
+    }
+
 private:
     void check_rule(Rule& rule);
     void check_fact_pattern(const FactPattern& pattern);

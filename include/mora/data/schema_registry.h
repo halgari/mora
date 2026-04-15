@@ -56,6 +56,9 @@ public:
     // Get schemas that extract from a given record type
     std::vector<const RelationSchema*> schemas_for_record(const std::string& record_type) const;
 
+    // Number of registered relation schemas.
+    size_t relation_count() const { return schemas_.size(); }
+
 private:
     void register_yaml_relations();
 

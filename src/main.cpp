@@ -1,3 +1,4 @@
+#include "mora/lsp/lsp.h"
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
@@ -208,6 +209,7 @@ static void print_usage() {
         "  compile   Compile .mora files to native SKSE DLL\n"
         "  inspect   Display patch set from .mora source files\n"
         "  info      Show project status overview\n"
+        "  lsp       Run the language server over stdio (used by editors)\n"
         "\nOptions:\n"
         "  --no-color        Disable colored output\n"
         "  --output DIR      Output directory (compile, default: MoraCache/)\n"
@@ -837,6 +839,8 @@ int main(int argc, char* argv[]) {
         mora::generate_docs(std::cout);
         return 0;
     }
+
+    if (command == "lsp") return mora::lsp::run(argc - 2, argv + 2);
 
     print_usage();
     return 1;

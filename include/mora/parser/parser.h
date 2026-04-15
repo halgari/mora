@@ -43,6 +43,10 @@ private:
     DiagBag& diags_;
     Token current_;
     bool has_current_ = false;
+
+    // Doc-comment accumulation (only active when lexer is in keep_trivia mode)
+    std::vector<std::string> pending_comments_;
+    bool last_was_newline_ = false;
 };
 
 } // namespace mora

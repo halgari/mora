@@ -2,7 +2,7 @@
   "name": "mora",
   "displayName": "Mora",
   "description": "Syntax highlighting and language support for the Mora declarative-Datalog language for Skyrim Special Edition.",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "publisher": "halgari",
   "license": "MPL-2.0",
   "repository": {
@@ -13,16 +13,30 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Programming Languages"],
-  "keywords": ["mora", "skyrim", "skse", "datalog"],
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "mora",
+    "skyrim",
+    "skse",
+    "datalog"
+  ],
   "main": "out/extension.js",
-  "activationEvents": ["onLanguage:mora"],
+  "activationEvents": [
+    "onLanguage:mora"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "mora",
-        "aliases": ["Mora", "mora"],
-        "extensions": [".mora"],
+        "aliases": [
+          "Mora",
+          "mora"
+        ],
+        "extensions": [
+          ".mora"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -48,7 +62,11 @@
         },
         "mora.trace.server": {
           "type": "string",
-          "enum": ["off", "messages", "verbose"],
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
           "default": "off",
           "description": "LSP protocol logging level."
         }
@@ -60,13 +78,17 @@
     "watch": "tsc -p . --watch",
     "test:grammar": "vscode-tmgrammar-test \"tests/grammar/**/*.test.mora\"",
     "test": "npm run compile && npm run test:grammar",
-    "package": "vsce package --no-dependencies -o ./mora-vscode-${npm_package_version}.vsix"
+    "package": "vsce package -o ./mora-vscode-${npm_package_version}.vsix"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",
     "ovsx": "^0.10.0",
     "typescript": "^5.6.0",
     "vscode-tmgrammar-test": "^0.1.3"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

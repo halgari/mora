@@ -50,4 +50,5 @@ nav:
   - Language Reference: language-reference.md
   - Relation Reference: relations.md
   - CLI Reference: cli-reference.md
+  - Editor Support: editor-support.md
   - Examples: examples.md

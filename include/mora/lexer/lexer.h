@@ -16,6 +16,8 @@ public:
     Token next();
     std::string_view get_line(uint32_t line) const;
 
+    void set_keep_trivia(bool keep) { keep_trivia_ = keep; }
+
 private:
     char peek() const;
     char peek_next() const;
@@ -25,6 +27,7 @@ private:
 
     void skip_whitespace_on_line();
     void skip_comment();
+    Token lex_comment();
 
     Token make_token(TokenKind kind);
     Token make_token(TokenKind kind, int64_t int_val);
@@ -57,6 +60,8 @@ private:
     // Line index for get_line()
     std::vector<size_t> line_starts_;
     void index_lines();
+
+    bool keep_trivia_ = false;
 };
 
 } // namespace mora

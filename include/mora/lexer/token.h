@@ -25,6 +25,9 @@ enum class TokenKind {
     // Arithmetic operators
     Plus, Minus, Star, Slash,
 
+    // Trivia
+    Comment,
+
     // Whitespace/structure
     Newline, Indent, Dedent,
 

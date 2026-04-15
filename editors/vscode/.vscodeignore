@@ -9,4 +9,10 @@ tests/**
 .gitignore
 .vscodeignore
 tsconfig.json
-node_modules/**
+node_modules/.bin/**
+node_modules/@types/**
+node_modules/typescript/**
+node_modules/@vscode/vsce/**
+node_modules/@vscode/vsce-sign/**
+node_modules/ovsx/**
+node_modules/vscode-tmgrammar-test/**

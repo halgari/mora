@@ -1,5 +1,5 @@
 set_project("mora")
-set_version("0.1.0")
+set_version("0.3.0")
 
 set_languages("c++20")
 set_warnings("all", "error")
@@ -18,6 +18,7 @@ end
 -- ══════════════════════════════════════════════════════════════
 add_requires("zlib")
 add_requires("fmt")
+add_requires("nlohmann_json")
 
 -- Static library with all compiler sources
 target("mora_lib")
@@ -29,11 +30,12 @@ target("mora_lib")
               "src/data/*.cpp", "src/esp/*.cpp",
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
               "src/harness/*.cpp",
-              "src/model/*.cpp", "src/dag/*.cpp")
+              "src/model/*.cpp", "src/dag/*.cpp",
+              "src/lsp/*.cpp", "src/lsp/handlers/*.cpp")
     -- Runtime files that touch CommonLibSSE-NG guard their bodies on
     -- MORA_WITH_COMMONLIB. The CLI doesn't link CommonLib, so leave
     -- that undefined here — guarded blocks compile as empty stubs.
-    add_packages("zlib", "fmt", {public = true})
+    add_packages("zlib", "fmt", "nlohmann_json", {public = true})
     -- Regenerate src/model/relations_seed.cpp and docs/src/relations.md from
     -- data/relations/**/*.yaml whenever any source YAML is newer than its
     -- generated output.

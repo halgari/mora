@@ -108,6 +108,10 @@ const char* token_kind_name(TokenKind kind) {
     case TokenKind::Slash:
         return "/";
 
+    // Trivia
+    case TokenKind::Comment:
+        return "Comment";
+
     // Whitespace/structure
     case TokenKind::Newline:
         return "newline";
