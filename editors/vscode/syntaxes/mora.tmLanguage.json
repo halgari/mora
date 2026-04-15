@@ -4,12 +4,27 @@
   "scopeName": "source.mora",
   "fileTypes": ["mora"],
   "patterns": [
-    { "include": "#comments" }
+    { "include": "#comments" },
+    { "include": "#keywords-toplevel" },
+    { "include": "#keywords-body" },
+    { "include": "#namespaces-builtin" }
   ],
   "repository": {
     "comments": {
       "match": "#.*$",
       "name": "comment.line.number-sign.mora"
+    },
+    "keywords-toplevel": {
+      "match": "\\b(namespace|requires|mod|use|as|refer|only|import_spid|import_kid)\\b",
+      "name": "keyword.control.mora"
+    },
+    "keywords-body": {
+      "match": "\\b(not|or|in|maintain|on|set|add|sub|remove)\\b",
+      "name": "keyword.operator.mora"
+    },
+    "namespaces-builtin": {
+      "match": "\\b(form|ref|player|world|event)(?=/)",
+      "name": "entity.name.namespace.builtin.mora"
     }
   }
 }
