@@ -124,6 +124,10 @@ jobs:
           $ninja.Add("  description = CXX `$out")
           $ninja.Add("  deps = msvc")
 
+          # Ninja uses ':' as the output/rule separator, so drive-letter
+          # paths like 'D:/...' must escape the colon as '$:'.
+          function Esc-Ninja([string]$p) { $p -replace ':','$:' }
+
           $objFiles = [System.Collections.Generic.List[string]]::new()
           $prefix = ("$commonlib/src/").Replace('/','\')
           foreach ($s in $sources) {
@@ -132,8 +136,7 @@ jobs:
             $obj = "$buildDir/$objName"
             $objFiles.Add($obj)
             $srcN = $s.FullName -replace '\\','/'
-            # Escape $ and : in ninja paths.
-            $ninja.Add("build ${obj}: cxx $srcN")
+            $ninja.Add("build $(Esc-Ninja $obj): cxx $(Esc-Ninja $srcN)")
           }
           Set-Content -Path "$buildDir/build.ninja" -Value $ninja -Encoding ascii
 
