@@ -8,6 +8,8 @@
     { "include": "#keywords-toplevel" },
     { "include": "#keywords-body" },
     { "include": "#namespaces-builtin" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
     { "include": "#atoms" },
     { "include": "#variables" },
     { "include": "#relation-call" }
@@ -28,6 +30,21 @@
     "namespaces-builtin": {
       "match": "\\b(form|ref|player|world|event)(?=/)",
       "name": "entity.name.namespace.builtin.mora"
+    },
+    "numbers": {
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b",
+      "name": "constant.numeric.mora"
+    },
+    "strings": {
+      "name": "string.quoted.double.mora",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.mora"
+        }
+      ]
     },
     "atoms": {
       "match": "@[A-Za-z_][A-Za-z0-9_]*",

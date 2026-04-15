@@ -1,0 +1,11 @@
+# SYNTAX TEST "source.mora"
+
+requires mod("Skyrim.esm")
+#            ^^^^^^^^^^^^ string.quoted.double.mora
+
+elite(NPC):
+    form/level(NPC, Level)
+    Level >= 20
+#            ^^ constant.numeric.mora
+    form/speed(W, 0.5)
+#                 ^^^ constant.numeric.mora
