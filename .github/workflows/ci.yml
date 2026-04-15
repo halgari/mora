@@ -68,6 +68,24 @@ jobs:
       - name: Install Python deps
         run: pip install pyyaml
 
+      - name: Fetch spdlog and fmt headers (replace Linux-only symlinks)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # extern/spdlog-shim/{spdlog,fmt} are symlinks to /usr/include/* on
+          # Linux dev boxes. On Windows checkout they materialize as text files
+          # containing the target path. Replace them with real headers.
+          $shim = "$PWD/extern/spdlog-shim"
+          foreach ($name in @('spdlog','fmt')) {
+            $path = "$shim/$name"
+            if (Test-Path $path -PathType Leaf) { Remove-Item -Force $path }
+            elseif (Test-Path $path) { Remove-Item -Recurse -Force $path }
+          }
+          git clone --depth 1 --branch v1.14.1 https://github.com/gabime/spdlog.git "$shim/spdlog-src"
+          git clone --depth 1 --branch 11.0.2 https://github.com/fmtlib/fmt.git "$shim/fmt-src"
+          Move-Item "$shim/spdlog-src/include/spdlog" "$shim/spdlog"
+          Move-Item "$shim/fmt-src/include/fmt"       "$shim/fmt"
+          Remove-Item -Recurse -Force "$shim/spdlog-src","$shim/fmt-src"
+
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
