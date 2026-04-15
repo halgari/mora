@@ -13,6 +13,10 @@ add_requires("fmt")
 -- Static library with all compiler sources
 target("mora_lib")
     set_kind("static")
+    if is_plat("windows") then
+        -- fmt (base.h) static_asserts unless this is set on MSVC.
+        add_cxflags("/utf-8", {force = true})
+    end
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
