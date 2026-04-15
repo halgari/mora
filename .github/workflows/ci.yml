@@ -67,6 +67,17 @@ jobs:
         working-directory: editors/vscode
         run: npm ci
 
+      - name: Verify version matches xmake.lua
+        run: |
+          xmake_version=$(grep -oP 'set_version\("\K[^"]+' xmake.lua)
+          pkg_version=$(node -p "require('./editors/vscode/package.json').version")
+          echo "xmake.lua version:    $xmake_version"
+          echo "package.json version: $pkg_version"
+          if [ "$xmake_version" != "$pkg_version" ]; then
+            echo "::error::xmake.lua and editors/vscode/package.json version mismatch"
+            exit 1
+          fi
+
       - name: Compile TypeScript
         working-directory: editors/vscode
         run: npm run compile
