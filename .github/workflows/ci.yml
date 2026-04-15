@@ -14,7 +14,7 @@ concurrency:
 jobs:
   linux:
     name: Linux (xmake + gtest)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +24,9 @@ jobs:
 
       - name: Install system deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git curl unzip zip pkg-config \
+          # Self-hosted myoung34/github-runner runs as root; no sudo needed
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git curl unzip zip pkg-config \
                                   libreadline-dev python3-pip
           pip install pyyaml
 
@@ -53,7 +54,7 @@ jobs:
 
   extension:
     name: VS Code extension (.vsix)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +100,7 @@ jobs:
 
   windows:
     name: Windows (MSVC — SKSE runtime DLL)
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]
     needs: extension
     defaults:
       run:
