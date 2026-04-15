@@ -187,7 +187,7 @@ def main():
         lines.append("---")
         lines.append("")
 
-    OUT_FILE.write_text("\n".join(lines))
+    OUT_FILE.write_text("\n".join(lines), encoding="utf-8")
     total = sum(len(v) for v in by_ns.values())
     print(f"wrote {OUT_FILE} ({len(files)} YAML files, {total} relations documented)")
 

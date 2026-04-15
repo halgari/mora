@@ -170,7 +170,7 @@ def main():
     lines.append("} // namespace mora::model")
     lines.append("")
 
-    OUT_FILE.write_text("\n".join(lines))
+    OUT_FILE.write_text("\n".join(lines), encoding="utf-8")
     print(f"wrote {OUT_FILE} ({len(files)} YAML files, {total} relations emitted)")
 
 if __name__ == "__main__":
