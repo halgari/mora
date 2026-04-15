@@ -24,7 +24,7 @@ target("mora_lib")
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
               "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
-    add_packages("zlib", "fmt")
+    add_packages("zlib", "fmt", {public = true})
     -- Regenerate src/model/relations_seed.cpp and docs/src/relations.md from
     -- data/relations/**/*.yaml whenever any source YAML is newer than its
     -- generated output.

@@ -61,9 +61,38 @@ If you've built patchers before, Mora occupies a different niche:
 - **SynthEE / Synthesis (C# patchers via Mutagen).** Great toolkit, but every
   patcher is an imperative program you have to write, compile, and
   sequence. Mora replaces the program with a set of rules; the compiler
-  figures out the order, the iteration, and the merge. Patches apply
-  directly to live forms at load — no generated ESP, no load-order slot,
-  no master dependencies to worry about.
+  figures out the order, the iteration, and the merge.
+
+  The deeper difference is the output format. Synthesis emits a real
+  Skyrim `.esp`, which means the patch has to live within every limit
+  the game engine imposes on plugins:
+  - **One of 255 full plugin slots** (or an ESL slot, which caps new
+    records at 2048 and FormIDs at 0xFFF). Every Synthesis patcher you
+    run burns a slot; stack a few and you're budgeting load order
+    around your patchers.
+  - **Master dependency graph.** An ESP that overrides records from
+    `Skyrim.esm`, `Dawnguard.esm`, and some mod's `.esp` must master
+    all of them, in a compatible order. Reorder the load order and the
+    patch has to be regenerated.
+  - **Record-level conflict resolution.** Two ESPs touching the same
+    record conflict on the whole record — the winner's version wipes
+    the loser's edits to unrelated fields. You fix it with another
+    patch, or with conflict-resolution rules inside Synthesis.
+  - **Record schema is fixed.** You can only express things the ESP
+    format has a field for. Computed values, cross-record joins, and
+    "this effect should retract when X stops being true" don't fit and
+    have to be faked with scripts or SPID-style runtime glue.
+  - **Regeneration on every load-order change.** Add, remove, or
+    reorder a mod and the Synthesis output is stale — you re-run the
+    pipeline and ship a new ESP.
+
+  Mora sidesteps the ESP entirely. The output is a flat binary of
+  `(FormID, field, op, value)` tuples applied to live forms at load
+  by an SKSE plugin. No plugin slot, no masters, no record-level
+  conflicts (rules merge at the field/op level), no schema lock-in
+  (the rule language has arithmetic, joins, and computed values), and
+  dynamic `maintain`/`on` rules for behavior that depends on live game
+  state and must auto-retract — none of which an ESP can express.
 - **SkyProc.** Abandoned, Java, per-patcher GUIs. Mora is a single binary
   with one input language and a declarative model that doesn't need a GUI
   per rule.
@@ -121,19 +150,29 @@ gtest, fmt, and zlib automatically.
 ### Windows — SKSE runtime DLL
 
 The runtime DLL (`MoraRuntime.dll`) is the SKSE plugin that applies patches
-in-game. It can be built two ways:
+in-game. Windows is a first-class build target — every release is shipped
+from a native MSVC build and CI runs the full Windows pipeline on every push.
 
-- **Native (GitHub Actions / Windows dev box)** — MSVC via `xmake build
-  mora_runtime` or the CI workflow at `.github/workflows/ci.yml`.
-- **Cross-compile from Linux** — clang-cl + xwin; see
-  `scripts/build_commonlib.sh`, `scripts/build_rt_lib.sh`, and
-  `scripts/build_runtime_dll.sh`.
+Prerequisites on a Windows dev box:
 
-Either way you'll need the `extern/CommonLibSSE-NG` submodule initialised:
+- Visual Studio 2022 with the **Desktop development with C++** workload
+  (MSVC v143 toolset, Windows 10/11 SDK).
+- Python 3.10+ with `pyyaml` installed: `pip install pyyaml`.
+- Git with submodules initialised:
+  `git submodule update --init --recursive`.
 
-```bash
-git submodule update --init --recursive
-```
+Build the runtime DLL and its static runtime library from a **Developer
+PowerShell for VS 2022** prompt. The canonical build recipe lives in
+`.github/workflows/ci.yml` — it builds CommonLibSSE-NG into a static lib,
+then compiles `mora_rt.lib` and links `MoraRuntime.dll`. You can either run
+that workflow locally via [`act`](https://github.com/nektos/act) or copy the
+three PowerShell steps (`Build CommonLibSSE-NG static lib`,
+`Build mora_rt.lib`, `Link MoraRuntime.dll`) into a local script.
+
+For Linux contributors, a cross-compile path using clang-cl + xwin is
+available via `scripts/build_commonlib.sh`, `scripts/build_rt_lib.sh`, and
+`scripts/build_runtime_dll.sh`. This is a convenience for local iteration —
+Windows CI is always the authoritative build.
 
 ## CI
 

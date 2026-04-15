@@ -61,6 +61,13 @@ jobs:
         with:
           submodules: recursive
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: pip install pyyaml
+
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
