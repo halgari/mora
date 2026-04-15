@@ -80,8 +80,12 @@ jobs:
             if (Test-Path $path -PathType Leaf) { Remove-Item -Force $path }
             elseif (Test-Path $path) { Remove-Item -Recurse -Force $path }
           }
-          git clone --depth 1 --branch v1.14.1 https://github.com/gabime/spdlog.git "$shim/spdlog-src"
-          git clone --depth 1 --branch 11.0.2 https://github.com/fmtlib/fmt.git "$shim/fmt-src"
+          # Versions must match the Linux dev setup
+          # (/usr/include/spdlog = 1.17, /usr/include/fmt = 12.x), and spdlog
+          # must be driven in SPDLOG_FMT_EXTERNAL mode (see build flags below)
+          # so it uses our standalone fmt rather than its bundled copy.
+          git clone --depth 1 --branch v1.17.0 https://github.com/gabime/spdlog.git "$shim/spdlog-src"
+          git clone --depth 1 --branch 12.0.0  https://github.com/fmtlib/fmt.git    "$shim/fmt-src"
           Move-Item "$shim/spdlog-src/include/spdlog" "$shim/spdlog"
           Move-Item "$shim/fmt-src/include/fmt"       "$shim/fmt"
           Remove-Item -Recurse -Force "$shim/spdlog-src","$shim/fmt-src"
@@ -95,8 +99,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/commonlib
-          key: commonlib-${{ runner.os }}-${{ hashFiles('extern/CommonLibSSE-NG/**/*.cpp', 'extern/CommonLibSSE-NG/**/*.h') }}
-          restore-keys: commonlib-${{ runner.os }}-
+          key: commonlib-v2-${{ runner.os }}-${{ hashFiles('extern/CommonLibSSE-NG/**/*.cpp', 'extern/CommonLibSSE-NG/**/*.h') }}
+          restore-keys: commonlib-v2-${{ runner.os }}-
 
       - name: Build CommonLibSSE-NG static lib (ninja)
         run: |
@@ -108,7 +112,7 @@ jobs:
 
           # Shared flags (compile-only; no /Fo).
           $flags = "/nologo /std:c++latest /O2 /EHsc /utf-8 /MD /Zc:preprocessor " +
-                   "/DWIN32 /D_WIN32 /DNOMINMAX /DSPDLOG_COMPILED_LIB " +
+                   "/DWIN32 /D_WIN32 /DNOMINMAX /DSPDLOG_COMPILED_LIB /DSPDLOG_FMT_EXTERNAL " +
                    "/DENABLE_SKYRIM_SE=1 /DENABLE_SKYRIM_AE=1 " +
                    "/I`"$commonlib/include`" /I`"$proj/extern/spdlog-shim`" " +
                    "/I`"$proj/extern/simplemath-shim`" " +
@@ -165,7 +169,7 @@ jobs:
             '/nologo','/std:c++latest','/O2','/EHsc','/utf-8','/MD',
             '/Zc:preprocessor',
             '/DWIN32','/D_WIN32','/DNOMINMAX',
-            '/DSPDLOG_COMPILED_LIB',
+            '/DSPDLOG_COMPILED_LIB','/DSPDLOG_FMT_EXTERNAL',
             '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
             '/USKSE_SUPPORT_XBYAK',
             "/I$proj/include",
