@@ -1,5 +1,4 @@
 #include "mora/diag/diagnostic.h"
-#include "mora/lsp/uri.h"
 
 namespace mora {
 
@@ -37,8 +36,7 @@ void DiagBag::add(Diagnostic diag) {
     diags_.push_back(std::move(diag));
 }
 
-std::vector<Diagnostic> DiagBag::drain_for_uri(std::string_view uri) {
-    std::string path = lsp::path_from_uri(uri);
+std::vector<Diagnostic> DiagBag::drain_for_file(std::string_view path) {
     std::vector<Diagnostic> out;
     std::lock_guard<std::mutex> g(mu_);
     auto it = diags_.begin();

@@ -35,9 +35,11 @@ public:
     bool at_error_limit() const { return error_count_ >= kMaxErrors; }
     const std::vector<Diagnostic>& all() const { return diags_; }
 
-    // Remove and return all diagnostics whose span.file corresponds to the
-    // given file:// URI. Other diagnostics remain in the bag.
-    std::vector<Diagnostic> drain_for_uri(std::string_view uri);
+    // Remove and return all diagnostics whose span.file equals `path`.
+    // Other diagnostics remain in the bag. Callers are responsible for
+    // converting URIs to paths (see mora::lsp::path_from_uri) — the diag
+    // layer is deliberately URI-agnostic so it doesn't pull in lsp/.
+    std::vector<Diagnostic> drain_for_file(std::string_view path);
 
 private:
     std::vector<Diagnostic> diags_;

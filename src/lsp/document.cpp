@@ -61,7 +61,7 @@ const std::vector<mora::Diagnostic>& Document::diagnostics() {
     pool_   = std::move(pool);
     module_ = std::move(module);
 
-    diagnostics_ = bag.drain_for_uri(uri_);
+    diagnostics_ = bag.drain_for_file(path);
     cache_stale_ = false;
     return diagnostics_;
 }
