@@ -8,6 +8,9 @@ if is_plat("windows") then
     -- fmt (base.h) static_asserts unless this is set on MSVC, and it
     -- must apply to every TU that includes a fmt header.
     add_cxflags("/utf-8", {force = true})
+    -- Quiet MSVC's C4996 "unsafe" CRT deprecations (getenv, etc.).
+    -- We build with /WX, so leaving them hot turns warnings into errors.
+    add_defines("_CRT_SECURE_NO_WARNINGS")
 end
 
 -- ══════════════════════════════════════════════════════════════
