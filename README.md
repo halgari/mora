@@ -174,6 +174,13 @@ available via `scripts/build_commonlib.sh`, `scripts/build_rt_lib.sh`, and
 `scripts/build_runtime_dll.sh`. This is a convenience for local iteration —
 Windows CI is always the authoritative build.
 
+## Editor support
+
+Syntax highlighting and a forthcoming language server live in
+[`editors/vscode/`](editors/vscode/). The packaged `.vsix` ships in the
+Windows release archive at `tools/Mora/mora-vscode-<version>.vsix`;
+sideload it into VS Code with **Extensions → ⋯ → Install from VSIX**.
+
 ## CI
 
 [![CI](https://github.com/halgari/mora/actions/workflows/ci.yml/badge.svg)](https://github.com/halgari/mora/actions/workflows/ci.yml)
