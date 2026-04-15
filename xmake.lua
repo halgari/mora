@@ -30,12 +30,9 @@ target("mora_lib")
               "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
               "src/harness/*.cpp",
               "src/model/*.cpp", "src/dag/*.cpp")
-    -- form_model_verify.cpp is Windows-runtime-only: it needs
-    -- CommonLibSSE-NG headers to static-assert form offsets, and the
-    -- CLI build doesn't link CommonLib. The file is #ifdef _WIN32
-    -- guarded so on Linux it's empty anyway; excluding it keeps the
-    -- Windows CLI build happy.
-    remove_files("src/rt/form_model_verify.cpp")
+    -- Runtime files that touch CommonLibSSE-NG guard their bodies on
+    -- MORA_WITH_COMMONLIB. The CLI doesn't link CommonLib, so leave
+    -- that undefined here — guarded blocks compile as empty stubs.
     add_packages("zlib", "fmt", {public = true})
     -- Regenerate src/model/relations_seed.cpp and docs/src/relations.md from
     -- data/relations/**/*.yaml whenever any source YAML is newer than its

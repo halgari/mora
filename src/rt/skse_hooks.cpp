@@ -1,4 +1,4 @@
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 #include "mora/rt/skse_hooks.h"
 #include "mora/model/relations.h"
 #include "mora/dag/graph.h"

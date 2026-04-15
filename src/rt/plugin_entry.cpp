@@ -1,7 +1,7 @@
 // src/rt/plugin_entry.cpp
 // SKSE plugin glue — loads mora_patches.bin and applies at DataLoaded.
 
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 
 #include <SKSE/SKSE.h>
 #include <chrono>

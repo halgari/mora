@@ -3,7 +3,7 @@
 // No raw pointer math or memcpy-based field writes.
 // ═══════════════════════════════════════════════════════════════════════════
 
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 
 #include "mora/data/action_names.h"
 #include "mora/emit/patch_table.h"

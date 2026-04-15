@@ -171,6 +171,7 @@ jobs:
             '/DWIN32','/D_WIN32','/DNOMINMAX',
             '/DSPDLOG_COMPILED_LIB','/DSPDLOG_FMT_EXTERNAL',
             '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
+            '/DMORA_WITH_COMMONLIB',
             '/USKSE_SUPPORT_XBYAK',
             "/I$proj/include",
             "/I$proj/extern/CommonLibSSE-NG/include",

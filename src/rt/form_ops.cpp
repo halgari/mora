@@ -4,7 +4,7 @@
 #include "mora/rt/form_ops.h"
 #include "mora/data/form_model.h"
 
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 #include <RE/T/TESForm.h>
 #endif
 
@@ -16,7 +16,7 @@ uint64_t get_field_offset(uint8_t ft, uint16_t field_id) {
     return model::field_offset_for(ft, static_cast<FieldId>(field_id));
 }
 
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 void for_each_form_of_type(uint8_t form_type, void (*cb)(void*, void*), void* ctx) {
     if (!cb) return;
     // Called from the SKSE DataLoaded hook on the main thread — forms map is

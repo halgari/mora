@@ -7,7 +7,7 @@
 // the game's ABI.
 // ═══════════════════════════════════════════════════════════════════════════
 
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 
 #include "mora/data/form_model.h"
 

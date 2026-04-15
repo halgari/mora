@@ -1,4 +1,4 @@
-#ifdef _WIN32
+#ifdef MORA_WITH_COMMONLIB
 #include "mora/rt/handler_impls.h"
 
 #include <RE/T/TESForm.h>
