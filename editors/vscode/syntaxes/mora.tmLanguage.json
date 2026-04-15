@@ -7,7 +7,10 @@
     { "include": "#comments" },
     { "include": "#keywords-toplevel" },
     { "include": "#keywords-body" },
-    { "include": "#namespaces-builtin" }
+    { "include": "#namespaces-builtin" },
+    { "include": "#atoms" },
+    { "include": "#variables" },
+    { "include": "#relation-call" }
   ],
   "repository": {
     "comments": {
@@ -25,6 +28,18 @@
     "namespaces-builtin": {
       "match": "\\b(form|ref|player|world|event)(?=/)",
       "name": "entity.name.namespace.builtin.mora"
+    },
+    "atoms": {
+      "match": "@[A-Za-z_][A-Za-z0-9_]*",
+      "name": "constant.other.atom.mora"
+    },
+    "variables": {
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b",
+      "name": "variable.parameter.mora"
+    },
+    "relation-call": {
+      "match": "\\b([a-z_][a-z0-9_]*)(?=\\s*\\()",
+      "name": "entity.name.function.mora"
     }
   }
 }
