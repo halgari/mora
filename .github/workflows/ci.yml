@@ -29,9 +29,13 @@ jobs:
         run: |
           # Self-hosted myoung34/github-runner runs as root; no sudo needed
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git curl unzip zip pkg-config \
+          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential g++-12 git curl unzip zip pkg-config \
                                   libreadline-dev python3-pip
+          # g++-12 on Ubuntu 22.04 gives full C++20 (including <span>)
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
           pip install pyyaml
+          g++ --version | head -1
 
       - uses: xmake-io/github-action-setup-xmake@v1
         with:
