@@ -1,0 +1,45 @@
+# SYNTAX TEST "source.mora"
+namespace test.example
+# <-------- keyword.control.mora
+
+requires mod("Skyrim.esm")
+# <------- keyword.control.mora
+#        ^^^ keyword.control.mora
+#            ^^^^^^^^^^^^ string.quoted.double.mora
+
+# Derived rule: all NPCs in the Bandit faction
+bandit(NPC):
+# <----- entity.name.function.mora
+#      ^^^ variable.parameter.mora
+    form/npc(NPC)
+    form/faction(NPC, @BanditFaction)
+
+# Tag all bandits with a keyword
+tag_bandits(NPC):
+    bandit(NPC)
+    => add form/keyword(NPC, @ActorTypeNPC)
+
+# Silver weapons (not greatswords) get extra damage
+silver_weapons(Weapon):
+    form/weapon(Weapon)
+    form/keyword(Weapon, @WeapMaterialSilver)
+#   ^^^^ entity.name.namespace.builtin.mora
+#        ^^^^^^^ entity.name.function.mora
+#                        ^^^^^^^^^^^^^^^^^^^ constant.other.atom.mora
+    not form/keyword(Weapon, @WeapTypeGreatsword)
+    => add form/keyword(Weapon, @WeapMaterialSilver)
+
+# All iron weapons
+iron_weapons(Weapon):
+    form/weapon(Weapon)
+    form/keyword(Weapon, @WeapMaterialIron)
+    => add form/keyword(Weapon, @WeapMaterialIron)
+
+# High-level bandits (level 20+)
+elite_bandits(NPC):
+    bandit(NPC)
+    form/base_level(NPC, Level)
+    Level >= 20
+#         ^^ keyword.operator.comparison.mora
+#            ^^ constant.numeric.mora
+    => add form/keyword(NPC, @ActorTypeNPC)
