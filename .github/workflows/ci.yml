@@ -100,6 +100,7 @@ jobs:
   windows:
     name: Windows (MSVC — SKSE runtime DLL)
     runs-on: windows-latest
+    needs: extension
     defaults:
       run:
         shell: pwsh
@@ -307,6 +308,12 @@ jobs:
           Write-Host "Built $($exe.FullName)"
           "MORA_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Download VS Code extension .vsix
+        uses: actions/download-artifact@v4
+        with:
+          name: mora-vscode-vsix
+          path: dist/vsix
+
       - name: Package release archive
         run: |
           $ErrorActionPreference = 'Stop'
@@ -323,6 +330,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/Data/SKSE/Plugins" | Out-Null
           Copy-Item "$env:MORA_EXE"                     "$stage/tools/Mora/mora.exe"
           Copy-Item "$proj/build/runtime/MoraRuntime.dll" "$stage/Data/SKSE/Plugins/MoraRuntime.dll"
+          $vsix = Get-ChildItem -Path "$proj/dist/vsix" -Filter mora-vscode-*.vsix | Select-Object -First 1
+          if (-not $vsix) { throw "VS Code .vsix not found in dist/vsix" }
+          Copy-Item $vsix.FullName "$stage/tools/Mora/$($vsix.Name)"
+          Write-Host "Bundled $($vsix.Name) into release archive"
           $zip = "$proj/dist/Mora-$version-windows.zip"
           Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
           Write-Host "Packaged $zip"
