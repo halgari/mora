@@ -9,6 +9,7 @@ build/
 MoraCache/
 SkyPatcher
 .superpowers/
+.worktrees/
 docs/site/
 docs/site/
 compile_commands.json
