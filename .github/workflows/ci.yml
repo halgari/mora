@@ -28,12 +28,26 @@ jobs:
       - name: Install system deps
         run: |
           # Self-hosted myoung34/github-runner runs as root; no sudo needed
+          set -e
+          cat /etc/os-release | head -2
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential g++-12 git curl unzip zip pkg-config \
-                                  libreadline-dev python3-pip
-          # g++-12 on Ubuntu 22.04 gives full C++20 (including <span>)
-          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
-          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            software-properties-common build-essential git curl unzip zip pkg-config \
+            libreadline-dev python3-pip
+          # Ensure universe (jammy) and toolchain PPA — guarantees g++-12 availability.
+          add-apt-repository -y universe || true
+          add-apt-repository -y ppa:ubuntu-toolchain-r/test || true
+          apt-get update
+          # Install newest g++ we can get; fall through versions.
+          GPP=""
+          for v in 14 13 12; do
+            if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++-$v gcc-$v; then
+              GPP=$v; break
+            fi
+          done
+          if [[ -z "$GPP" ]]; then echo "no modern g++ available" >&2; exit 1; fi
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-$GPP 100
+          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-$GPP 100
           pip install pyyaml
           g++ --version | head -1
 
