@@ -14,47 +14,11 @@ concurrency:
 jobs:
   linux:
     name: Linux (xmake + gtest)
+    # skyrim-runner:local bakes gcc-13, xmake v2.9.9, python3-yaml, and
+    # XMAKE_ROOT=y at the image level — no per-run install needed.
     runs-on: [self-hosted, linux]
-    env:
-      # myoung34/github-runner containers run as root; xmake refuses unless told.
-      XMAKE_ROOT: y
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install system deps
-        run: |
-          # Self-hosted myoung34/github-runner runs as root; no sudo needed
-          set -e
-          cat /etc/os-release | head -2
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            software-properties-common build-essential git curl unzip zip pkg-config \
-            libreadline-dev python3-pip
-          # Ensure universe (jammy) and toolchain PPA — guarantees g++-12 availability.
-          add-apt-repository -y universe || true
-          add-apt-repository -y ppa:ubuntu-toolchain-r/test || true
-          apt-get update
-          # Install newest g++ we can get; fall through versions.
-          GPP=""
-          # GitHub's ubuntu-latest uses gcc-13 (on 24.04). Match that.
-          for v in 13 14 12; do
-            if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++-$v gcc-$v; then
-              GPP=$v; break
-            fi
-          done
-          if [[ -z "$GPP" ]]; then echo "no modern g++ available" >&2; exit 1; fi
-          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-$GPP 100
-          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-$GPP 100
-          pip install pyyaml
-          g++ --version | head -1
-
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
 
       - name: Cache xmake packages
         uses: actions/cache@v4
@@ -66,11 +30,9 @@ jobs:
           restore-keys: xmake-linux-
 
       - name: Configure
-        # -pthread: std::thread link under manually-installed gcc
-        # -include stddef.h: guarantees global ::size_t (g++-12 headers no longer
-        #   transitively pull it in; project sources use bare 'size_t' at namespace scope)
-        # -Wno-dangling-reference: gcc-13+ warning (forward-compat: gcc-12 ignores unknown -Wno-*)
-        run: xmake f -y -m releasedbg --cxflags="-pthread -include stddef.h -Wno-dangling-reference" --ldflags=-pthread
+        # -pthread: std::thread link on gcc's libstdc++
+        # -Wno-dangling-reference: gcc-13 false positive in some TUs
+        run: xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
 
       - name: Build
         run: xmake build -y
@@ -124,216 +86,46 @@ jobs:
           path: editors/vscode/mora-vscode-*.vsix
           if-no-files-found: error
 
-  windows:
-    name: Windows (MSVC — SKSE runtime DLL)
-    runs-on: [self-hosted, windows]
+  windows-xcompile:
+    # Cross-compile mora.exe + MoraRuntime.dll + MoraTestHarness.dll on the
+    # self-hosted Linux runner using clang-cl + lld-link + xwin sysroot.
+    # No Visual Studio, no Windows runner, no wine.
+    #
+    # skyrim-runner:local bakes the whole toolchain: clang / lld / llvm,
+    # xmake v2.9.9, xwin binary, and a pre-splatted sysroot at /opt/xwin
+    # (XWIN_PATH env set at the image level). No per-run install needed.
+    name: Windows (clang-cl cross-compile on self-hosted linux)
+    runs-on: [self-hosted, linux]
     needs: extension
-    defaults:
-      run:
-        shell: pwsh
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python deps
-        run: pip install pyyaml
-
-      - name: Fetch spdlog and fmt headers (replace Linux-only symlinks)
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # extern/spdlog-shim/{spdlog,fmt} are symlinks to /usr/include/* on
-          # Linux dev boxes. On Windows checkout they materialize as text files
-          # containing the target path. Replace them with real headers.
-          $shim = "$PWD/extern/spdlog-shim"
-          foreach ($name in @('spdlog','fmt')) {
-            $path = "$shim/$name"
-            if (Test-Path $path -PathType Leaf) { Remove-Item -Force $path }
-            elseif (Test-Path $path) { Remove-Item -Recurse -Force $path }
-          }
-          # Versions must match the Linux dev setup
-          # (/usr/include/spdlog = 1.17, /usr/include/fmt = 12.x), and spdlog
-          # must be driven in SPDLOG_FMT_EXTERNAL mode (see build flags below)
-          # so it uses our standalone fmt rather than its bundled copy.
-          git clone --depth 1 --branch v1.17.0 https://github.com/gabime/spdlog.git "$shim/spdlog-src"
-          git clone --depth 1 --branch 12.0.0  https://github.com/fmtlib/fmt.git    "$shim/fmt-src"
-          Move-Item "$shim/spdlog-src/include/spdlog" "$shim/spdlog"
-          Move-Item "$shim/fmt-src/include/fmt"       "$shim/fmt"
-          Remove-Item -Recurse -Force "$shim/spdlog-src","$shim/fmt-src"
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Cache CommonLibSSE-NG objects
-        uses: actions/cache@v4
-        with:
-          path: build/commonlib
-          key: commonlib-v2-${{ runner.os }}-${{ hashFiles('extern/CommonLibSSE-NG/**/*.cpp', 'extern/CommonLibSSE-NG/**/*.h') }}
-          restore-keys: commonlib-v2-${{ runner.os }}-
-
-      - name: Build CommonLibSSE-NG static lib (ninja)
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $proj = $PWD.Path -replace '\\','/'
-          $commonlib = "$proj/extern/CommonLibSSE-NG"
-          $buildDir = "$proj/build/commonlib"
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-
-          # Shared flags (compile-only; no /Fo).
-          $flags = "/nologo /std:c++latest /O2 /EHsc /utf-8 /MD /Zc:preprocessor " +
-                   "/DWIN32 /D_WIN32 /DNOMINMAX /DSPDLOG_COMPILED_LIB /DSPDLOG_FMT_EXTERNAL " +
-                   "/DENABLE_SKYRIM_SE=1 /DENABLE_SKYRIM_AE=1 " +
-                   "/I`"$commonlib/include`" /I`"$proj/extern/spdlog-shim`" " +
-                   "/I`"$proj/extern/simplemath-shim`" " +
-                   "/FISKSE/Impl/PCH.h /w"
-
-          $sources = Get-ChildItem -Path "$commonlib/src" -Recurse -Filter *.cpp
-          Write-Host "Generating ninja build for $($sources.Count) CommonLibSSE source files..."
-
-          $ninja = [System.Collections.Generic.List[string]]::new()
-          $ninja.Add("ninja_required_version = 1.8")
-          $ninja.Add("rule cxx")
-          $ninja.Add("  command = cl.exe $flags /c /Fo`$out `$in")
-          $ninja.Add("  description = CXX `$out")
-          $ninja.Add("  deps = msvc")
-
-          # Ninja uses ':' as the output/rule separator, so drive-letter
-          # paths like 'D:/...' must escape the colon as '$:'.
-          function Esc-Ninja([string]$p) { $p -replace ':','$:' }
-
-          $objFiles = [System.Collections.Generic.List[string]]::new()
-          $prefix = ("$commonlib/src/").Replace('/','\')
-          foreach ($s in $sources) {
-            $rel = $s.FullName.Substring($prefix.Length)
-            $objName = (($rel -replace '[\\/]','_') -replace '\.cpp$','.obj')
-            $obj = "$buildDir/$objName"
-            $objFiles.Add($obj)
-            $srcN = $s.FullName -replace '\\','/'
-            $ninja.Add("build $(Esc-Ninja $obj): cxx $(Esc-Ninja $srcN)")
-          }
-          Set-Content -Path "$buildDir/build.ninja" -Value $ninja -Encoding ascii
-
-          & ninja -f "$buildDir/build.ninja"
-          if ($LASTEXITCODE -ne 0) { throw "ninja failed" }
-
-          $existing = $objFiles | Where-Object { Test-Path $_ }
-          Write-Host "Compiled $($existing.Count)/$($sources.Count) object files"
-
-          # Response file — too many args for the command line otherwise.
-          $rsp = "$buildDir/lib.rsp"
-          Set-Content -Path $rsp -Value ($existing -join "`n") -Encoding ascii
-          & lib.exe /nologo "/out:$commonlib/CommonLibSSE.lib" "@$rsp"
-          if ($LASTEXITCODE -ne 0) { throw "lib.exe failed" }
-          Write-Host "Produced $commonlib/CommonLibSSE.lib"
-
-      - name: Build mora_rt.lib
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $proj = $PWD.Path
-          $buildDir = "$proj/build/rt"
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-          New-Item -ItemType Directory -Force -Path "$proj/data" | Out-Null
-
-          $flags = @(
-            '/nologo','/std:c++latest','/O2','/EHsc','/utf-8','/MD',
-            '/Zc:preprocessor',
-            '/DWIN32','/D_WIN32','/DNOMINMAX',
-            '/DSPDLOG_COMPILED_LIB','/DSPDLOG_FMT_EXTERNAL',
-            '/DENABLE_SKYRIM_SE=1','/DENABLE_SKYRIM_AE=1',
-            '/DMORA_WITH_COMMONLIB',
-            '/USKSE_SUPPORT_XBYAK',
-            "/I$proj/include",
-            "/I$proj/extern/CommonLibSSE-NG/include",
-            "/I$proj/extern/spdlog-shim",
-            "/I$proj/extern/simplemath-shim",
-            '/FISKSE/Impl/PCH.h'
-          )
-
-          $patterns = @(
-            'src/core/*.cpp','src/data/*.cpp','src/diag/*.cpp',
-            'src/eval/*.cpp','src/emit/*.cpp',
-            'src/rt/*.cpp','src/rt/handlers/*.cpp',
-            'src/dag/*.cpp','src/model/*.cpp'
-          )
-          $sources = @()
-          foreach ($p in $patterns) { $sources += Get-ChildItem -Path $p -ErrorAction SilentlyContinue }
-          $sources = $sources | Where-Object {
-            $_.Name -ne 'form_model_verify.cpp' -and $_.Name -ne 'renderer.cpp'
-          }
-
-          # Regenerate relations_seed.cpp (xmake.lua does this pre-build; we replicate it)
-          python tools/gen_relations.py
-          if ($LASTEXITCODE -ne 0) { throw "gen_relations.py failed" }
-
-          # cl /MP compiles all inputs in parallel in a single invocation.
-          $allSources = @($sources.FullName) + @(
-            "$proj/extern/spdlog-shim/spdlog.cpp",
-            "$proj/extern/spdlog-shim/fmt.cpp"
-          )
-          $nproc = [Environment]::ProcessorCount
-          Write-Host "Compiling $($allSources.Count) files with /MP$nproc ..."
-          & cl.exe @flags "/MP$nproc" '/c' "/Fo$buildDir/" @allSources
-          if ($LASTEXITCODE -ne 0) { throw "cl.exe failed" }
-
-          $objFiles = @()
-          foreach ($p in $allSources) {
-            $objFiles += "$buildDir/$([System.IO.Path]::GetFileNameWithoutExtension($p)).obj"
-          }
-
-          & lib.exe /nologo "/out:$proj/data/mora_rt.lib" $objFiles
-          if ($LASTEXITCODE -ne 0) { throw "lib.exe failed" }
-          Write-Host "Produced data/mora_rt.lib"
-
-      - name: Link MoraRuntime.dll
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $proj = $PWD.Path
-          $outDir = "$proj/build/runtime"
-          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-          & link.exe /nologo /dll "/out:$outDir/MoraRuntime.dll" /machine:x64 `
-            "/def:$proj/scripts/MoraRuntime.def" `
-            "/wholearchive:$proj/data/mora_rt.lib" `
-            "$proj/extern/CommonLibSSE-NG/CommonLibSSE.lib" `
-            msvcrt.lib ucrt.lib vcruntime.lib `
-            kernel32.lib user32.lib advapi32.lib `
-            ole32.lib shell32.lib `
-            dxgi.lib version.lib d3dcompiler.lib dbghelp.lib `
-            d3d11.lib bcrypt.lib
-          if ($LASTEXITCODE -ne 0) { throw "link.exe failed" }
-
-          Get-Item "$outDir/MoraRuntime.dll" | Format-List Name,Length,LastWriteTime
-
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
-
-      - name: Cache xmake packages (Windows)
+      - name: Cache xmake packages
         uses: actions/cache@v4
         with:
           path: |
-            ~/AppData/Local/.xmake
+            ~/.xmake
             build/.packages
-          key: xmake-windows-${{ hashFiles('xmake.lua') }}
-          restore-keys: xmake-windows-
+          key: xmake-xcompile-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-xcompile-
 
-      - name: Build mora.exe (CLI compiler)
+      - name: Configure (windows / clang-cl + xwin)
+        # No --toolchain flag — project sets it via set_toolchains inside
+        # the is_plat("windows") block. xmake v2.9.9 doesn't propagate
+        # package include dirs correctly when --toolchain= is specified
+        # at CLI, but letting the project apply it works.
+        run: xmake f -p windows -a x64 -m release -y
+
+      - name: Build mora.exe + MoraRuntime.dll + MoraTestHarness.dll
         run: |
-          $ErrorActionPreference = 'Stop'
-          xmake f -p windows -a x64 -m release -y
-          if ($LASTEXITCODE -ne 0) { throw "xmake f failed" }
           xmake build -y mora
-          if ($LASTEXITCODE -ne 0) { throw "xmake build mora failed" }
-          $exe = Get-ChildItem -Recurse -Path build -Filter mora.exe | Select-Object -First 1
-          if (-not $exe) { throw "mora.exe not found under build/" }
-          Write-Host "Built $($exe.FullName)"
-          "MORA_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          xmake build -y mora_runtime
+          xmake build -y mora_test_harness
+
+      - name: List built binaries
+        run: ls -lh build/windows/x64/release/
 
       - name: Download VS Code extension .vsix
         uses: actions/download-artifact@v4
@@ -343,32 +135,33 @@ jobs:
 
       - name: Package release archive
         run: |
-          $ErrorActionPreference = 'Stop'
-          $proj = $PWD.Path
-          $ref  = "${{ github.ref }}"
-          if ($ref.StartsWith('refs/tags/v')) {
-            $version = $ref.Substring('refs/tags/v'.Length)
-          } else {
-            $version = "0.0.0-$("${{ github.sha }}".Substring(0,7))"
-          }
-          Write-Host "Release version: $version"
-          $stage = "$proj/dist/Mora-$version-windows"
-          New-Item -ItemType Directory -Force -Path "$stage/tools/Mora" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$stage/Data/SKSE/Plugins" | Out-Null
-          Copy-Item "$env:MORA_EXE"                     "$stage/tools/Mora/mora.exe"
-          Copy-Item "$proj/build/runtime/MoraRuntime.dll" "$stage/Data/SKSE/Plugins/MoraRuntime.dll"
-          $vsix = Get-ChildItem -Path "$proj/dist/vsix" -Filter mora-vscode-*.vsix | Select-Object -First 1
-          if (-not $vsix) { throw "VS Code .vsix not found in dist/vsix" }
-          Copy-Item $vsix.FullName "$stage/tools/Mora/$($vsix.Name)"
-          Write-Host "Bundled $($vsix.Name) into release archive"
-          $zip = "$proj/dist/Mora-$version-windows.zip"
-          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
-          Write-Host "Packaged $zip"
-          Get-ChildItem $stage -Recurse | ForEach-Object {
-            Write-Host ("  " + $_.FullName.Substring($stage.Length + 1))
-          }
-          "MORA_VERSION=$version"  | Out-File -FilePath $env:GITHUB_ENV -Append
-          "MORA_ZIP=$zip"          | Out-File -FilePath $env:GITHUB_ENV -Append
+          set -euo pipefail
+          proj=$GITHUB_WORKSPACE
+          ref=${GITHUB_REF:-}
+          if [[ "$ref" == refs/tags/v* ]]; then
+            version=${ref#refs/tags/v}
+          else
+            version="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "Release version: $version"
+          stage="$proj/dist/Mora-$version-windows"
+          mkdir -p "$stage/tools/Mora" "$stage/Data/SKSE/Plugins"
+          cp "$proj/build/windows/x64/release/mora.exe"              "$stage/tools/Mora/mora.exe"
+          cp "$proj/build/windows/x64/release/MoraRuntime.dll"       "$stage/Data/SKSE/Plugins/MoraRuntime.dll"
+          cp "$proj/build/windows/x64/release/MoraTestHarness.dll"   "$stage/Data/SKSE/Plugins/MoraTestHarness.dll"
+          vsix=$(ls "$proj/dist/vsix"/mora-vscode-*.vsix | head -1)
+          if [[ -z "$vsix" ]]; then
+            echo "::error::VS Code .vsix not found in dist/vsix"
+            exit 1
+          fi
+          cp "$vsix" "$stage/tools/Mora/$(basename "$vsix")"
+          echo "Bundled $(basename "$vsix") into release archive"
+          zip="$proj/dist/Mora-$version-windows.zip"
+          (cd "$stage" && zip -r "$zip" .)
+          echo "Packaged $zip"
+          find "$stage" -type f | sed "s|$stage/||"
+          echo "MORA_VERSION=$version" >> "$GITHUB_ENV"
+          echo "MORA_ZIP=$zip"         >> "$GITHUB_ENV"
 
       - name: Upload release archive
         uses: actions/upload-artifact@v4
@@ -399,7 +192,9 @@ jobs:
             Mora ${{ env.MORA_VERSION }} — Windows x64 build.
 
             Archive layout (extract into your Skyrim SE install root):
-              • tools/Mora/mora.exe                  — CLI compiler
-              • Data/SKSE/Plugins/MoraRuntime.dll    — SKSE runtime plugin
+              • tools/Mora/mora.exe                   — CLI compiler
+              • Data/SKSE/Plugins/MoraRuntime.dll     — SKSE runtime plugin
+              • Data/SKSE/Plugins/MoraTestHarness.dll — Integration test harness
 
-            Built by GitHub Actions from commit ${{ github.sha }}.
+            Built by GitHub Actions from commit ${{ github.sha }}
+            (cross-compiled on Ubuntu with clang-cl + xwin).
