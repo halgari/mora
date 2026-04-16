@@ -281,9 +281,13 @@ jobs:
           # /skyrim-base + /skyrim-baseline. Preserve the zip's
           # Data/SKSE/Plugins layout so both DLLs land where
           # skse64_loader.exe discovers them.
+          # MoraRuntime.dll reads mora_patches.bin from its own directory
+          # (src/rt/plugin_entry.cpp: `dll_dir / "mora_patches.bin"`), so
+          # the patches file must sit next to the DLL in SKSE/Plugins/ —
+          # not in a sibling Data/MoraCache/ directory.
           STAGE="$GITHUB_WORKSPACE/mod-under-test"
           rm -rf "$STAGE"
-          mkdir -p "$STAGE/Data/SKSE/Plugins" "$STAGE/Data/MoraCache"
+          mkdir -p "$STAGE/Data/SKSE/Plugins"
           cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
              "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
           cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
@@ -300,18 +304,19 @@ jobs:
           "$MORA_BIN" compile \
             "tests/integration/${CASE}/rules.mora" \
             --data-dir /skyrim-base/Data \
-            --output "$STAGE/Data/MoraCache"
+            --output "$STAGE/Data/SKSE/Plugins"
 
           # Sanity: mora_patches.bin must exist AND be bigger than just a
           # header (88 bytes is empty — 0 patches emitted).
-          test -s "$STAGE/Data/MoraCache/mora_patches.bin"
-          bin_size=$(stat -c %s "$STAGE/Data/MoraCache/mora_patches.bin")
+          BIN="$STAGE/Data/SKSE/Plugins/mora_patches.bin"
+          test -s "$BIN"
+          bin_size=$(stat -c %s "$BIN")
           echo "mora_patches.bin size: $bin_size bytes"
           if (( bin_size < 1024 )); then
             echo "::error::mora_patches.bin is $bin_size bytes — compiler emitted no patches"
             exit 1
           fi
-          ls -la "$STAGE/Data/MoraCache"
+          ls -la "$STAGE/Data/SKSE/Plugins"
 
       - name: Run Skyrim integration test
         env:

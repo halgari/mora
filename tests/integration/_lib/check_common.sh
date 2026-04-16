@@ -152,3 +152,27 @@ jq_assert_all() {
 quit_harness() {
   send_harness_cmd "quit" > /dev/null 2>&1 || true
 }
+
+# stash_runtime_logs — copy any SKSE / MoraRuntime logs into $LOG_DIR so
+# the CI log-artifact upload includes them for post-mortem. Safe to call
+# from the hook's EXIT trap; never fails the test.
+stash_runtime_logs() {
+  mkdir -p "$LOG_DIR" 2>/dev/null || return 0
+  # My Games/<edition>/SKSE/*.log — path varies by edition (GOG vs Steam).
+  local prefix="${STEAM_COMPAT_DATA_PATH:-/tmp/prefix}/pfx"
+  local my_games="$prefix/drive_c/users/steamuser/Documents/My Games"
+  if [[ -d "$my_games" ]]; then
+    find "$my_games" -name "*.log" -type f 2>/dev/null | while read -r f; do
+      local tag
+      tag="$(dirname "$f" | sed "s|$my_games/||" | tr '/ ' '__')"
+      cp "$f" "$LOG_DIR/${tag}__$(basename "$f")" 2>/dev/null || true
+    done
+  fi
+  # Staged mora_patches.bin — size + presence tells us if the runtime
+  # even had patches to apply.
+  local patches="$SKYRIM_ROOT/Data/SKSE/Plugins/mora_patches.bin"
+  if [[ -f "$patches" ]]; then
+    cp "$patches" "$LOG_DIR/mora_patches.bin" 2>/dev/null || true
+    _log "stashed mora_patches.bin ($(stat -c %s "$patches") bytes)"
+  fi
+}

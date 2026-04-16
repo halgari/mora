@@ -13,6 +13,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../_lib/check_common.sh"
 
+# Always stash runtime logs + patches bin on exit so CI artifacts are
+# useful regardless of pass/fail outcome.
+trap stash_runtime_logs EXIT
+
 wait_for_harness      || exit $?
 weapons="$(dump_form_type weapons)" || exit $?
 
