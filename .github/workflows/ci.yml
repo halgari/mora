@@ -125,9 +125,7 @@ jobs:
           xmake build -y mora_test_harness
 
       - name: List built binaries
-        run: |
-          ls -lh build/windows/x64/release/
-          file build/windows/x64/release/*.exe build/windows/x64/release/*.dll
+        run: ls -lh build/windows/x64/release/
 
       - name: Download VS Code extension .vsix
         uses: actions/download-artifact@v4
