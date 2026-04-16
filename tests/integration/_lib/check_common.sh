@@ -28,7 +28,10 @@ set -uo pipefail
 : "${REPO_ROOT:=${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}}"
 TEST_HARNESS_PY="$REPO_ROOT/tools/test_harness.py"
 
-_log() { echo "[check] $*"; }
+# Both log and err route to stderr so helpers that echo a return value
+# on stdout (dump_form_type echoes the dump path) can be safely captured
+# with $(…) without pulling in diagnostic noise.
+_log() { echo "[check] $*" >&2; }
 _err() { echo "[check] ERROR: $*" >&2; }
 
 # wait_for_harness — poll TCP 9742 for `status: ok` until success or retries
@@ -109,8 +112,19 @@ jq_assert_all() {
   local expr="$1"
   local file="$2"
 
+  if [[ ! -s "$file" ]]; then
+    _err "FAIL: jq_assert_all expected a non-empty file, got: $file"
+    return 4
+  fi
+
   local total failed
   total=$(wc -l < "$file")
+  # A zero-line dump is a silent success bug, not a real OK.
+  if (( total == 0 )); then
+    _err "FAIL: $file has 0 lines — nothing to assert over"
+    return 4
+  fi
+
   # Count lines where expr is NOT true. Missing / null / false all count
   # as failures.
   failed=$(jq -c "select((${expr}) | not)" "$file" | wc -l)
