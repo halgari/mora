@@ -112,7 +112,11 @@ jobs:
           restore-keys: xmake-xcompile-
 
       - name: Configure (windows / clang-cl + xwin)
-        run: xmake f -p windows -a x64 --toolchain=xwin-clang-cl -m release -y
+        # No --toolchain flag — project sets it via set_toolchains inside
+        # the is_plat("windows") block. xmake v2.9.9 doesn't propagate
+        # package include dirs correctly when --toolchain= is specified
+        # at CLI, but letting the project apply it works.
+        run: xmake f -p windows -a x64 -m release -y
 
       - name: Build mora.exe + MoraRuntime.dll + MoraTestHarness.dll
         run: |
