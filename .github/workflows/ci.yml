@@ -14,47 +14,11 @@ concurrency:
 jobs:
   linux:
     name: Linux (xmake + gtest)
+    # skyrim-runner:local bakes gcc-13, xmake v2.9.9, python3-yaml, and
+    # XMAKE_ROOT=y at the image level — no per-run install needed.
     runs-on: [self-hosted, linux]
-    env:
-      # myoung34/github-runner containers run as root; xmake refuses unless told.
-      XMAKE_ROOT: y
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install system deps
-        run: |
-          # Self-hosted myoung34/github-runner runs as root; no sudo needed
-          set -e
-          cat /etc/os-release | head -2
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            software-properties-common build-essential git curl unzip zip pkg-config \
-            libreadline-dev python3-pip
-          # Ensure universe (jammy) and toolchain PPA — guarantees g++-12 availability.
-          add-apt-repository -y universe || true
-          add-apt-repository -y ppa:ubuntu-toolchain-r/test || true
-          apt-get update
-          # Install newest g++ we can get; fall through versions.
-          GPP=""
-          # GitHub's ubuntu-latest uses gcc-13 (on 24.04). Match that.
-          for v in 13 14 12; do
-            if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++-$v gcc-$v; then
-              GPP=$v; break
-            fi
-          done
-          if [[ -z "$GPP" ]]; then echo "no modern g++ available" >&2; exit 1; fi
-          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-$GPP 100
-          update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-$GPP 100
-          pip install pyyaml
-          g++ --version | head -1
-
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
 
       - name: Cache xmake packages
         uses: actions/cache@v4
@@ -66,11 +30,9 @@ jobs:
           restore-keys: xmake-linux-
 
       - name: Configure
-        # -pthread: std::thread link under manually-installed gcc
-        # -include stddef.h: guarantees global ::size_t (g++-12 headers no longer
-        #   transitively pull it in; project sources use bare 'size_t' at namespace scope)
-        # -Wno-dangling-reference: gcc-13+ warning (forward-compat: gcc-12 ignores unknown -Wno-*)
-        run: xmake f -y -m releasedbg --cxflags="-pthread -include stddef.h -Wno-dangling-reference" --ldflags=-pthread
+        # -pthread: std::thread link on gcc's libstdc++
+        # -Wno-dangling-reference: gcc-13 false positive in some TUs
+        run: xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
 
       - name: Build
         run: xmake build -y
@@ -128,52 +90,17 @@ jobs:
     # Cross-compile mora.exe + MoraRuntime.dll + MoraTestHarness.dll on the
     # self-hosted Linux runner using clang-cl + lld-link + xwin sysroot.
     # No Visual Studio, no Windows runner, no wine.
+    #
+    # skyrim-runner:local bakes the whole toolchain: clang / lld / llvm,
+    # xmake v2.9.9, xwin binary, and a pre-splatted sysroot at /opt/xwin
+    # (XWIN_PATH env set at the image level). No per-run install needed.
     name: Windows (clang-cl cross-compile on self-hosted linux)
     runs-on: [self-hosted, linux]
-    env:
-      # myoung34/github-runner containers run as root; xmake refuses unless told.
-      XMAKE_ROOT: y
     needs: extension
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Install clang / lld / llvm + python
-        run: |
-          # Self-hosted myoung34/github-runner runs as root; no sudo needed
-          set -e
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            clang lld llvm python3-pip xz-utils zip curl ca-certificates
-          pip install pyyaml
-
-      - name: Install xwin
-        run: |
-          set -e
-          XWIN_VERSION=0.8.0
-          curl -fsSL -o /tmp/xwin.tar.gz \
-            "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz"
-          tar -xzf /tmp/xwin.tar.gz -C /tmp --strip-components=1
-          mv /tmp/xwin /usr/local/bin/xwin
-          xwin --version
-
-      - name: Cache xwin sysroot
-        id: xwin-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.xwin
-          # Bump this key when the xwin version above changes to force
-          # a re-splat of the SDK/CRT into the new layout.
-          key: xwin-sysroot-v0.8.0
-
-      - name: Splat xwin sysroot
-        if: steps.xwin-cache.outputs.cache-hit != 'true'
-        run: xwin --accept-license splat --output $HOME/.xwin
-
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
 
       - name: Cache xmake packages
         uses: actions/cache@v4
