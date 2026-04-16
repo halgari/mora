@@ -67,8 +67,10 @@ jobs:
 
       - name: Configure
         # -pthread: std::thread link under manually-installed gcc
-        # -Wno-error=dangling-reference: gcc-13 warning not present on GitHub's stock ubuntu-latest
-        run: xmake f -y -m releasedbg --cxflags="-pthread -Wno-error=dangling-reference" --ldflags=-pthread
+        # -include stddef.h: guarantees global ::size_t (g++-12 headers no longer
+        #   transitively pull it in; project sources use bare 'size_t' at namespace scope)
+        # -Wno-dangling-reference: gcc-13+ warning (forward-compat: gcc-12 ignores unknown -Wno-*)
+        run: xmake f -y -m releasedbg --cxflags="-pthread -include stddef.h -Wno-dangling-reference" --ldflags=-pthread
 
       - name: Build
         run: xmake build -y
