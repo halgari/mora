@@ -240,25 +240,47 @@ jobs:
           name: Mora-windows
           path: dist/
 
-      - name: Stage mod-under-test and compile mora rules under Proton
+      # ── mora compiler: native linux build, not Windows-under-wine ──
+      # The runner image bakes gcc-13 + xmake v2.9.9 (same toolchain as the
+      # `linux` CI job). Building + running mora natively avoids the
+      # Proton/wine quagmire — mora.exe is a plain console app and Proton's
+      # child-stdout handling hides its output entirely, with segfaults
+      # under raw wine64 on this container. Native linux mora does the
+      # exact same work (the compiler has no OS-specific patches logic)
+      # and produces an identical mora_patches.bin.
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.xmake
+            build/.packages
+          key: xmake-linux-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-linux-
+
+      - name: Build native linux mora
+        # Flags mirror the linux job (ci.yml:35). -pthread for std::thread
+        # link, -Wno-dangling-reference to quell a gcc-13 false positive.
+        run: |
+          xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
+          xmake build -y mora
+
+      - name: Stage mod-under-test and compile mora rules (native linux)
         env:
           CASE: ${{ matrix.case }}
         run: |
           set -euo pipefail
 
-          # Unpack the Windows release zip — contains mora.exe plus both
-          # SKSE plugins (MoraRuntime.dll + MoraTestHarness.dll) in the
-          # expected Data/SKSE/Plugins/ layout.
-          # The zip is produced by `(cd "$stage" && zip -r "$zip" .)` in the
-          # windows-xcompile job, so its top-level is tools/ + Data/ with
-          # no Mora-<version>/ prefix to strip.
+          # Unpack the Windows release zip for the SKSE plugin DLLs.
+          # The zip is built with `(cd "$stage" && zip -r "$zip" .)` in
+          # the windows-xcompile job, so its top-level is tools/ + Data/
+          # with no Mora-<version>/ prefix to strip.
           unzip -q dist/Mora-*-windows.zip -d artifacts/
           RELEASE_DIR=artifacts
 
           # Stage the mod-dir that run-skyrim-test.sh will overlay onto
           # /skyrim-base + /skyrim-baseline. Preserve the zip's
-          # Data/SKSE/Plugins layout so both DLLs land in the right
-          # place for skse64_loader.exe to discover.
+          # Data/SKSE/Plugins layout so both DLLs land where
+          # skse64_loader.exe discovers them.
           STAGE="$GITHUB_WORKSPACE/mod-under-test"
           rm -rf "$STAGE"
           mkdir -p "$STAGE/Data/SKSE/Plugins" "$STAGE/Data/MoraCache"
@@ -267,21 +289,28 @@ jobs:
           cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
              "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
 
-          # Bring up Xorg + pulse + warm Proton prefix. skyrim-env.sh is
-          # idempotent; run-skyrim-test.sh re-sources it later and finds
-          # the prefix already staged.
-          source /usr/local/bin/skyrim-env.sh
+          # Compile the rule via the native linux mora. `xmake show` prints
+          # the target's output path; we invoke that binary directly.
+          MORA_BIN="$(xmake show -t mora | awk '/targetfile/ {print $2; exit}')"
+          if [[ ! -x "$MORA_BIN" ]]; then
+            MORA_BIN="$(find build/linux -maxdepth 5 -type f -name mora -executable | head -1)"
+          fi
+          echo "Using mora binary: $MORA_BIN"
 
-          # Run mora.exe under Proton. Wine auto-translates absolute
-          # linux paths in argv to their Z:\ equivalents, so plain
-          # linux paths work in argv without manual conversion.
-          /opt/proton/proton run "$RELEASE_DIR/tools/Mora/mora.exe" compile \
+          "$MORA_BIN" compile \
             "tests/integration/${CASE}/rules.mora" \
             --data-dir /skyrim-base/Data \
             --output "$STAGE/Data/MoraCache"
 
-          # Sanity: mora_patches.bin must exist and be non-empty.
+          # Sanity: mora_patches.bin must exist AND be bigger than just a
+          # header (88 bytes is empty — 0 patches emitted).
           test -s "$STAGE/Data/MoraCache/mora_patches.bin"
+          bin_size=$(stat -c %s "$STAGE/Data/MoraCache/mora_patches.bin")
+          echo "mora_patches.bin size: $bin_size bytes"
+          if (( bin_size < 1024 )); then
+            echo "::error::mora_patches.bin is $bin_size bytes — compiler emitted no patches"
+            exit 1
+          fi
           ls -la "$STAGE/Data/MoraCache"
 
       - name: Run Skyrim integration test
