@@ -69,30 +69,28 @@ PY
 
 # dump_form_type <type>   e.g. dump_form_type npcs
 #
-# Issues `dump <type>` to the harness. On success echoes the local path to
-# the jsonl file (under $SKYRIM_ROOT). On failure prints the error JSON to
-# stderr and returns non-zero.
+# Issues `dump <type>` to the harness. On success echoes the local path
+# to the jsonl file (under $SKYRIM_ROOT). On failure prints the error
+# JSON to stderr and returns non-zero.
+#
+# The harness currently writes dumps to Data/MoraCache/dumps/<type>.jsonl
+# relative to Skyrim's CWD at launch. We construct the path locally
+# rather than trusting the JSON response's `file` field — older harness
+# builds emit unescaped Windows paths (e.g. "Data\MoraCache\dumps\npcs.jsonl")
+# whose backslash-n gets decoded to a literal newline by JSON parsers.
 dump_form_type() {
   local type="$1"
-  local resp file
+  local resp
   resp="$(send_harness_cmd "dump $type")"
   if ! echo "$resp" | jq -e '.ok == true' > /dev/null; then
     _err "dump $type failed: $resp"
     return 1
   fi
-  # Harness reports the path it wrote (relative "Data/MoraCache/..."
-  # because Skyrim's CWD at launch is the install root). std::filesystem
-  # on Windows may emit backslashes — flip them to slashes before we
-  # touch the file from linux. Then prefix with the overlay root if
-  # the path isn't already absolute.
-  file="$(echo "$resp" | jq -r '.file' | tr '\\' '/')"
-  case "$file" in
-    /*)  : ;;                                   # already absolute (linux)
-    [A-Za-z]:/*) file="$SKYRIM_ROOT/${file#*:}" ;;  # drive-letter absolute
-    *)   file="$SKYRIM_ROOT/$file" ;;           # relative
-  esac
+
+  local file="$SKYRIM_ROOT/Data/MoraCache/dumps/${type}.jsonl"
   if [[ ! -s "$file" ]]; then
     _err "dump file missing or empty: $file"
+    _err "harness response was: $resp"
     return 2
   fi
   _log "dump $type → $file ($(wc -l < "$file") lines)"
