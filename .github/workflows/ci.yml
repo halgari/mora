@@ -198,3 +198,99 @@ jobs:
 
             Built by GitHub Actions from commit ${{ github.sha }}
             (cross-compiled on Ubuntu with clang-cl + xwin).
+
+  # ═══════════════════════════════════════════════════════════════
+  # Skyrim-in-the-loop integration tests.
+  #
+  # Runs on the self-hosted skyrim-runner pool (labels self-hosted,
+  # linux, unraid, skyrim — image source at
+  # root@10.20.77.32:/mnt/user/skyrim-runner/). Each matrix entry is a
+  # directory under tests/integration/<case>/ with rules.mora +
+  # check.sh:
+  #
+  #   1. Download the Mora-windows release archive (mora.exe +
+  #      MoraRuntime.dll + MoraTestHarness.dll).
+  #   2. Compile rules.mora under Proton-GE → mora_patches.bin.
+  #   3. Stage a mod-dir with both SKSE plugins + the patches.
+  #   4. /usr/local/bin/run-skyrim-test.sh overlays the mod-dir onto
+  #      /skyrim-base + /skyrim-baseline, launches Skyrim under
+  #      Xorg+Proton, and invokes check.sh as TEST_HOOK.
+  #
+  # Adding a new test case: drop a new tests/integration/<case>/ dir,
+  # append <case> to the matrix below. No workflow changes beyond that.
+  # ═══════════════════════════════════════════════════════════════
+  skyrim-integration:
+    name: Skyrim integration (${{ matrix.case }})
+    needs: windows-xcompile
+    # Fork PRs must never reach the skyrim-runner pool — they can
+    # execute arbitrary code in the runner container. Same guard
+    # pattern as skyrim-runner/examples/pr-test.yml.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, unraid, skyrim]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [nazeem]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Mora-windows
+          path: dist/
+
+      - name: Stage mod-under-test and compile mora rules under Proton
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          set -euo pipefail
+
+          # Unpack the Windows release zip — contains mora.exe plus both
+          # SKSE plugins (MoraRuntime.dll + MoraTestHarness.dll) in the
+          # expected Data/SKSE/Plugins/ layout.
+          unzip -q dist/Mora-*-windows.zip -d artifacts/
+          RELEASE_DIR=$(echo artifacts/Mora-*)
+
+          # Stage the mod-dir that run-skyrim-test.sh will overlay onto
+          # /skyrim-base + /skyrim-baseline. Preserve the zip's
+          # Data/SKSE/Plugins layout so both DLLs land in the right
+          # place for skse64_loader.exe to discover.
+          STAGE="$GITHUB_WORKSPACE/mod-under-test"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/Data/SKSE/Plugins" "$STAGE/Data/MoraCache"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
+
+          # Bring up Xorg + pulse + warm Proton prefix. skyrim-env.sh is
+          # idempotent; run-skyrim-test.sh re-sources it later and finds
+          # the prefix already staged.
+          source /usr/local/bin/skyrim-env.sh
+
+          # Run mora.exe under Proton. Wine auto-translates absolute
+          # linux paths in argv to their Z:\ equivalents, so plain
+          # linux paths work in argv without manual conversion.
+          /opt/proton/proton run "$RELEASE_DIR/tools/Mora/mora.exe" compile \
+            "tests/integration/${CASE}/rules.mora" \
+            --data-dir /skyrim-base/Data \
+            --output "$STAGE/Data/MoraCache"
+
+          # Sanity: mora_patches.bin must exist and be non-empty.
+          test -s "$STAGE/Data/MoraCache/mora_patches.bin"
+          ls -la "$STAGE/Data/MoraCache"
+
+      - name: Run Skyrim integration test
+        env:
+          TEST_HOOK:    ${{ github.workspace }}/tests/integration/${{ matrix.case }}/check.sh
+          TEST_TIMEOUT: "600"
+          LOG_DIR:      /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}
+        run: /usr/local/bin/run-skyrim-test.sh "$GITHUB_WORKSPACE/mod-under-test"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyrim-logs-${{ matrix.case }}-${{ github.run_attempt }}
+          path: /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}/
+          if-no-files-found: warn
