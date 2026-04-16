@@ -249,8 +249,11 @@ jobs:
           # Unpack the Windows release zip — contains mora.exe plus both
           # SKSE plugins (MoraRuntime.dll + MoraTestHarness.dll) in the
           # expected Data/SKSE/Plugins/ layout.
+          # The zip is produced by `(cd "$stage" && zip -r "$zip" .)` in the
+          # windows-xcompile job, so its top-level is tools/ + Data/ with
+          # no Mora-<version>/ prefix to strip.
           unzip -q dist/Mora-*-windows.zip -d artifacts/
-          RELEASE_DIR=$(echo artifacts/Mora-*)
+          RELEASE_DIR=artifacts
 
           # Stage the mod-dir that run-skyrim-test.sh will overlay onto
           # /skyrim-base + /skyrim-baseline. Preserve the zip's
