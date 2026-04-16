@@ -147,32 +147,38 @@ xmake test
 Requires `xmake` and a C++20 compiler (GCC 13+ or Clang 16+). xmake fetches
 gtest, fmt, and zlib automatically.
 
-### Windows — SKSE runtime DLL
+### Windows — SKSE runtime DLL (cross-compiled on Linux)
 
 The runtime DLL (`MoraRuntime.dll`) is the SKSE plugin that applies patches
-in-game. Windows is a first-class build target — every release is shipped
-from a native MSVC build and CI runs the full Windows pipeline on every push.
+in-game. Both local dev builds and CI cross-compile it from Linux using
+clang-cl + lld-link + llvm-lib against the xwin-provided Windows SDK — no
+Visual Studio, no wine, no Windows host needed.
 
-Prerequisites on a Windows dev box:
+Prerequisites:
 
-- Visual Studio 2022 with the **Desktop development with C++** workload
-  (MSVC v143 toolset, Windows 10/11 SDK).
-- Python 3.10+ with `pyyaml` installed: `pip install pyyaml`.
-- Git with submodules initialised:
-  `git submodule update --init --recursive`.
+- `clang-cl`, `lld-link`, `llvm-lib` (LLVM ≥ 18 — `pacman -S clang lld llvm`
+  on Arch, `apt-get install clang lld llvm-dev` on Debian/Ubuntu).
+- An [xwin](https://github.com/Jake-Shadle/xwin) sysroot at `$HOME/.xwin`
+  (override via `XWIN_PATH`). One-time setup:
+  `xwin --accept-license splat --output $HOME/.xwin`.
+- `xmake` ≥ 3.0.
+- Submodules: `git submodule update --init --recursive`.
 
-Build the runtime DLL and its static runtime library from a **Developer
-PowerShell for VS 2022** prompt. The canonical build recipe lives in
-`.github/workflows/ci.yml` — it builds CommonLibSSE-NG into a static lib,
-then compiles `mora_rt.lib` and links `MoraRuntime.dll`. You can either run
-that workflow locally via [`act`](https://github.com/nektos/act) or copy the
-three PowerShell steps (`Build CommonLibSSE-NG static lib`,
-`Build mora_rt.lib`, `Link MoraRuntime.dll`) into a local script.
+Build:
 
-For Linux contributors, a cross-compile path using clang-cl + xwin is
-available via `scripts/build_commonlib.sh`, `scripts/build_rt_lib.sh`, and
-`scripts/build_runtime_dll.sh`. This is a convenience for local iteration —
-Windows CI is always the authoritative build.
+```bash
+xmake f -p windows -a x64 --toolchain=xwin-clang-cl -m release
+xmake build mora mora_runtime mora_test_harness
+```
+
+Outputs land in `build/windows/x64/release/`:
+`mora.exe`, `MoraRuntime.dll`, `MoraTestHarness.dll`.
+
+`xmake.lua` defines a `xwin-clang-cl` toolchain that wraps clang-cl with
+xwin's sysroot; see the top of the file for the flag set. For a deeper
+walkthrough of the toolchain, the traps we hit getting it working, and
+the Proton-based runtime-validation loop, see
+[docs/src/cross-compile-windows.md](docs/src/cross-compile-windows.md).
 
 ## Editor support
 
@@ -185,9 +191,9 @@ sideload it into VS Code with **Extensions → ⋯ → Install from VSIX**.
 
 [![CI](https://github.com/halgari/mora/actions/workflows/ci.yml/badge.svg)](https://github.com/halgari/mora/actions/workflows/ci.yml)
 
-- **Linux** — xmake build + full gtest suite.
-- **Windows** — MSVC build of CommonLibSSE-NG + `MoraRuntime.dll`, uploaded
-  as an artifact.
+- **Linux** — xmake build + full gtest suite, plus a cross-compile of
+  `mora.exe`, `MoraRuntime.dll`, and `MoraTestHarness.dll` for Windows
+  using clang-cl + xwin. The Windows binaries are uploaded as an artifact.
 - **Docs** — MkDocs site auto-published to GitHub Pages on push to `master`.
 
 ## Status
