@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Integration test: every weapon's base damage is patched to 99.
+#
+# rules.mora emits `set form/damage(W, 99)` for every `form/weapon(W)`.
+# The runtime applies those patches to each TESObjectWEAP on DataLoaded.
+# The harness then iterates weapon forms and dumps (formid, name, damage,
+# value, weight, keywords) for each. This hook asserts every dumped line
+# has damage == 99.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$HERE/../_lib/check_common.sh"
+
+wait_for_harness      || exit $?
+weapons="$(dump_form_type weapons)" || exit $?
+
+jq_assert_all '.damage == 99' "$weapons" || exit $?
+
+quit_harness
+echo "[check] weapon_damage: PASS"
