@@ -65,7 +65,7 @@ jobs:
           restore-keys: xmake-linux-
 
       - name: Configure
-        run: xmake f -y -m releasedbg
+        run: xmake f -y -m releasedbg --cxflags=-pthread --ldflags=-pthread
 
       - name: Build
         run: xmake build -y
