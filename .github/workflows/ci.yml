@@ -40,9 +40,8 @@ jobs:
           apt-get update
           # Install newest g++ we can get; fall through versions.
           GPP=""
-          # Prefer g++-12: gcc-13+ enables -Wdangling-reference which the codebase
-          # hasn't audited for (GitHub's ubuntu-latest ships gcc-11/12).
-          for v in 12 11 13; do
+          # GitHub's ubuntu-latest uses gcc-13 (on 24.04). Match that.
+          for v in 13 14 12; do
             if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++-$v gcc-$v; then
               GPP=$v; break
             fi
@@ -67,7 +66,9 @@ jobs:
           restore-keys: xmake-linux-
 
       - name: Configure
-        run: xmake f -y -m releasedbg --cxflags=-pthread --ldflags=-pthread
+        # -pthread: std::thread link under manually-installed gcc
+        # -Wno-error=dangling-reference: gcc-13 warning not present on GitHub's stock ubuntu-latest
+        run: xmake f -y -m releasedbg --cxflags="-pthread -Wno-error=dangling-reference" --ldflags=-pthread
 
       - name: Build
         run: xmake build -y
