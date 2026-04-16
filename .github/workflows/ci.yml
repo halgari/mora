@@ -40,7 +40,9 @@ jobs:
           apt-get update
           # Install newest g++ we can get; fall through versions.
           GPP=""
-          for v in 14 13 12; do
+          # Prefer g++-12: gcc-13+ enables -Wdangling-reference which the codebase
+          # hasn't audited for (GitHub's ubuntu-latest ships gcc-11/12).
+          for v in 12 11 13; do
             if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++-$v gcc-$v; then
               GPP=$v; break
             fi
