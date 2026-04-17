@@ -104,8 +104,10 @@ LoadOrder LoadOrder::from_directory(const std::filesystem::path& data_dir) {
 
     std::sort(masters.begin(), masters.end(),
         [&](const Candidate& a, const Candidate& b) {
-            int ar = beth_rank(a.path), br = beth_rank(b.path);
-            bool a_beth = ar >= 0, b_beth = br >= 0;
+            int ar = beth_rank(a.path);
+            int br = beth_rank(b.path);
+            bool a_beth = ar >= 0;
+            bool b_beth = br >= 0;
             if (a_beth != b_beth) return a_beth;  // Bethesda first
             if (a_beth) return ar < br;            // canonical order
             return a.path.filename() < b.path.filename();
@@ -186,7 +188,7 @@ LoadOrder LoadOrder::from_plugins_txt(const std::filesystem::path& plugins_txt,
             lo.missing.push_back("Skyrim.esm");
         }
     } else if (skyrim_it != lo.plugins.begin()) {
-        auto path = *skyrim_it;
+        const auto& path = *skyrim_it;
         lo.plugins.erase(skyrim_it);
         lo.plugins.insert(lo.plugins.begin(), path);
     }
@@ -253,12 +255,12 @@ uint32_t RuntimeIndexMap::globalize(uint32_t local_id, const PluginInfo& info) c
     auto it = index.find(key);
     if (it == index.end()) return local_id;
 
-    if (light.count(key)) {
+    if (light.contains(key)) {
         uint32_t const esl_idx = it->second & 0xFFF;
-        return 0xFE000000u | (esl_idx << 12) | (object_id & 0xFFF);
+        return 0xFE000000U | (esl_idx << 12) | (object_id & 0xFFF);
     }
     uint32_t const idx = it->second & 0xFF;
-    return (idx << 24) | (object_id & 0x00FFFFFFu);
+    return (idx << 24) | (object_id & 0x00FFFFFFU);
 }
 
 } // namespace mora

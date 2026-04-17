@@ -63,7 +63,7 @@ public:
 
     // EditorIdRegistry — best-effort atom (@Foo) → FormID resolution.
     // scan() is triggered by set_data_dir(); returns nullopt if unloaded.
-    void set_data_dir(std::filesystem::path dir);
+    void set_data_dir(const std::filesystem::path& dir);
     const EditorIdRegistry& editor_ids() const { return *editor_ids_; }
 
     // Iterate all open documents — used by find-references, workspace-symbol,

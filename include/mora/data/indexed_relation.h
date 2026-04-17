@@ -14,7 +14,7 @@ public:
     void add(Tuple tuple);
     // Bulk-absorb tuples from another relation. Moves tuples and rebuilds
     // indexes for the absorbed range. Much faster than add() in a loop.
-    void absorb(std::vector<Tuple>&& tuples);
+    void absorb(std::vector<Tuple>&& incoming);
 
     // Lookup all tuples where the specified column equals key (uses hash index)
     std::vector<const Tuple*> lookup(size_t column, const Value& key) const;

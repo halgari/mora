@@ -27,7 +27,7 @@ public:
 
 private:
     void evaluate_rule(const Rule& rule, PatchSet& patches, uint32_t priority);
-    std::vector<size_t> compute_clause_order(const Rule& rule) const;
+    static std::vector<size_t> compute_clause_order(const Rule& rule) ;
     void match_clauses(const Rule& rule, const std::vector<size_t>& order,
                        size_t step, Bindings& bindings, PatchSet& patches,
                        uint32_t priority);

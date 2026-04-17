@@ -20,7 +20,7 @@ std::string make_underline(uint32_t start_col, uint32_t end_col) {
 
 } // anonymous namespace
 
-std::string DiagRenderer::level_str(DiagLevel level) const {
+std::string DiagRenderer::level_str(DiagLevel level) {
     switch (level) {
         case DiagLevel::Error:   return "error";
         case DiagLevel::Warning: return "warning";

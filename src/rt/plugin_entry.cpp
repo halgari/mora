@@ -107,5 +107,5 @@ int __stdcall DllMain(void* hinstDLL, uint32_t fdwReason, void* lpvReserved) {
 
 #else
 // Linux stub
-namespace mora::rt { void plugin_entry_stub() {} }
+namespace mora::rt { [[maybe_unused]] static void plugin_entry_stub() {} }
 #endif

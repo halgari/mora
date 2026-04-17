@@ -109,7 +109,8 @@ bool AddressLibrary::load(const std::filesystem::path& bin_path) {
         // Format 1: raw id/offset pairs
         ok = true;
         for (int32_t i = 0; i < address_count; ++i) {
-            uint64_t id = 0, offset = 0;
+            uint64_t id = 0;
+            uint64_t offset = 0;
             if (!read_val(f, id) || !read_val(f, offset)) { ok = false; break; }
             offsets_[id] = offset;
         }

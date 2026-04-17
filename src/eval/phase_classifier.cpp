@@ -31,7 +31,7 @@ PhaseClassifier::PhaseClassifier(StringPool& pool, DiagBag& diag)
 }
 
 bool PhaseClassifier::is_instance_fact(StringId name) const {
-    return instance_facts_.count(name.index) > 0;
+    return instance_facts_.contains(name.index);
 }
 
 bool PhaseClassifier::body_has_instance_facts(const Rule& rule) const {

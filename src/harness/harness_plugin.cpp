@@ -215,5 +215,5 @@ bool SKSEPlugin_Load(SKSEInterface* skse) {
 }
 
 #else
-namespace mora::harness { void harness_plugin_stub() {} }
+namespace mora::harness { [[maybe_unused]] static void harness_plugin_stub() {} }
 #endif

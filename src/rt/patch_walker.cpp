@@ -593,7 +593,7 @@ void apply_all_patches() {
 // can still call get_global_dag_runtime() if needed.
 #include "mora/rt/skse_hooks.h"
 namespace mora::rt {
-void patch_walker_stub() {}
+[[maybe_unused]] static void patch_walker_stub() {}
 DagRuntime& get_global_dag_runtime() {
     static DagRuntime g_dag_runtime;
     return g_dag_runtime;

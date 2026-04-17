@@ -69,7 +69,7 @@ PatchSet Evaluator::evaluate_static(const Module& mod,
 // Score a clause for ordering. Lower = more selective = should run first.
 // Clauses with more constants/symbols drive indexed lookups and produce
 // smaller intermediate result sets.
-std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) const {
+std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) {
     struct ClauseScore {
         size_t index;
         int score; // lower is better
@@ -520,7 +520,8 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
             // Boolean comparison results
             // For comparison ops, evaluate and return bool
             if (left.kind() == Value::Kind::Int && right.kind() == Value::Kind::Int) {
-                int64_t l = left.as_int(), r = right.as_int();
+                int64_t l = left.as_int();
+                int64_t r = right.as_int();
                 switch (e.op) {
                     case BinaryExpr::Op::Eq:   return Value::make_bool(l == r);
                     case BinaryExpr::Op::Neq:  return Value::make_bool(l != r);
@@ -556,11 +557,13 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
 
             std::string_view const name = pool_.get(e.name);
             if (name == "max" && vs.size() == 2) {
-                double a = numeric(vs[0]), b = numeric(vs[1]);
+                double a = numeric(vs[0]);
+                double b = numeric(vs[1]);
                 return make_num(a > b ? a : b);
             }
             if (name == "min" && vs.size() == 2) {
-                double a = numeric(vs[0]), b = numeric(vs[1]);
+                double a = numeric(vs[0]);
+                double b = numeric(vs[1]);
                 return make_num(a < b ? a : b);
             }
             if (name == "abs" && vs.size() == 1) {

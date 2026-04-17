@@ -18,7 +18,7 @@ struct ImportMap {
     std::unordered_map<std::string, std::string> refer_to_ns; // "keyword" -> "ref"
 };
 
-static ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags,
+ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags,
                                 const Module* cur) {
     ImportMap im;
     for (const UseDecl& u : m.use_decls) {
@@ -42,7 +42,7 @@ static ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags
     return im;
 }
 
-static void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
+void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
                                    StringPool& pool) {
     if (fp.qualifier.index == 0) {
         std::string const name{pool.get(fp.name)};
@@ -59,7 +59,7 @@ static void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
     }
 }
 
-static void apply_imports_to_effect(Effect& eff, const ImportMap& im,
+void apply_imports_to_effect(Effect& eff, const ImportMap& im,
                                      StringPool& pool) {
     if (eff.namespace_.index == 0) {
         std::string const name{pool.get(eff.name)};
@@ -76,7 +76,7 @@ static void apply_imports_to_effect(Effect& eff, const ImportMap& im,
     }
 }
 
-static void apply_imports_to_clause(Clause& clause, const ImportMap& im,
+void apply_imports_to_clause(Clause& clause, const ImportMap& im,
                                      StringPool& pool) {
     std::visit([&](auto& node) {
         using NodeT = std::decay_t<decltype(node)>;

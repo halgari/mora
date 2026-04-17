@@ -13,7 +13,6 @@
 #include "mora/eval/patch_buffer.h"
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
-#include "mora/eval/patch_buffer.h"
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
 #include "mora/emit/arrangement_emit.h"
@@ -39,7 +38,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <algorithm>
 #include <iostream>
 
 #ifndef MORA_VERSION
@@ -471,7 +469,7 @@ static void load_esp_data(
     mora::populate_plugin_facts(db, cr.pool, lo, infos, runtime_index);
 
     // ── Phase 3: parallel fact extraction ──────────────────────────
-    auto hw = std::max(1u, std::thread::hardware_concurrency());
+    auto hw = std::max(1U, std::thread::hardware_concurrency());
     size_t const batch_size = (parsed.size() + hw - 1) / hw;
 
     struct BatchResult {
@@ -694,7 +692,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     // Phase classification
     out.phase_start("Classifying");
     mora::PhaseClassifier const classifier(cr.pool);
-    size_t static_count = 0, dynamic_count = 0;
+    size_t static_count = 0;
+    size_t dynamic_count = 0;
 
     for (auto& mod : cr.modules) {
         auto classifications = classifier.classify_module(mod);
@@ -741,7 +740,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             [&](const mora::Module& m) {
                 for (auto& req : m.requires_decls) {
                     std::string const want = mora::to_lower(std::string(cr.pool.get(req.mod_name)));
-                    if (loaded_lower.count(want)) continue;
+                    if (loaded_lower.contains(want)) continue;
                     cr.diags.warning(
                         "requires-unmet",
                         fmt::format("required mod \"{}\" is not in the load order; "
@@ -857,7 +856,7 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
     auto final_resolved = all_patches.resolve();
 
     if (show_conflicts) {
-        auto conflicts = final_resolved.get_conflicts();
+        const auto& conflicts = final_resolved.get_conflicts();
         if (conflicts.empty()) {
             mora::log::info("  no conflicts\n");
         } else {

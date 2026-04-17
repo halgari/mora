@@ -607,7 +607,7 @@ MoraType TypeChecker::lookup_variable(StringId name) const {
 
 void TypeChecker::check_unused_variables([[maybe_unused]] const Rule& rule) {
     for (const auto& [id, span] : var_def_spans_) {
-        if (var_used_.count(id)) continue;
+        if (var_used_.contains(id)) continue;
 
         // Look up the name to check for "_" prefix
         StringId sid;
