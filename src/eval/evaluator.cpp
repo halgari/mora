@@ -294,6 +294,23 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
             } else {
                 query_tuple.push_back(Value::make_var());
             }
+        } else if (const auto* ee = std::get_if<EditorIdExpr>(&arg.data)) {
+            // `@EditorID` resolves the same way as `:symbol` — both route
+            // through `symbol_formids_` which main.cpp populates from
+            // `EspReader::editor_id_map()` (lowercase keys). Preserve the
+            // user's original case first, then fall back to a lowercased
+            // lookup so `@IronSword` and `@ironsword` both resolve.
+            auto it = symbol_formids_.find(ee->name.index);
+            if (it == symbol_formids_.end()) {
+                std::string lower(pool_.get(ee->name));
+                for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                it = symbol_formids_.find(pool_.intern(lower).index);
+            }
+            if (it != symbol_formids_.end()) {
+                query_tuple.push_back(Value::make_formid(it->second));
+            } else {
+                query_tuple.push_back(Value::make_var());
+            }
         } else if (const auto* il = std::get_if<IntLiteral>(&arg.data)) {
             query_tuple.push_back(Value::make_int(il->value));
         } else if (const auto* fl = std::get_if<FloatLiteral>(&arg.data)) {
@@ -481,6 +498,17 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
             return Value::make_var();
         } else if constexpr (std::is_same_v<T, SymbolExpr>) {
             auto it = symbol_formids_.find(e.name.index);
+            if (it != symbol_formids_.end()) {
+                return Value::make_formid(it->second);
+            }
+            return Value::make_var();
+        } else if constexpr (std::is_same_v<T, EditorIdExpr>) {
+            auto it = symbol_formids_.find(e.name.index);
+            if (it == symbol_formids_.end()) {
+                std::string lower(pool_.get(e.name));
+                for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                it = symbol_formids_.find(pool_.intern(lower).index);
+            }
             if (it != symbol_formids_.end()) {
                 return Value::make_formid(it->second);
             }
