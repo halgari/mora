@@ -36,7 +36,8 @@ $ mora compile balance.mora --data-dir "~/.steam/.../Skyrim Special Edition/Data
   [OK] 200 patches -> mora_patches.bin
 ```
 
-Drop `mora_patches.bin` (and `MoraRuntime.dll`) in `Data/SKSE/Plugins/` and
+With auto-detection, `mora compile` places `mora_patches.bin` in
+`Data/SKSE/Plugins/` for you. Drop `MoraRuntime.dll` next to it and
 launch the game. That's it.
 
 ## Why Mora?

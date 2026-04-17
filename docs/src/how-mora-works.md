@@ -94,7 +94,7 @@ bridge `ref/base_form(R, F)`. No implicit ref→form fallthrough:
 `ref/keyword(R, @X)` does **not** see the base form's keywords. Join
 through `base_form` when you need both.
 
-The canonical list — 58 relations at the time of writing — is in
+The canonical list — 59 relations at the time of writing — is in
 [relations.md](relations.md), auto-generated from
 `data/relations/**/*.yaml`.
 
@@ -183,7 +183,7 @@ pointer arithmetic against a base address.
 
 ```
 Header (64 bytes)
-Section Directory (N x 16 bytes)
+Section Directory (N x 24 bytes)
   -> String Table
   -> Keyword Intern Table
   -> Static Patch Entries    (16 bytes each, sorted by FormID)

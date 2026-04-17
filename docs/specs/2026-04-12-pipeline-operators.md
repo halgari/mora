@@ -1,5 +1,10 @@
 # Pipeline Operator Framework
 
+> **Status:** Historical design doc — the columnar evaluator that shipped
+> (`src/data/columnar_relation.cpp`, `src/eval/`) uses a different
+> operator decomposition than proposed here. Read for context, not as a
+> spec of current behavior.
+
 ## Problem
 
 The current columnar evaluator is a monolithic function with hardcoded nested loops. It works but has three issues:

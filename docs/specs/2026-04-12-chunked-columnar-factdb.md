@@ -1,5 +1,9 @@
 # Chunked Columnar FactDB
 
+> **Status:** Historical design doc — shipped. See `src/data/chunk_pool.cpp`,
+> `src/data/columnar_relation.cpp`, and `src/data/indexed_relation.cpp` for
+> the current implementation.
+
 ## Problem
 
 The evaluator spends 7.2s processing 89 rules × 31K NPCs because every tuple match allocates an `unordered_map` for bindings, copies `Value` objects with `shared_ptr` refcounts, and materializes all intermediate results as `vector<Tuple>`. For 4M output patches, this produces ~50M heap allocations.

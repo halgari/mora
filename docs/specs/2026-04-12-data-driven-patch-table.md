@@ -1,5 +1,10 @@
 # Data-Driven Patch Table
 
+> **Status:** Historical design doc — superseded. The shipping patch file
+> layout lives in `include/mora/emit/patch_file_v2.h` (64-byte header,
+> 24-byte section directory entries, multiple typed sections); the
+> single-table design described below was not adopted.
+
 ## Problem
 
 Running 3.9M patches through LLVM codegen takes 4.5 minutes and produces a 105MB DLL. The generated code is just sequential function calls with constant arguments — LLVM's backend is doing O(N^2) work on what is fundamentally a data problem.
