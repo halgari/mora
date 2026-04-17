@@ -21,6 +21,16 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Restore file mtimes (xmake cache correctness)
+        # actions/checkout@v4 stamps every file mtime to "now", which
+        # defeats xmake 3.0.8's mtime-based rebuild detection — cached
+        # .o files look older than their sources and get rebuilt.
+        # Resetting source mtimes to their last-commit time makes them
+        # older than cached objects so xmake reuses them.
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
+          git submodule foreach --recursive "python3 $GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
+
       - name: Cache xmake packages
         uses: actions/cache@v4
         with:

@@ -25,6 +25,16 @@ jobs:
           # the checkout behavior uniform with windows-xcompile.
           submodules: recursive
 
+      - name: Restore file mtimes (xmake cache correctness)
+        # actions/checkout@v4 stamps every file mtime to "now", which
+        # defeats xmake 3.0.8's mtime-based rebuild detection — cached
+        # .o files look older than their sources and get rebuilt.
+        # Resetting source mtimes to their last-commit time makes them
+        # older than cached objects so xmake reuses them.
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
+          git submodule foreach --recursive "python3 $GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
+
       # Cache xmake's package dir + the per-platform object and dep
       # trees so incremental rebuilds can reuse unchanged objects.
       # - key is sha-suffixed so every run uploads a fresh cache;
@@ -126,6 +136,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Restore file mtimes (xmake cache correctness)
+        # actions/checkout@v4 stamps every file mtime to "now", which
+        # defeats xmake 3.0.8's mtime-based rebuild detection — cached
+        # .o files look older than their sources and get rebuilt (the
+        # pain point is the ~1700 TUs under
+        # extern/CommonLibSSE-NG/src/**.cpp). Resetting source mtimes
+        # to their last-commit time makes them older than cached
+        # objects so xmake reuses them.
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
+          git submodule foreach --recursive "python3 $GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
 
       # See ci.yml's `linux` job for the cache-key rationale. Hitting
       # the warm object cache is especially valuable here: the
