@@ -282,10 +282,6 @@ notes:
 - **Cross-file diagnostic invalidation isn't implemented.** Renaming a
   rule in `a.mora` won't re-publish stale diagnostics in `b.mora` until
   `b.mora` itself is touched.
-- **Windows LSP isn't supported yet.** The poll loop uses POSIX
-  `select(2)`. `mora lsp` on Windows prints an error and exits. The CLI
-  (`mora compile`, `mora check`) works on Windows fine — it's only the
-  language-server subcommand that's POSIX-only for now.
 - **Qualified relation positions.** Hover on the `form` half of
   `form/weapon` works; on the `weapon` half it currently misses (the
   parser doesn't yet emit a separate name span for the relation). Hover

@@ -1,34 +1,30 @@
-#ifdef _WIN32
-// mora lsp is not yet supported on Windows.
-// The poll-based run loop uses POSIX select(2) which is not available on
-// Windows without additional porting. The LSP server is intended for
-// Linux/macOS only until a Windows stdin-polling mechanism is added.
-#include "mora/lsp/lsp.h"
-#include <iostream>
-namespace mora::lsp {
-int run(int, char**) {
-    std::cerr <<
-        "mora lsp is not supported on Windows.\n"
-        "  The server's run loop uses POSIX select(2) for stdin polling;\n"
-        "  there is no equivalent primitive on Win32 without a porting\n"
-        "  layer. Use WSL2 or a native Linux/macOS shell. (The compiler\n"
-        "  itself — mora check / compile / inspect — cross-compiles to\n"
-        "  Windows via clang-cl + xwin and runs natively.)\n";
-    return 1;
-}
-} // namespace mora::lsp
-#else
-// POSIX-only implementation below.
+// Portable LSP server loop.
+//
+// Design: a dedicated reader thread blocks on stdin reading Content-Length
+// framed messages, pushing each body onto a queue. The main thread pops
+// messages with a 50ms timeout, which lets it interleave debounced
+// diagnostic reparses between incoming requests. This replaces an earlier
+// POSIX-select(2) polling loop that couldn't run on Windows (select only
+// works on sockets there, not pipe/console handles). Same code path on
+// every platform now — no #ifdef split.
+//
+// Threading rules:
+//   * std::cin is read ONLY by the reader thread.
+//   * std::cout is written ONLY by the main thread.
+//   * All cross-thread communication goes through MessageQueue.
 
 #include "mora/lsp/lsp.h"
 
+#include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <fstream>
 #include <iostream>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
-
-#include <sys/select.h>
-#include <unistd.h>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -51,8 +47,6 @@ void register_semantic_tokens_handler(Dispatcher&);
 
 namespace {
 
-// Open `path` as the LSP log sink. If `path` is empty, returns a dummy
-// stream that discards everything. Returned stream is owned by the caller.
 std::unique_ptr<std::ostream> open_log(std::string_view path) {
     if (path.empty()) {
         return std::make_unique<std::ofstream>("/dev/null");
@@ -68,17 +62,71 @@ void log_event(std::ostream& log, std::string_view event, std::string_view detai
     log.flush();
 }
 
-// Returns true if data is available on stdin within `timeout_ms` ms.
-// Uses POSIX select(2) for non-blocking poll without threads.
-bool stdin_has_data(int timeout_ms) {
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(STDIN_FILENO, &rfds);
-    timeval tv{};
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-    int r = select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv);
-    return r > 0 && FD_ISSET(STDIN_FILENO, &rfds);
+// Close status pushed by the reader thread when stdin ends.
+enum class CloseReason { None, Eof, ProtocolError };
+
+class MessageQueue {
+public:
+    void push(std::string msg) {
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            messages_.push_back(std::move(msg));
+        }
+        cv_.notify_one();
+    }
+
+    void close(CloseReason reason) {
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            close_reason_ = reason;
+        }
+        cv_.notify_all();
+    }
+
+    // Pop the next message, waiting up to `timeout`. Returns nullopt on
+    // timeout OR when the queue is closed and empty.
+    std::optional<std::string> pop_wait_for(std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(mu_);
+        cv_.wait_for(lock, timeout, [this] {
+            return !messages_.empty() || close_reason_ != CloseReason::None;
+        });
+        if (messages_.empty()) return std::nullopt;
+        auto msg = std::move(messages_.front());
+        messages_.pop_front();
+        return msg;
+    }
+
+    CloseReason close_reason() {
+        std::lock_guard<std::mutex> lock(mu_);
+        return close_reason_;
+    }
+
+    bool drained_and_closed() {
+        std::lock_guard<std::mutex> lock(mu_);
+        return messages_.empty() && close_reason_ != CloseReason::None;
+    }
+
+private:
+    std::mutex mu_;
+    std::condition_variable cv_;
+    std::deque<std::string> messages_;
+    CloseReason close_reason_ = CloseReason::None;
+};
+
+void reader_thread_main(MessageQueue& queue) {
+    while (true) {
+        std::string body;
+        ReadResult r = read_message(std::cin, body);
+        if (r == ReadResult::Eof) {
+            queue.close(CloseReason::Eof);
+            return;
+        }
+        if (r == ReadResult::ProtocolError) {
+            queue.close(CloseReason::ProtocolError);
+            return;
+        }
+        queue.push(std::move(body));
+    }
 }
 
 } // namespace
@@ -110,12 +158,20 @@ int run(int argc, char** argv) {
     register_workspace_symbols_handler(dispatcher);
     register_semantic_tokens_handler(dispatcher);
 
+    MessageQueue queue;
+    std::thread reader([&queue] { reader_thread_main(queue); });
+
+    auto join_reader = [&] {
+        if (reader.joinable()) reader.join();
+    };
+
+    int exit_code = 0;
+
     while (true) {
         auto now = std::chrono::steady_clock::now();
 
         // 1. Process debounced reparses that are due.
         for (Document* doc : ws.documents_due_for_reparse(now)) {
-            // diagnostics() runs the parse pipeline and clears the stale flag.
             const auto& diags = doc->diagnostics();
             nlohmann::json arr = nlohmann::json::array();
             for (const auto& d : diags) arr.push_back(diagnostic_to_json(d));
@@ -134,29 +190,30 @@ int run(int argc, char** argv) {
             write_message(std::cout, note.dump());
         }
 
-        // 3. Poll stdin with a short timeout to support debouncing without threads.
-        if (!stdin_has_data(50)) continue;
-
-        // 4. Read and dispatch a message.
-        std::string body;
-        ReadResult r = read_message(std::cin, body);
-        if (r == ReadResult::Eof) {
-            log_event(*log, "eof — clean shutdown");
-            break;
+        // 3. Wait for the next message with a 50ms debounce timeout.
+        auto body_opt = queue.pop_wait_for(std::chrono::milliseconds(50));
+        if (!body_opt) {
+            // Either a timeout (loop back for diagnostic work) or the
+            // reader thread has finished draining stdin.
+            if (queue.drained_and_closed()) {
+                CloseReason why = queue.close_reason();
+                if (why == CloseReason::ProtocolError) {
+                    log_event(*log, "protocol error in headers — aborting");
+                    exit_code = 1;
+                } else {
+                    log_event(*log, "eof — clean shutdown");
+                }
+                break;
+            }
+            continue;
         }
-        if (r == ReadResult::ProtocolError) {
-            log_event(*log, "protocol error in headers — aborting");
-            return 1;
-        }
 
+        // 4. Parse and dispatch the message.
         nlohmann::json msg;
         try {
-            msg = nlohmann::json::parse(body);
+            msg = nlohmann::json::parse(*body_opt);
         } catch (const std::exception& e) {
             log_event(*log, "json parse error", e.what());
-            // Per LSP, malformed JSON → reply with a parse error if we have
-            // any id we can pull, otherwise drop. We can't extract an id
-            // from a malformed body, so just drop.
             continue;
         }
 
@@ -166,9 +223,8 @@ int run(int argc, char** argv) {
             log_event(*log, "<- response");
         }
 
-        // 5. Drain any server-pushed notifications enqueued by the handler.
-        //    (Deferred diagnostics will be drained at the top of next iteration,
-        //    but immediate ones — e.g. from didOpen — are drained here too.)
+        // 5. Drain server-pushed notifications enqueued by the handler
+        //    (e.g. immediate diagnostics from didOpen).
         for (auto& note : ws.drain_outgoing()) {
             write_message(std::cout, note.dump());
         }
@@ -176,12 +232,18 @@ int run(int argc, char** argv) {
         // 6. Check for shutdown-after-exit.
         if (ws.shutdown_requested() && msg.value("method", "") == "exit") {
             log_event(*log, "exit after shutdown — clean");
+            // Reader may still be blocked on std::cin if the client
+            // hasn't closed its write end. Detach so the process can
+            // return without the reader forcing a join.
+            reader.detach();
             return 0;
         }
     }
 
-    return 0;
+    // Clean EOF / protocol-error path: reader thread has already
+    // returned, so join is immediate.
+    join_reader();
+    return exit_code;
 }
 
 } // namespace mora::lsp
-#endif // !_WIN32
