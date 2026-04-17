@@ -151,7 +151,7 @@ static std::vector<fs::path> find_mora_files(const fs::path& dir) {
 
 static std::string format_bytes(std::uintmax_t bytes) {
     if (bytes < 1024) return fmt::format("{} bytes", bytes);
-    if (bytes < 1024 * 1024) return fmt::format("{:.1f} KB", double(bytes) / 1024.0);
+    if (bytes < std::uintmax_t{1024} * 1024) return fmt::format("{:.1f} KB", double(bytes) / 1024.0);
     return fmt::format("{:.1f} MB", double(bytes) / (1024.0 * 1024.0));
 }
 
@@ -529,7 +529,7 @@ static void evaluate_mora_rules(
     if (cr.modules.empty()) return;
 
     out.phase_start("Evaluating (.mora rules)");
-    auto eval_progress = [&](size_t current, size_t total, std::string_view name) {
+    auto eval_progress = [&](size_t current, size_t total, [[maybe_unused]] std::string_view name) {
         out.progress_update(fmt::format("Evaluating rule {} / {} ...", current, total));
     };
 
@@ -944,7 +944,7 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) try {
     CLI::App app{"Mora — Datalog DSL compiler for Skyrim (SKSE)", "mora"};
     app.set_version_flag("--version,-V", std::string(MORA_VERSION));
     app.require_subcommand(1);
@@ -1090,5 +1090,11 @@ int main(int argc, char* argv[]) {
 
     // Unreachable — require_subcommand(1) guarantees one is parsed.
     print_usage();
+    return 1;
+} catch (const std::exception& e) {
+    fmt::print(stderr, "mora: fatal: {}\n", e.what());
+    return 1;
+} catch (...) {
+    fmt::print(stderr, "mora: fatal: unknown exception\n");
     return 1;
 }

@@ -43,14 +43,15 @@ jobs:
           clang-tidy --version
 
       - name: Configure + build (populate package cache)
-        # Flags mirror the linux job (ci.yml:35). The build step is
-        # what actually fetches + installs xmake-managed packages; the
-        # compile_commands step below needs their include dirs present
-        # on disk or clang-tidy errors out with missing headers.
+        # The build step fetches + installs xmake-managed packages; the
+        # compile_commands step below needs their include dirs present on
+        # disk or clang-tidy errors out with missing headers. The linux
+        # `ci.yml` job adds `-Wno-dangling-reference` (a GCC flag) here,
+        # but clang-19 rejects it as `unknown warning option` on every
+        # TU, which aborts the compile-command parse and masks most
+        # findings — so we leave it off for the clang-tidy build.
         run: |
-          xmake f -y -m releasedbg \
-            --cxflags="-pthread -Wno-dangling-reference" \
-            --ldflags=-pthread
+          xmake f -y -m releasedbg --cxflags=-pthread --ldflags=-pthread
           xmake build -y
 
       - name: Generate compile_commands.json

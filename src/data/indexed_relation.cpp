@@ -20,10 +20,11 @@ void IndexedRelation::add(Tuple tuple) {
 }
 
 void IndexedRelation::absorb(std::vector<Tuple>&& incoming) {
+    auto local = std::move(incoming);
     uint32_t base = static_cast<uint32_t>(tuples_.size());
     tuples_.insert(tuples_.end(),
-                   std::make_move_iterator(incoming.begin()),
-                   std::make_move_iterator(incoming.end()));
+                   std::make_move_iterator(local.begin()),
+                   std::make_move_iterator(local.end()));
 
     // Rebuild indexes for the absorbed range only
     for (uint32_t i = base; i < tuples_.size(); ++i) {

@@ -49,8 +49,10 @@ ReadResult read_message(std::istream& in, std::string& body_out) {
     while (true) {
         std::string line;
         if (!read_header_line(in, line)) {
-            // EOF before any header byte (clean) or mid-header (truncated).
-            return any_header ? ReadResult::Eof : ReadResult::Eof;
+            // Clean EOF if we hadn't started a message; truncated mid-header
+            // is a framing violation — the peer died after sending a partial
+            // Content-Length block.
+            return any_header ? ReadResult::ProtocolError : ReadResult::Eof;
         }
         if (line.empty()) break; // end of headers
         any_header = true;
