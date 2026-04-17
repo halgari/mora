@@ -104,10 +104,10 @@ LoadOrder LoadOrder::from_directory(const std::filesystem::path& data_dir) {
 
     std::sort(masters.begin(), masters.end(),
         [&](const Candidate& a, const Candidate& b) {
-            int ar = beth_rank(a.path);
-            int br = beth_rank(b.path);
-            bool a_beth = ar >= 0;
-            bool b_beth = br >= 0;
+            int const ar = beth_rank(a.path);
+            int const br = beth_rank(b.path);
+            bool const a_beth = ar >= 0;
+            bool const b_beth = br >= 0;
             if (a_beth != b_beth) return a_beth;  // Bethesda first
             if (a_beth) return ar < br;            // canonical order
             return a.path.filename() < b.path.filename();
