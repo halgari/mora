@@ -136,7 +136,7 @@ namespace mora::harness {
 
 TcpListener::TcpListener(uint16_t) : port_(0) {}
 TcpListener::~TcpListener() {}
-void TcpListener::on(const std::string&, const CommandHandler&) {}
+void TcpListener::on(const std::string&, CommandHandler) {}
 bool TcpListener::start() { return false; }
 void TcpListener::stop() {}
 std::string TcpListener::dispatch(const std::string&) { return ""; }
