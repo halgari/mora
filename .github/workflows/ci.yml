@@ -376,7 +376,7 @@ jobs:
           tail -5 "$GEN_TXT"
           PLUGINS_ARG=(--plugins-txt "$GEN_TXT")
 
-          "$MORA_BIN" compile \
+          MORA_DEBUG_LOAD_ORDER=1 "$MORA_BIN" compile \
             "tests/integration/${CASE}/rules.mora" \
             --data-dir /skyrim-base/Data \
             "${PLUGINS_ARG[@]}" \

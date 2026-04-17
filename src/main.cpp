@@ -408,6 +408,25 @@ static void load_esp_data(
     }
 
     auto runtime_index = lo.runtime_index_map();
+    // Debug: dump each plugin's resolved (is_esl, is_master, idx).
+    // Only when MORA_DEBUG_LOAD_ORDER is set so we don't clutter
+    // normal compiles. Lets CI compare against runtime loadorder.txt.
+    if (std::getenv("MORA_DEBUG_LOAD_ORDER")) {
+        auto entries = lo.resolve_entries();
+        mora::log::info("  ─── load-order dump (esm=ESM-flag, esl=ESL-flag) ───\n");
+        for (auto& e : entries) {
+            auto it = runtime_index.index.find(e.basename_lower);
+            std::string idx_s = (it != runtime_index.index.end())
+                ? fmt::format("{}idx=0x{:03X}", runtime_index.light.count(e.basename_lower) ? "light " : "", it->second)
+                : std::string("unmapped");
+            mora::log::info("    [{}esm={} esl={}] {}\n",
+                std::string(idx_s).append(16 - std::min<size_t>(16, idx_s.size()), ' '),
+                e.is_master ? '1' : '0',
+                e.is_esl    ? '1' : '0',
+                e.basename_lower);
+        }
+    }
+
     auto needed = collect_used_relations(cr.modules);
 
     // ── Phase 1: parallel parse ────────────────────────────────────
