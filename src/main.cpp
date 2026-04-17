@@ -964,7 +964,10 @@ int main(int argc, char* argv[]) {
 
     // `compile`
     std::string comp_target = ".";
-    std::string comp_output = "MoraCache";
+    // Empty default — filled in after parsing so we can tell "user passed
+    // --output X" apart from "user relied on the default", which gates the
+    // <Data>/SKSE/Plugins auto-install path below.
+    std::string comp_output;
     std::string comp_data_dir;
     std::string comp_plugins_txt;
     auto* c_compile = app.add_subcommand("compile",
@@ -974,8 +977,7 @@ int main(int argc, char* argv[]) {
                           "File or directory containing .mora sources")
              ->default_val(".");
     c_compile->add_option("-o,--output", comp_output,
-                          "Output directory (default: MoraCache/)")
-             ->capture_default_str();
+                          "Output directory (default: <Data>/SKSE/Plugins when detected, else MoraCache/)");
     c_compile->add_option("--data-dir", comp_data_dir,
                           "Skyrim Data/ directory for ESP loading (auto-detected if omitted)");
     c_compile->add_option("--plugins-txt", comp_plugins_txt,
@@ -1025,12 +1027,45 @@ int main(int argc, char* argv[]) {
         return cmd_check(check_target, out, use_color);
     }
     if (*c_compile) {
-        // Auto-detect only after parsing — keeps --data-dir / --plugins-txt
-        // as explicit overrides when provided.
-        if (comp_data_dir.empty())     comp_data_dir = detect_skyrim_data_dir();
-        if (comp_plugins_txt.empty() && !comp_data_dir.empty()) {
+        // Query CLI11 for whether each path-flag was explicitly passed —
+        // separates "user opted in" from "defaulted" so we can tag each
+        // entry in the summary and decide whether to auto-derive --output.
+        bool explicit_output      = c_compile->get_option("--output")->count()     > 0;
+        bool explicit_data_dir    = c_compile->get_option("--data-dir")->count()   > 0;
+        bool explicit_plugins_txt = c_compile->get_option("--plugins-txt")->count() > 0;
+
+        // Auto-detect data-dir + plugins.txt when not explicitly provided.
+        if (!explicit_data_dir) comp_data_dir = detect_skyrim_data_dir();
+        if (!explicit_plugins_txt && !comp_data_dir.empty()) {
             comp_plugins_txt = detect_plugins_txt(comp_data_dir);
         }
+
+        // Zero-arg DX: land mora_patches.bin straight into <Data>/SKSE/Plugins
+        // so the runtime picks it up on next game launch without a copy step.
+        // Only fires when data_dir points at a real install (Skyrim.esm present)
+        // — a bogus explicit --data-dir would otherwise cause a permission-
+        // denied crash when we try to create the SKSE/Plugins subdir. Falls
+        // back to cwd-relative MoraCache/ otherwise.
+        if (!explicit_output) {
+            std::error_code ec;
+            if (!comp_data_dir.empty() &&
+                fs::exists(fs::path(comp_data_dir) / "Skyrim.esm", ec)) {
+                comp_output = (fs::path(comp_data_dir) / "SKSE" / "Plugins").string();
+            } else {
+                comp_output = "MoraCache";
+                mora::log::warn("no Skyrim Data directory detected; writing to {}. "
+                                "Pass --output or --data-dir to override.\n", comp_output);
+            }
+        }
+
+        // Resolution summary — shows where bytes are landing without --verbose.
+        auto tag = [](bool explicit_) { return explicit_ ? " (provided)" : " (auto)"; };
+        mora::log::info("  data-dir:    {}{}\n",
+            comp_data_dir.empty() ? "<none>" : comp_data_dir, tag(explicit_data_dir));
+        mora::log::info("  plugins.txt: {}{}\n",
+            comp_plugins_txt.empty() ? "<none>" : comp_plugins_txt, tag(explicit_plugins_txt));
+        mora::log::info("  output:      {}{}\n", comp_output, tag(explicit_output));
+
         return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
                            out, use_color);
     }
