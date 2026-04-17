@@ -546,9 +546,9 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                 return 0.0;
             };
             auto any_float = [&]() {
-                for (const auto& v : vs)
-                    if (v.kind() == Value::Kind::Float) return true;
-                return false;
+                return std::ranges::any_of(vs, [](const auto& v) {
+                    return v.kind() == Value::Kind::Float;
+                });
             };
             auto make_num = [&](double d) {
                 if (any_float()) return Value::make_float(d);

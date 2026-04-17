@@ -1,4 +1,5 @@
 #include "mora/data/value.h"
+#include <algorithm>
 #include <cassert>
 #include <functional>
 #include <memory>
@@ -93,10 +94,8 @@ const std::vector<Value>& Value::as_list() const {
 
 bool Value::list_contains(const Value& needle) const {
     assert(kind_ == Kind::List);
-    for (const Value& v : *list_) {
-        if (v == needle) return true;
-    }
-    return false;
+    return std::ranges::any_of(*list_,
+        [&](const Value& v) { return v == needle; });
 }
 
 // ---------------------------------------------------------------------------
