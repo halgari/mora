@@ -42,7 +42,7 @@ void read_weapon_fields(const void* form, WeaponData& out) {
         auto** keywords = static_cast<const char**>(kw_array);
         for (uint32_t i = 0; i < kw_count; i++) {
             if (keywords[i]) {
-                uint32_t kw_formid;
+                uint32_t kw_formid{};
                 std::memcpy(&kw_formid, keywords[i] + 0x14, sizeof(kw_formid));
                 out.keyword_formids.push_back(kw_formid);
             }

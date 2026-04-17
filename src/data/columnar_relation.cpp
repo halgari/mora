@@ -50,7 +50,7 @@ void ColumnarRelation::append_row(const uint64_t* values) {
             }
             case ColType::F64: {
                 auto* chunk = static_cast<F64Chunk*>(base);
-                double d;
+                double d{};
                 std::memcpy(&d, &values[col], sizeof(double));
                 chunk->data[current_chunk_row_] = d;
                 break;

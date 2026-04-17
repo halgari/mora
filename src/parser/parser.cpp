@@ -511,7 +511,7 @@ Expr Parser::parse_comparison() {
            check(TokenKind::Lt) || check(TokenKind::Gt) ||
            check(TokenKind::LtEq) || check(TokenKind::GtEq)) {
         Token op_tok = advance();
-        BinaryExpr::Op op;
+        BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Eq:   op = BinaryExpr::Op::Eq;   break;
             case TokenKind::Neq:  op = BinaryExpr::Op::Neq;  break;
@@ -543,7 +543,7 @@ Expr Parser::parse_additive() {
 
     while (check(TokenKind::Plus) || check(TokenKind::Minus)) {
         Token op_tok = advance();
-        BinaryExpr::Op op;
+        BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Plus:  op = BinaryExpr::Op::Add; break;
             case TokenKind::Minus: op = BinaryExpr::Op::Sub; break;
@@ -571,7 +571,7 @@ Expr Parser::parse_multiplicative() {
 
     while (check(TokenKind::Star) || check(TokenKind::Slash)) {
         Token op_tok = advance();
-        BinaryExpr::Op op;
+        BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
             case TokenKind::Slash: op = BinaryExpr::Op::Div; break;

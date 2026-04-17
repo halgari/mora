@@ -22,7 +22,7 @@ void Lexer::index_lines() {
 std::string_view Lexer::get_line(uint32_t line) const {
     if (line == 0 || line > line_starts_.size()) return {};
     size_t start = line_starts_[line - 1];
-    size_t end;
+    size_t end = 0;
     if (line < line_starts_.size()) {
         end = line_starts_[line];
         // Strip trailing newline

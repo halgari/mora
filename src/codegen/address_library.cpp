@@ -29,14 +29,14 @@ static bool unpack_format2(FILE* f, int32_t pointer_size, int32_t count,
         // Decode ID
         uint64_t id = 0;
         switch (lo) {
-            case 0: { uint64_t v; if (!read_val(f, v)) return false; id = v; break; }
+            case 0: { uint64_t v{}; if (!read_val(f, v)) return false; id = v; break; }
             case 1: id = prev_id + 1; break;
-            case 2: { uint8_t v; if (!read_val(f, v)) return false; id = prev_id + v; break; }
-            case 3: { uint8_t v; if (!read_val(f, v)) return false; id = prev_id - v; break; }
-            case 4: { uint16_t v; if (!read_val(f, v)) return false; id = prev_id + v; break; }
-            case 5: { uint16_t v; if (!read_val(f, v)) return false; id = prev_id - v; break; }
-            case 6: { uint16_t v; if (!read_val(f, v)) return false; id = v; break; }
-            case 7: { uint32_t v; if (!read_val(f, v)) return false; id = v; break; }
+            case 2: { uint8_t v{}; if (!read_val(f, v)) return false; id = prev_id + v; break; }
+            case 3: { uint8_t v{}; if (!read_val(f, v)) return false; id = prev_id - v; break; }
+            case 4: { uint16_t v{}; if (!read_val(f, v)) return false; id = prev_id + v; break; }
+            case 5: { uint16_t v{}; if (!read_val(f, v)) return false; id = prev_id - v; break; }
+            case 6: { uint16_t v{}; if (!read_val(f, v)) return false; id = v; break; }
+            case 7: { uint32_t v{}; if (!read_val(f, v)) return false; id = v; break; }
             default: return false;
         }
 
@@ -44,14 +44,14 @@ static bool unpack_format2(FILE* f, int32_t pointer_size, int32_t count,
         uint64_t tmp = (hi & 8) ? (prev_offset / static_cast<uint64_t>(pointer_size)) : prev_offset;
         uint64_t offset = 0;
         switch (hi & 7) {
-            case 0: { uint64_t v; if (!read_val(f, v)) return false; offset = v; break; }
+            case 0: { uint64_t v{}; if (!read_val(f, v)) return false; offset = v; break; }
             case 1: offset = tmp + 1; break;
-            case 2: { uint8_t v; if (!read_val(f, v)) return false; offset = tmp + v; break; }
-            case 3: { uint8_t v; if (!read_val(f, v)) return false; offset = tmp - v; break; }
-            case 4: { uint16_t v; if (!read_val(f, v)) return false; offset = tmp + v; break; }
-            case 5: { uint16_t v; if (!read_val(f, v)) return false; offset = tmp - v; break; }
-            case 6: { uint16_t v; if (!read_val(f, v)) return false; offset = v; break; }
-            case 7: { uint32_t v; if (!read_val(f, v)) return false; offset = v; break; }
+            case 2: { uint8_t v{}; if (!read_val(f, v)) return false; offset = tmp + v; break; }
+            case 3: { uint8_t v{}; if (!read_val(f, v)) return false; offset = tmp - v; break; }
+            case 4: { uint16_t v{}; if (!read_val(f, v)) return false; offset = tmp + v; break; }
+            case 5: { uint16_t v{}; if (!read_val(f, v)) return false; offset = tmp - v; break; }
+            case 6: { uint16_t v{}; if (!read_val(f, v)) return false; offset = v; break; }
+            case 7: { uint32_t v{}; if (!read_val(f, v)) return false; offset = v; break; }
             default: return false;
         }
 
