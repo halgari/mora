@@ -31,7 +31,7 @@ private:
 
     void propagate(uint32_t node_id, const Delta& d);
     void fire_sink(const dag::DagNode& node, const Delta& d);
-    uint64_t maintain_key(uint32_t node_id, const TupleU32& t) const;
+    static uint64_t maintain_key(uint32_t node_id, const TupleU32& t) ;
 };
 
 } // namespace mora::rt

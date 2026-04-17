@@ -15,7 +15,7 @@ public:
     explicit FactDB(StringPool& pool);
 
     void add_fact(StringId relation, Tuple values);
-    void configure_relation(StringId name, size_t arity, std::vector<size_t> indexes);
+    void configure_relation(StringId name, size_t arity, const std::vector<size_t>& indexes);
     void merge_from(FactDB& other);
     std::vector<Tuple> query(StringId relation, const Tuple& pattern) const;
     bool has_fact(StringId relation, const Tuple& values) const;

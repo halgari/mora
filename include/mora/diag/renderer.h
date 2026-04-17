@@ -13,7 +13,7 @@ public:
 
 private:
     bool color_;
-    std::string level_str(DiagLevel level) const;
+    static std::string level_str(DiagLevel level) ;
 };
 
 } // namespace mora

@@ -13,7 +13,7 @@ std::string Output::format_duration(long long ms) {
     return fmt::format("{:.1f}s", double(ms) / 1000.0);
 }
 
-std::string Output::dot_pad(std::string_view left, std::string_view right, size_t width) const {
+std::string Output::dot_pad(std::string_view left, std::string_view right, size_t width) {
     size_t const left_len = left.size() + 4; // "  ✓ " prefix
     size_t const right_len = right.size();
     size_t dots_len = 0;
@@ -28,7 +28,7 @@ std::string Output::dot_pad(std::string_view left, std::string_view right, size_
     return dots;
 }
 
-void Output::print_header(std::string_view version) {
+void Output::print_header(std::string_view version) const {
     std::string const banner(MORA_BANNER);
     fmt::print("{}\n", TermStyle::cyan(banner, color_));
     fmt::print("{}\n{}\n\n",
@@ -62,19 +62,19 @@ void Output::phase_done(std::string_view detail) {
         TermStyle::dim(time_str, color_));
 }
 
-void Output::success(std::string_view message) {
+void Output::success(std::string_view message) const {
     fmt::print("\n  {} {}\n\n",
         TermStyle::green("\xe2\x9c\x93", color_),
         TermStyle::bold(TermStyle::green(std::string(message), color_), color_));
 }
 
-void Output::failure(std::string_view message) {
+void Output::failure(std::string_view message) const {
     fmt::print("\n  {} {}\n\n",
         TermStyle::red("\xe2\x9c\x97", color_),
         TermStyle::bold(TermStyle::red(std::string(message), color_), color_));
 }
 
-void Output::table(const std::vector<TableRow>& rows) {
+void Output::table(const std::vector<TableRow>& rows) const {
     fmt::print("\n");
     for (auto& row : rows) {
         auto lbl = TermStyle::dim(row.label, color_);
@@ -88,7 +88,7 @@ void Output::table(const std::vector<TableRow>& rows) {
     fmt::print("\n");
 }
 
-void Output::section_header(std::string_view title, size_t width) {
+void Output::section_header(std::string_view title, size_t width) const {
     std::string t = fmt::format(" {} ", title);
     size_t const fill = (width > t.size() + 4) ? width - t.size() - 4 : 0;
     std::string fill_str;
@@ -98,14 +98,14 @@ void Output::section_header(std::string_view title, size_t width) {
         TermStyle::cyan(fmt::format("\xe2\x94\x80\xe2\x94\x80{}{}", t, fill_str), color_));
 }
 
-void Output::progress_update(std::string_view text) {
+void Output::progress_update(std::string_view text) const {
     if (is_tty_) {
         fmt::print(stderr, "\r  {}", text);
         std::fflush(stderr);
     }
 }
 
-void Output::progress_clear() {
+void Output::progress_clear() const {
     if (is_tty_) {
         fmt::print(stderr, "\r{:60s}\r", "");
         std::fflush(stderr);
