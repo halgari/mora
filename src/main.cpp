@@ -856,7 +856,7 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
     auto final_resolved = all_patches.resolve();
 
     if (show_conflicts) {
-        auto conflicts = final_resolved.get_conflicts();
+        const auto& conflicts = final_resolved.get_conflicts();
         if (conflicts.empty()) {
             mora::log::info("  no conflicts\n");
         } else {
