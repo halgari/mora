@@ -4,10 +4,11 @@
 #include <nlohmann/json.hpp>
 
 #include "mora/lsp/dispatch.h"
-#include "mora/lsp/workspace.h"
 #include "mora/lsp/document.h"
-#include "mora/lsp/symbol_index.h"
 #include "mora/lsp/editor_id_registry.h"
+#include "mora/lsp/handlers.h"
+#include "mora/lsp/symbol_index.h"
+#include "mora/lsp/workspace.h"
 #include "mora/data/schema_registry.h"
 #include "mora/ast/ast.h"
 #include "mora/core/string_pool.h"

@@ -4,9 +4,10 @@
 #include <nlohmann/json.hpp>
 
 #include "mora/lsp/dispatch.h"
-#include "mora/lsp/workspace.h"
 #include "mora/lsp/document.h"
+#include "mora/lsp/handlers.h"
 #include "mora/lsp/symbol_index.h"
+#include "mora/lsp/workspace.h"
 
 namespace mora::lsp {
 

@@ -32,18 +32,10 @@
 #include "mora/lsp/dispatch.h"
 #include "mora/lsp/document.h"
 #include "mora/lsp/framing.h"
+#include "mora/lsp/handlers.h"
 #include "mora/lsp/workspace.h"
 
 namespace mora::lsp {
-
-void register_lifecycle_handlers(Dispatcher&);
-void register_textsync_handlers(Dispatcher&);
-void register_hover_handler(Dispatcher&);
-void register_definition_handler(Dispatcher&);
-void register_references_handler(Dispatcher&);
-void register_document_symbols_handler(Dispatcher&);
-void register_workspace_symbols_handler(Dispatcher&);
-void register_semantic_tokens_handler(Dispatcher&);
 
 namespace {
 

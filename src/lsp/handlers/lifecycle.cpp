@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 
 #include "mora/lsp/dispatch.h"
+#include "mora/lsp/handlers.h"
 #include "mora/lsp/uri.h"
 #include "mora/lsp/workspace.h"
 

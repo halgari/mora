@@ -1,11 +1,8 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include "mora/lsp/dispatch.h"
+#include "mora/lsp/handlers.h"
 #include "mora/lsp/workspace.h"
-
-namespace mora::lsp {
-void register_document_symbols_handler(Dispatcher&);
-}
 
 using namespace mora::lsp;
 using nlohmann::json;

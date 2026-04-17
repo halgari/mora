@@ -2,11 +2,8 @@
 #include <nlohmann/json.hpp>
 
 #include "mora/lsp/dispatch.h"
+#include "mora/lsp/handlers.h"
 #include "mora/lsp/workspace.h"
-
-namespace mora::lsp {
-void register_lifecycle_handlers(Dispatcher&);
-}
 
 using nlohmann::json;
 using namespace mora::lsp;

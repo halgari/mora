@@ -1,12 +1,9 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
-#include "mora/lsp/workspace.h"
-#include "mora/lsp/document.h"
 #include "mora/lsp/dispatch.h"
-
-namespace mora::lsp {
-void register_textsync_handlers(Dispatcher&);
-}
+#include "mora/lsp/document.h"
+#include "mora/lsp/handlers.h"
+#include "mora/lsp/workspace.h"
 
 using namespace mora::lsp;
 using nlohmann::json;
