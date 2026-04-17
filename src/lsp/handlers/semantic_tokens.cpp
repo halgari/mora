@@ -23,8 +23,8 @@ constexpr uint32_t TT_ENUM_MEMBER     = 4;  // resolved atom
 constexpr uint32_t TT_NAMESPACE       = 6;  // built-in namespace
 
 // Modifier bit flags — must match tokenModifiers legend.
-constexpr uint32_t TM_DEFAULT_LIB = 1u << 0;  // built-in relation
-[[maybe_unused]] constexpr uint32_t TM_DEPRECATED = 1u << 1;
+constexpr uint32_t TM_DEFAULT_LIB = 1U << 0;  // built-in relation
+[[maybe_unused]] constexpr uint32_t TM_DEPRECATED = 1U << 1;
 
 Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
     std::string const uri = params.at("textDocument").at("uri").get<std::string>();
@@ -45,7 +45,8 @@ Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
                   return a.span.start_col < b.span.start_col;
               });
 
-    uint32_t prev_line = 0, prev_col = 0;
+    uint32_t prev_line = 0;
+    uint32_t prev_col = 0;
     for (const auto& e : entries) {
         // Skip multi-line tokens — the LSP wire format only supports
         // single-line tokens in the standard encoding.

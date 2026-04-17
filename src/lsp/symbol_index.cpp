@@ -107,7 +107,7 @@ void walk_clause(const mora::Clause& clause,
         // Distinguish: if this fact is registered as a user rule, emit RuleCall;
         // otherwise emit Relation.
         const FactSignature* sig = resolver.lookup_fact(fp->name);
-        bool const is_rule = sig != nullptr && resolver.rules().count(fp->name.index) > 0;
+        bool const is_rule = sig != nullptr && resolver.rules().contains(fp->name.index);
         e.kind = is_rule ? SymbolKind::RuleCall : SymbolKind::Relation;
         e.span = fact_name_span(*fp, pool);
         e.name = fp->name;
@@ -131,7 +131,7 @@ void walk_clause(const mora::Clause& clause,
                 // Inline fact pattern handling for or-branches.
                 SymbolEntry e;
                 const FactSignature* sig2 = resolver.lookup_fact(fp2.name);
-                bool const is_rule2 = sig2 != nullptr && resolver.rules().count(fp2.name.index) > 0;
+                bool const is_rule2 = sig2 != nullptr && resolver.rules().contains(fp2.name.index);
                 e.kind = is_rule2 ? SymbolKind::RuleCall : SymbolKind::Relation;
                 e.span = fact_name_span(fp2, pool);
                 e.name = fp2.name;

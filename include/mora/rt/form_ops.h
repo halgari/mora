@@ -16,7 +16,7 @@ inline uint8_t get_form_type(const void* form) {
 
 // Return the offset of a scalar field within the form, or 0 if not applicable.
 // Used by the harness for debugging. Not used by the patch walker.
-uint64_t get_field_offset(uint8_t form_type, uint16_t field_id);
+uint64_t get_field_offset(uint8_t ft, uint16_t field_id);
 
 // Iterate every loaded form of `form_type` (e.g. 0x2B for NPC, 0x29 for weapon)
 // and invoke cb(form, ctx) for each. Uses CommonLibSSE-NG's allForms map under

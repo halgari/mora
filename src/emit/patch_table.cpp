@@ -46,7 +46,7 @@ std::vector<uint8_t> build_patch_entries_and_string_table(
         for (const auto& fp : rp.fields) {
             if (fp.value.kind() == Value::Kind::String) {
                 uint32_t const sid = fp.value.as_string().index;
-                if (string_offsets.count(sid)) continue;
+                if (string_offsets.contains(sid)) continue;
                 std::string_view const sv = pool.get(fp.value.as_string());
                 uint32_t const offset = static_cast<uint32_t>(string_table.size());
                 string_offsets[sid] = offset;

@@ -22,10 +22,10 @@ std::vector<uint8_t> build_u32_arrangement(
     h.key_column_index = key_column;
     h.key_type         = 0;
 
-    std::vector<uint8_t> out(sizeof(h) + rows.size() * 8);
+    std::vector<uint8_t> out(sizeof(h) + (rows.size() * 8));
     std::memcpy(out.data(), &h, sizeof(h));
     for (size_t i = 0; i < rows.size(); ++i) {
-        std::memcpy(out.data() + sizeof(h) + i * 8, rows[i].data(), 8);
+        std::memcpy(out.data() + sizeof(h) + (i * 8), rows[i].data(), 8);
     }
     return out;
 }

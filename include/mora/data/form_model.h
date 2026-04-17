@@ -465,9 +465,9 @@ struct FlagDef {
 };
 
 inline constexpr FlagDef kFlags[] = {
-    {FieldId::Essential,    "set_essential",      kCompNpcDirect, 4, 1u << 1},
-    {FieldId::Protected,    "set_protected",      kCompNpcDirect, 4, 1u << 11},
-    {FieldId::AutoCalcStats,"set_auto_calc_stats",kCompNpcDirect, 4, 1u << 4},
+    {FieldId::Essential,    "set_essential",      kCompNpcDirect, 4, 1U << 1},
+    {FieldId::Protected,    "set_protected",      kCompNpcDirect, 4, 1U << 11},
+    {FieldId::AutoCalcStats,"set_auto_calc_stats",kCompNpcDirect, 4, 1U << 4},
 };
 
 inline constexpr size_t kFlagCount = sizeof(kFlags) / sizeof(kFlags[0]);

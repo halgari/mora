@@ -16,7 +16,7 @@ struct SectionView {
 // Hard cap on patch-file size. Real files are under 1 MB today; 128 MiB
 // leaves generous headroom while refusing to allocate a gigabyte-sized
 // buffer off a corrupt or adversarial file before the header check runs.
-inline constexpr size_t kMaxPatchFileBytes = 128u << 20;
+inline constexpr size_t kMaxPatchFileBytes = 128U << 20;
 
 enum class OpenResult {
     Ok,

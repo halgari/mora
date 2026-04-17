@@ -30,7 +30,8 @@ bool read_header_line(std::istream& in, std::string& line) {
 bool starts_with_ci(std::string_view s, std::string_view prefix) {
     if (s.size() < prefix.size()) return false;
     for (size_t i = 0; i < prefix.size(); ++i) {
-        char a = s[i], b = prefix[i];
+        char a = s[i];
+        char b = prefix[i];
         if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
         if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
         if (a != b) return false;
