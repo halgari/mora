@@ -40,6 +40,7 @@
 #include <RE/E/EnchantmentItem.h>
 #include <RE/T/TESClass.h>
 #include <RE/M/MemoryManager.h>
+#include <SKSE/SKSE.h>
 
 #include <cstdint>
 #include <cstring>
@@ -58,6 +59,7 @@ static mora::rt::MappedPatchFile g_patch_file;
 static const uint8_t* g_patch_entries  = nullptr;
 static uint32_t       g_patch_count    = 0;
 static const uint8_t* g_string_table   = nullptr;
+static size_t         g_string_table_sz = 0;
 static mora::rt::DagRuntime g_dag_runtime;
 
 using mora::PatchEntry;
@@ -114,14 +116,24 @@ static RE::TESLeveledList* get_leveled_list(RE::TESForm* form) {
 // Each operates on typed CommonLibSSE-NG members.
 
 static void apply_name(RE::TESForm* form, const PatchEntry& e,
-                        const uint8_t* string_table) {
+                        const uint8_t* string_table, size_t string_table_sz) {
     if (e.value_type != static_cast<uint8_t>(mora::PatchValueType::StringIndex)) return;
     auto* named = get_component<RE::TESFullName>(form);
     if (!named) return;
+    if (!string_table) return;
 
-    uint32_t str_off = static_cast<uint32_t>(e.value);
+    // A malformed or truncated mora_patches.bin can carry an offset past
+    // the StringTable section. Reading through it would land in
+    // arbitrary Skyrim-process memory, so bounds-check both the length
+    // prefix and the payload before every memcpy. Any out-of-bounds
+    // offset is silently dropped rather than crashing the game.
+    const uint32_t str_off = static_cast<uint32_t>(e.value);
+    if (static_cast<size_t>(str_off) + 2u > string_table_sz) return;
+
     uint16_t len = 0;
     std::memcpy(&len, string_table + str_off, 2);
+    if (static_cast<size_t>(str_off) + 2u + len > string_table_sz) return;
+
     char buf[mora::kPatchStringBufSize];
     uint16_t copy_len = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
     std::memcpy(buf, string_table + str_off + 2, copy_len);
@@ -435,12 +447,12 @@ static void apply_leveled_list(RE::TESForm* form, const PatchEntry& e) {
 // ── Main dispatch ──────────────────────────────────────────────────────
 
 static void apply_patch_entry(RE::TESForm* form, const PatchEntry& e,
-                               const uint8_t* string_table) {
+                               const uint8_t* string_table, size_t string_table_sz) {
     FieldId field = static_cast<FieldId>(e.field_id);
 
     switch (field) {
         // Shared component fields (polymorphic)
-        case FieldId::Name:       apply_name(form, e, string_table); return;
+        case FieldId::Name:       apply_name(form, e, string_table, string_table_sz); return;
         case FieldId::GoldValue:  apply_gold_value(form, e); return;
         case FieldId::Weight:     apply_weight(form, e); return;
         case FieldId::Damage:     apply_damage(form, e); return;
@@ -511,7 +523,17 @@ static void apply_patch_entry(RE::TESForm* form, const PatchEntry& e,
 // ── Public API ─────────────────────────────────────────────────────────
 
 uint32_t load_patches(const std::filesystem::path& patch_file) {
-    if (!g_patch_file.open(patch_file.string())) return 0;
+    auto result = g_patch_file.open_detailed(patch_file.string());
+    if (result != mora::rt::OpenResult::Ok) {
+        // Silent rejects have historically masked version skew and
+        // corruption as "the mod just does nothing". Emit a distinct
+        // warning per reject reason so users see the cause in the SKSE
+        // log. Keeping the return value of 0 so the caller's existing
+        // apply-if-count path is unaffected.
+        SKSE::log::warn("[Mora] patch file rejected ({}): {}",
+            mora::rt::open_result_name(result), patch_file.string());
+        return 0;
+    }
 
     // Verify that the patch file was built against a plugin set matching
     // the one currently loaded. In Plan 2 the expected digest is stubbed
@@ -530,7 +552,8 @@ uint32_t load_patches(const std::filesystem::path& patch_file) {
     g_patch_count   = static_cast<uint32_t>(patches.size / sizeof(PatchEntry));
 
     auto strings = g_patch_file.section(mora::emit::SectionId::StringTable);
-    g_string_table = strings.data; // may be null if no strings
+    g_string_table    = strings.data; // may be null if no strings
+    g_string_table_sz = strings.size;
 
     // Load DAG bytecode (if present) into the runtime, then bind effect
     // handler implementations (CommonLibSSE-NG wrappers on Windows).
@@ -560,7 +583,7 @@ void apply_all_patches() {
             current_form = RE::TESForm::LookupByID(current_fid);
         }
         if (!current_form) continue;
-        apply_patch_entry(current_form, e, g_string_table);
+        apply_patch_entry(current_form, e, g_string_table, g_string_table_sz);
     }
 }
 

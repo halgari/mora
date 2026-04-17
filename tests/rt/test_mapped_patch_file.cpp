@@ -2,7 +2,8 @@
 #include "mora/emit/flat_file_writer.h"
 #include "mora/emit/patch_file_v2.h"
 #include <gtest/gtest.h>
-#include <cstdio>
+#include <array>
+#include <cstdlib>
 #include <fstream>
 #include <filesystem>
 
@@ -73,4 +74,51 @@ TEST(MappedPatchFile, HeaderExposed) {
     EXPECT_EQ(mpf.header().esp_digest, d);
 
     std::filesystem::remove(path);
+}
+
+TEST(MappedPatchFile, OpenDetailedReportsRejectReason) {
+    // Bad magic must surface as OpenResult::BadMagic so the runtime's
+    // SKSE log line can distinguish it from version skew, truncation,
+    // or a missing file.
+    std::vector<uint8_t> bytes(sizeof(PatchFileV2Header), 0xFF);
+    auto path = write_temp_file(bytes);
+
+    MappedPatchFile mpf;
+    EXPECT_EQ(mpf.open_detailed(path.string()), OpenResult::BadMagic);
+
+    std::filesystem::remove(path);
+}
+
+TEST(MappedPatchFile, OpenDetailedMissingFile) {
+    MappedPatchFile mpf;
+    EXPECT_EQ(
+        mpf.open_detailed((std::filesystem::temp_directory_path()
+                           / "mora_nope_nope.bin").string()),
+        OpenResult::FileNotFound);
+}
+
+TEST(MappedPatchFile, OpenDetailedTruncatedBeforeHeader) {
+    // A file smaller than the header must reject — else we'd memcpy
+    // past end-of-buffer reading header_.
+    std::vector<uint8_t> bytes(8, 0);
+    auto path = write_temp_file(bytes);
+
+    MappedPatchFile mpf;
+    EXPECT_EQ(mpf.open_detailed(path.string()), OpenResult::Truncated);
+
+    std::filesystem::remove(path);
+}
+
+TEST(MappedPatchFile, OpenResultNamesAreStable) {
+    // Logging hinges on these names — keep them stable so SKSE log
+    // consumers (and the diagnostic channel) can grep for them.
+    EXPECT_EQ(open_result_name(OpenResult::Ok),                 "ok");
+    EXPECT_EQ(open_result_name(OpenResult::FileNotFound),       "file-not-found");
+    EXPECT_EQ(open_result_name(OpenResult::BadMagic),           "bad-magic");
+    EXPECT_EQ(open_result_name(OpenResult::BadVersion),         "bad-version");
+    EXPECT_EQ(open_result_name(OpenResult::TooLarge),           "too-large");
+    EXPECT_EQ(open_result_name(OpenResult::SizeMismatch),       "size-mismatch");
+    EXPECT_EQ(open_result_name(OpenResult::Truncated),          "truncated");
+    EXPECT_EQ(open_result_name(OpenResult::DirectoryTruncated), "directory-truncated");
+    EXPECT_EQ(open_result_name(OpenResult::ReadFailed),         "read-failed");
 }
