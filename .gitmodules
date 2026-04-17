@@ -5,3 +5,6 @@
 [submodule "extern/zlib"]
 	path = extern/zlib
 	url = https://github.com/madler/zlib.git
+[submodule "extern/CLI11"]
+	path = extern/CLI11
+	url = https://github.com/CLIUtils/CLI11.git

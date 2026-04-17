@@ -13,6 +13,7 @@
 #include "mora/eval/fact_db.h"
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
+#include "mora/eval/patch_buffer.h"
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
 #include "mora/emit/arrangement_emit.h"
@@ -25,11 +26,9 @@
 #include "mora/esp/esp_reader.h"
 #include "mora/data/plugin_facts.h"
 #include "mora/data/schema_registry.h"
-#include "mora/eval/pipeline_evaluator.h"
-#include "mora/data/chunk_pool.h"
 
+#include <CLI/CLI.hpp>
 #include <fmt/format.h>
-#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -41,6 +40,10 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+
+#ifndef MORA_VERSION
+#define MORA_VERSION "0.0.0-dev"
+#endif
 
 namespace fs = std::filesystem;
 
@@ -246,22 +249,12 @@ static std::unordered_set<uint32_t> collect_used_relations(
     return used;
 }
 
+// Kept as a no-op for callers that used to print it manually. CLI11
+// now owns the help text — see `--help` / per-subcommand `-h`.
 static void print_usage() {
     mora::log::info(
-        "Usage: mora <command> [options] [path]\n\n"
-        "Commands:\n"
-        "  check     Type check and lint .mora files\n"
-        "  compile   Compile .mora files to native SKSE DLL\n"
-        "  inspect   Display patch set from .mora source files\n"
-        "  info      Show project status overview\n"
-        "  lsp       Run the language server over stdio (used by editors)\n"
-        "\nOptions:\n"
-        "  --no-color        Disable colored output\n"
-        "  --output DIR      Output directory (compile, default: MoraCache/)\n"
-        "  --data-dir DIR    Skyrim Data/ directory for ESP loading (compile, info)\n"
-        "  --plugins-txt F   Path to plugins.txt (load-order source, compile)\n"
-        "  --conflicts       Show only conflict info (inspect)\n"
-        "  -v                Verbose output\n");
+        "Usage: mora <command> [options] [path]\n"
+        "Try `mora --help` for the full option list.\n");
 }
 
 // ── Types previously exported by the import layer ──────────────────────────
@@ -308,6 +301,8 @@ static bool run_check_pipeline(
 
     if (result.modules.empty()) {
         mora::log::error("No .mora files found in {}\n", target_path);
+        mora::log::info(
+            "  hint: pass a directory containing .mora files, or a single .mora file path\n");
         return false;
     }
 
@@ -353,7 +348,7 @@ static bool run_check_pipeline(
 
 static int cmd_check(const std::string& target_path, mora::Output& out, bool use_color) {
     auto start = std::chrono::steady_clock::now();
-    out.print_header("0.1.0");
+    out.print_header(MORA_VERSION);
 
     CheckResult cr;
     if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
@@ -666,7 +661,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
                         const std::string& data_dir, const std::string& plugins_txt,
                         mora::Output& out, bool use_color) {
     auto start = std::chrono::steady_clock::now();
-    out.print_header("0.1.0");
+    out.print_header(MORA_VERSION);
 
     CheckResult cr;
     if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
@@ -925,61 +920,115 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
 // ── Main ───────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) { print_usage(); return 1; }
+    CLI::App app{"Mora — Datalog DSL compiler for Skyrim (SKSE)", "mora"};
+    app.set_version_flag("--version,-V", std::string(MORA_VERSION));
+    app.require_subcommand(1);
+    app.set_help_all_flag("--help-all", "Show help for all subcommands");
 
-    std::string command = argv[1];
+    // Global option — color policy applies to every subcommand's output.
     bool force_no_color = false;
+    app.add_flag("--no-color", force_no_color, "Disable colored output");
+
+    // `check`
+    std::string check_target = ".";
+    auto* c_check = app.add_subcommand("check", "Type check and lint .mora files");
+    c_check->fallthrough();
+    c_check->add_option("path", check_target,
+                        "File or directory containing .mora sources")
+          ->default_val(".");
+
+    // `compile`
+    std::string comp_target = ".";
+    std::string comp_output = "MoraCache";
+    std::string comp_data_dir;
+    std::string comp_plugins_txt;
+    auto* c_compile = app.add_subcommand("compile",
+                                         "Compile .mora files into mora_patches.bin");
+    c_compile->fallthrough();
+    c_compile->add_option("path", comp_target,
+                          "File or directory containing .mora sources")
+             ->default_val(".");
+    c_compile->add_option("-o,--output", comp_output,
+                          "Output directory (default: MoraCache/)")
+             ->capture_default_str();
+    c_compile->add_option("--data-dir", comp_data_dir,
+                          "Skyrim Data/ directory for ESP loading (auto-detected if omitted)");
+    c_compile->add_option("--plugins-txt", comp_plugins_txt,
+                          "Path to Plugins.txt (authoritative load-order; auto-detected if omitted)");
+
+    // `inspect`
+    std::string insp_target = ".";
     bool show_conflicts = false;
-    std::string target_path = ".";
-    std::string output_dir = "MoraCache";
-    std::string data_dir;
-    std::string plugins_txt;
+    auto* c_inspect = app.add_subcommand("inspect",
+                                         "Display the patch set produced by .mora sources");
+    c_inspect->fallthrough();
+    c_inspect->add_option("path", insp_target,
+                          "File or directory containing .mora sources")
+             ->default_val(".");
+    c_inspect->add_flag("--conflicts", show_conflicts,
+                        "Show only conflict info");
 
-    for (int i = 2; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--no-color") force_no_color = true;
-        else if (arg == "--conflicts") show_conflicts = true;
-        else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
-        else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }
-        else if (arg == "--plugins-txt" && i + 1 < argc) { plugins_txt = argv[++i]; }
-        else target_path = arg;
-    }
+    // `info`
+    std::string info_target = ".";
+    std::string info_data_dir;
+    auto* c_info = app.add_subcommand("info", "Show project status overview");
+    c_info->fallthrough();
+    c_info->add_option("path", info_target, "Project directory")
+          ->default_val(".");
+    c_info->add_option("--data-dir", info_data_dir,
+                       "Skyrim Data/ directory (auto-detected if omitted)");
 
-    if (data_dir.empty() && (command == "compile" || command == "info")) {
-        data_dir = detect_skyrim_data_dir();
-    }
+    // `docs`, `lsp` — no options exposed. `lsp` forwards unrecognized
+    // args through to the language-server runner.
+    auto* c_docs = app.add_subcommand("docs",
+                                      "Print generated documentation to stdout");
+    auto* c_lsp  = app.add_subcommand("lsp",
+                                      "Run the language server over stdio (used by editors)");
+    c_lsp->allow_extras();
 
-    if (plugins_txt.empty() && command == "compile" && !data_dir.empty()) {
-        plugins_txt = detect_plugins_txt(data_dir);
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) {
+        return app.exit(e);
     }
 
     bool use_color = !force_no_color && mora::color_enabled();
     bool is_tty = mora::stdout_is_tty();
     mora::Output out(use_color, is_tty);
 
-    if (command == "check") {
-        return cmd_check(target_path, out, use_color);
+    if (*c_check) {
+        return cmd_check(check_target, out, use_color);
     }
-
-    if (command == "compile") {
-        return cmd_compile(target_path, output_dir, data_dir, plugins_txt, out, use_color);
+    if (*c_compile) {
+        // Auto-detect only after parsing — keeps --data-dir / --plugins-txt
+        // as explicit overrides when provided.
+        if (comp_data_dir.empty())     comp_data_dir = detect_skyrim_data_dir();
+        if (comp_plugins_txt.empty() && !comp_data_dir.empty()) {
+            comp_plugins_txt = detect_plugins_txt(comp_data_dir);
+        }
+        return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
+                           out, use_color);
     }
-
-    if (command == "inspect") {
-        return cmd_inspect(target_path, show_conflicts, use_color);
+    if (*c_inspect) {
+        return cmd_inspect(insp_target, show_conflicts, use_color);
     }
-
-    if (command == "info") {
-        return cmd_info(target_path, data_dir);
+    if (*c_info) {
+        if (info_data_dir.empty()) info_data_dir = detect_skyrim_data_dir();
+        return cmd_info(info_target, info_data_dir);
     }
-
-    if (command == "docs") {
+    if (*c_docs) {
         mora::generate_docs(std::cout);
         return 0;
     }
+    if (*c_lsp) {
+        auto remaining = c_lsp->remaining();
+        std::vector<char*> lsp_argv;
+        lsp_argv.reserve(remaining.size());
+        for (auto& s : remaining) lsp_argv.push_back(s.data());
+        return mora::lsp::run(static_cast<int>(lsp_argv.size()), lsp_argv.data());
+    }
 
-    if (command == "lsp") return mora::lsp::run(argc - 2, argv + 2);
-
+    // Unreachable — require_subcommand(1) guarantees one is parsed.
     print_usage();
     return 1;
 }
