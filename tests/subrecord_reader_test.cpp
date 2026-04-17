@@ -116,12 +116,10 @@ TEST(SubrecordReaderTest, XXXXExtendedSize) {
     EXPECT_FALSE(reader.next(sub));
 }
 
-static const char* SKYRIM_ESM = "/home/tbaldrid/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data/Skyrim.esm";
+#include "skyrim_fixture.h"
 
 TEST(SubrecordReaderTest, RealSkyrimNPC) {
-    if (!std::filesystem::exists(SKYRIM_ESM)) GTEST_SKIP();
-
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(mora::test::skyrim_esm_path().string());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     auto it = info.by_type.find("NPC_");

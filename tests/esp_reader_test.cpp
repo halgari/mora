@@ -2,20 +2,25 @@
 #include "mora/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
+#include "skyrim_fixture.h"
 #include <filesystem>
+#include <string>
 
-static const char* SKYRIM_ESM = "/home/tbaldrid/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data/Skyrim.esm";
+// Skyrim.esm is a hard prerequisite — resolved via skyrim_fixture.h
+// (env var / CI path / dev-box path). Tests intentionally do not skip
+// when missing; the shared fixture aborts the binary with a clear
+// message if the data dir can't be found.
+static std::string skyrim_esm() {
+    return mora::test::skyrim_esm_path().string();
+}
 
 class EspReaderTest : public ::testing::Test {
 protected:
     mora::StringPool pool;
     mora::DiagBag diags;
-
-    bool skyrim_available() { return std::filesystem::exists(SKYRIM_ESM); }
 };
 
 TEST_F(EspReaderTest, ReadSkyrimNPCs) {
-    if (!skyrim_available()) GTEST_SKIP();
 
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
@@ -24,7 +29,7 @@ TEST_F(EspReaderTest, ReadSkyrimNPCs) {
     schema.configure_fact_db(db);
 
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     // Skyrim.esm has thousands of NPCs
     auto npc_count = db.fact_count(pool.intern("npc"));
@@ -36,7 +41,6 @@ TEST_F(EspReaderTest, ReadSkyrimNPCs) {
 }
 
 TEST_F(EspReaderTest, ReadSkyrimWeapons) {
-    if (!skyrim_available()) GTEST_SKIP();
 
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
@@ -45,7 +49,7 @@ TEST_F(EspReaderTest, ReadSkyrimWeapons) {
     schema.configure_fact_db(db);
 
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto weapon_count = db.fact_count(pool.intern("weapon"));
     EXPECT_GT(weapon_count, 100u);
@@ -59,7 +63,6 @@ TEST_F(EspReaderTest, ReadSkyrimWeapons) {
 }
 
 TEST_F(EspReaderTest, ReadSkyrimKeywords) {
-    if (!skyrim_available()) GTEST_SKIP();
 
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
@@ -68,7 +71,7 @@ TEST_F(EspReaderTest, ReadSkyrimKeywords) {
     schema.configure_fact_db(db);
 
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto keyword_count = db.fact_count(pool.intern("keyword"));
     EXPECT_GT(keyword_count, 100u);
@@ -82,7 +85,6 @@ TEST_F(EspReaderTest, ReadSkyrimKeywords) {
 }
 
 TEST_F(EspReaderTest, EditorIDResolution) {
-    if (!skyrim_available()) GTEST_SKIP();
 
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
@@ -91,7 +93,7 @@ TEST_F(EspReaderTest, EditorIDResolution) {
     schema.configure_fact_db(db);
 
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     // "IronSword" should be a known EditorID
     auto formid = reader.resolve_symbol("IronSword");
@@ -107,7 +109,6 @@ TEST_F(EspReaderTest, EditorIDResolution) {
 }
 
 TEST_F(EspReaderTest, ReadSkyrimFactions) {
-    if (!skyrim_available()) GTEST_SKIP();
 
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
@@ -116,7 +117,7 @@ TEST_F(EspReaderTest, ReadSkyrimFactions) {
     schema.configure_fact_db(db);
 
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto faction_count = db.fact_count(pool.intern("faction"));
     EXPECT_GT(faction_count, 50u);
@@ -137,13 +138,13 @@ TEST_F(EspReaderTest, ReadSkyrimFactions) {
 // ══════════════════════════════════════════════════════════════════════
 
 TEST_F(EspReaderTest, NPCFlagPredicatesExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     // Every ACBS flag bit predicate should be populated for SOME NPCs.
     auto essential_count = db.fact_count(pool.intern("essential"));
@@ -161,13 +162,13 @@ TEST_F(EspReaderTest, NPCFlagPredicatesExtract) {
 }
 
 TEST_F(EspReaderTest, NPCPackedStatsExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto calc_min = db.fact_count(pool.intern("calc_level_min"));
     auto calc_max = db.fact_count(pool.intern("calc_level_max"));
@@ -184,13 +185,13 @@ TEST_F(EspReaderTest, NPCPackedStatsExtract) {
 }
 
 TEST_F(EspReaderTest, NPCConstRefsExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto cls = db.fact_count(pool.intern("npc_class"));
     auto vtp = db.fact_count(pool.intern("voice_type"));
@@ -205,13 +206,13 @@ TEST_F(EspReaderTest, NPCConstRefsExtract) {
 }
 
 TEST_F(EspReaderTest, NPCSpellAndPerkListsExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto spell_count = db.fact_count(pool.intern("spell"));
     auto perk_count  = db.fact_count(pool.intern("perk"));
@@ -226,13 +227,13 @@ TEST_F(EspReaderTest, NPCSpellAndPerkListsExtract) {
 }
 
 TEST_F(EspReaderTest, WeaponPackedFieldsExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto speed_count = db.fact_count(pool.intern("speed"));
     auto reach_count = db.fact_count(pool.intern("reach"));
@@ -248,13 +249,13 @@ TEST_F(EspReaderTest, WeaponPackedFieldsExtract) {
 }
 
 TEST_F(EspReaderTest, LeveledListsExtract) {
-    if (!skyrim_available()) GTEST_SKIP();
+
     mora::SchemaRegistry schema(pool);
     schema.register_defaults();
     mora::FactDB db(pool);
     schema.configure_fact_db(db);
     mora::EspReader reader(pool, diags, schema);
-    reader.read_plugin(SKYRIM_ESM, db);
+    reader.read_plugin(skyrim_esm(), db);
 
     auto list_count  = db.fact_count(pool.intern("leveled_list"));
     auto entry_count = db.fact_count(pool.intern("leveled_entry"));
