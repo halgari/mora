@@ -53,3 +53,4 @@ nav:
   - Editor Support: editor-support.md
   - Examples: examples.md
   - Cross-compile (Windows build): cross-compile-windows.md
+  - Integration testing: integration-testing.md
