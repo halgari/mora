@@ -1,4 +1,5 @@
 #include "mora/esp/esp_reader.h"
+#include "mora/core/string_utils.h"
 #include "mora/esp/subrecord_reader.h"
 #include "mora/esp/record_types.h"
 #include <cstring>
@@ -76,10 +77,7 @@ const std::unordered_map<std::string, uint32_t>& EspReader::editor_id_map() cons
 }
 
 uint32_t EspReader::resolve_symbol(const std::string& editor_id) const {
-    std::string lower = editor_id;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    auto it = editor_ids_.find(lower);
+    auto it = editor_ids_.find(to_lower(editor_id));
     if (it == editor_ids_.end()) return 0;
     return it->second;
 }
@@ -120,9 +118,7 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
         if (!edid_data.empty()) {
             std::string edid(reinterpret_cast<const char*>(edid_data.data()));
             if (!edid.empty()) {
-                std::transform(edid.begin(), edid.end(), edid.begin(),
-                               [](unsigned char c) { return std::tolower(c); });
-                editor_ids_[edid] = global_fid;
+                editor_ids_[to_lower(std::move(edid))] = global_fid;
             }
         }
         reader.reset();

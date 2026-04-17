@@ -9,8 +9,8 @@
 #include "mora/cli/output.h"
 #include "mora/cli/log.h"
 #include "mora/core/string_pool.h"
-#include "mora/data/action_names.h"
 #include "mora/eval/fact_db.h"
+#include "mora/eval/patch_buffer.h"
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/patch_buffer.h"
@@ -22,6 +22,7 @@
 #include "mora/model/relations.h"
 #include "mora/core/digest.h"
 #include <algorithm>
+#include "mora/core/string_utils.h"
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
 #include "mora/data/plugin_facts.h"
@@ -733,16 +734,13 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
         std::unordered_set<std::string> loaded_lower;
         for (auto& name : loaded_plugins) {
-            std::string lo = name;
-            for (auto& c : lo) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            loaded_lower.insert(std::move(lo));
+            loaded_lower.insert(mora::to_lower(name));
         }
         size_t skipped = 0;
         cr.modules.erase(std::remove_if(cr.modules.begin(), cr.modules.end(),
             [&](const mora::Module& m) {
                 for (auto& req : m.requires_decls) {
-                    std::string want = std::string(cr.pool.get(req.mod_name));
-                    for (auto& c : want) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    std::string want = mora::to_lower(std::string(cr.pool.get(req.mod_name)));
                     if (loaded_lower.count(want)) continue;
                     cr.diags.warning(
                         "requires-unmet",

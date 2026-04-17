@@ -1,16 +1,11 @@
 #include "mora/data/plugin_facts.h"
+#include "mora/core/string_utils.h"
 #include "mora/data/value.h"
 #include "mora/eval/fact_db.h"
-#include <cctype>
 
 namespace mora {
 
 namespace {
-
-std::string to_lower(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
 
 std::string extension_lower(const std::string& filename) {
     auto dot = filename.find_last_of('.');
