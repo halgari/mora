@@ -14,7 +14,7 @@ concurrency:
 jobs:
   linux:
     name: Linux (xmake + gtest)
-    # skyrim-runner:local bakes gcc-13, xmake v2.9.9, python3-yaml, and
+    # skyrim-runner:local bakes gcc-13, xmake v3.0.8, python3-yaml, and
     # XMAKE_ROOT=y at the image level — no per-run install needed.
     runs-on: [self-hosted, linux]
     steps:
@@ -117,7 +117,7 @@ jobs:
     # No Visual Studio, no Windows runner, no wine.
     #
     # skyrim-runner:local bakes the whole toolchain: clang / lld / llvm,
-    # xmake v2.9.9, xwin binary, and a pre-splatted sysroot at /opt/xwin
+    # xmake v3.0.8, xwin binary, and a pre-splatted sysroot at /opt/xwin
     # (XWIN_PATH env set at the image level). No per-run install needed.
     name: Windows (clang-cl cross-compile on self-hosted linux)
     runs-on: [self-hosted, linux]
@@ -146,9 +146,10 @@ jobs:
 
       - name: Configure (windows / clang-cl + xwin)
         # No --toolchain flag — project sets it via set_toolchains inside
-        # the is_plat("windows") block. xmake v2.9.9 doesn't propagate
-        # package include dirs correctly when --toolchain= is specified
-        # at CLI, but letting the project apply it works.
+        # the is_plat("windows") block. Both xmake 2.9.9 and 3.0.8 have
+        # known --toolchain=xwin-clang-cl CLI issues (package include
+        # dirs / project-toolchain lookup respectively); keeping the
+        # toolchain selection inside xmake.lua sidesteps both.
         run: xmake f -p windows -a x64 -m release -y
 
       - name: Build mora.exe + MoraRuntime.dll + MoraTestHarness.dll
