@@ -23,6 +23,7 @@
 #include <algorithm>
 #include "mora/esp/load_order.h"
 #include "mora/esp/esp_reader.h"
+#include "mora/data/plugin_facts.h"
 #include "mora/data/schema_registry.h"
 #include "mora/eval/pipeline_evaluator.h"
 #include "mora/data/chunk_pool.h"
@@ -45,6 +46,50 @@ namespace fs = std::filesystem;
 
 // Forward declaration (defined in cli/doc_generator.cpp)
 namespace mora { void generate_docs(std::ostream& out); }
+
+// Locate a Plugins.txt / plugins.txt alongside or near `data_dir`.
+// Preference order: Data/../Plugins.txt (co-located, matches our
+// self-hosted CI image layout) → conventional Proton AppData prefixes
+// → Windows %LOCALAPPDATA%. Returns "" when no file is found; caller
+// falls back to directory-walk ordering in that case.
+static std::string detect_plugins_txt(const std::string& data_dir) {
+    std::vector<fs::path> candidates;
+
+    if (!data_dir.empty()) {
+        fs::path base(data_dir);
+        // Directly adjacent to Data/ (matches /skyrim-base/Plugins.txt
+        // on the self-hosted runner image and most portable layouts).
+        if (base.has_parent_path()) {
+            candidates.push_back(base.parent_path() / "Plugins.txt");
+            candidates.push_back(base.parent_path() / "plugins.txt");
+        }
+        // Inside Data/ (rare, but some MO2 profiles place it there).
+        candidates.push_back(base / "Plugins.txt");
+        candidates.push_back(base / "plugins.txt");
+    }
+
+    if (const char* home = std::getenv("HOME")) {
+        fs::path h(home);
+        // Steam + Proton prefix for Skyrim SE (app id 489830).
+        candidates.push_back(h / ".local/share/Steam/steamapps/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
+        // GOG portable prefix layout used by scripts/deploy_runtime.sh.
+        candidates.push_back(h / "Games/gog/the-elder-scrolls-v-skyrim-special-edition/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition GOG/Plugins.txt");
+    }
+    // Self-hosted CI runner warm-prefix layout (skyrim-runner image).
+    // Compile runs before /tmp/prefix is staged, so we read from the
+    // immutable source at /opt/warm-prefix.
+    candidates.push_back("/opt/warm-prefix/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
+    candidates.push_back("/tmp/prefix/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
+    if (const char* localapp = std::getenv("LOCALAPPDATA")) {
+        candidates.push_back(fs::path(localapp) / "Skyrim Special Edition" / "Plugins.txt");
+    }
+
+    for (auto& p : candidates) {
+        std::error_code ec;
+        if (fs::exists(p, ec)) return p.string();
+    }
+    return "";
+}
 
 static std::string detect_skyrim_data_dir() {
     // Check common Steam library locations for Skyrim SE
@@ -214,6 +259,7 @@ static void print_usage() {
         "  --no-color        Disable colored output\n"
         "  --output DIR      Output directory (compile, default: MoraCache/)\n"
         "  --data-dir DIR    Skyrim Data/ directory for ESP loading (compile, info)\n"
+        "  --plugins-txt F   Path to plugins.txt (load-order source, compile)\n"
         "  --conflicts       Show only conflict info (inspect)\n"
         "  -v                Verbose output\n");
 }
@@ -328,10 +374,21 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
     }
 }
 
-// Load ESP plugin data into the FactDB via parallel batched reading
+// Load ESP plugin data into the FactDB in three phases so we can
+// apply Skyrim's whole-record override semantics without scanning
+// each plugin's GRUPs twice:
+//
+//   (1) Parse every plugin's TES4 header + record index in parallel,
+//       caching MmapFile + PluginInfo.
+//   (2) Walk the cached PluginInfos sequentially in load order,
+//       upserting `OverrideFilter::winning[gfid] = load_idx`.
+//   (3) Extract facts in parallel, with each reader gated by the
+//       filter — records whose global FormID lost the override race
+//       emit nothing, matching what Skyrim's engine would present.
 static void load_esp_data(
     CheckResult& cr, mora::FactDB& db, mora::Evaluator& evaluator,
-    const std::string& data_dir, mora::Output& out,
+    const std::string& data_dir, const std::string& plugins_txt,
+    mora::Output& out,
     mora::EditorIdMap& editor_id_map, mora::PluginSet& loaded_plugins)
 {
     out.phase_start("Loading ESPs");
@@ -340,15 +397,70 @@ static void load_esp_data(
     schema.register_defaults();
     schema.configure_fact_db(db);
 
-    mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+    mora::LoadOrder lo = !plugins_txt.empty()
+        ? mora::LoadOrder::from_plugins_txt(plugins_txt, data_dir)
+        : mora::LoadOrder::from_directory(data_dir);
     for (auto& p : lo.plugins) {
         loaded_plugins.insert(p.filename().string());
     }
+    if (!plugins_txt.empty()) {
+        mora::log::info("  Load order:    {} ({} plugins)\n", plugins_txt, lo.plugins.size());
+    }
 
+    auto runtime_index = lo.runtime_index_map();
     auto needed = collect_used_relations(cr.modules);
 
+    // ── Phase 1: parallel parse ────────────────────────────────────
+    // Cache (MmapFile, PluginInfo) for every plugin so Phase 3 can
+    // emit facts without re-walking GRUPs.
+    struct Parsed {
+        mora::MmapFile file;
+        mora::PluginInfo info;
+        uint32_t load_idx = 0;  // scalar synthetic idx for the filter
+    };
+    auto parse_one = [](const std::filesystem::path& path) {
+        mora::MmapFile f(path.string());
+        auto info = mora::build_plugin_index(f, path.filename().string());
+        return Parsed{std::move(f), std::move(info), 0};
+    };
+    std::vector<std::future<Parsed>> parse_futures;
+    parse_futures.reserve(lo.plugins.size());
+    for (auto& p : lo.plugins) {
+        parse_futures.push_back(std::async(std::launch::async, parse_one, p));
+    }
+    std::vector<Parsed> parsed;
+    parsed.reserve(lo.plugins.size());
+    for (auto& fut : parse_futures) {
+        parsed.push_back(fut.get());
+    }
+    // Assign a scalar load idx per plugin. We hand the override
+    // filter a monotonic index (position in lo.plugins) rather than
+    // the rtmap high-byte because two light plugins can share a high
+    // byte (0xFE) and we still need to order them against each other.
+    for (size_t i = 0; i < parsed.size(); i++) {
+        parsed[i].load_idx = static_cast<uint32_t>(i);
+    }
+
+    // ── Phase 2: override filter ───────────────────────────────────
+    std::vector<mora::PluginInfo> infos;
+    std::vector<uint32_t> load_idxs;
+    infos.reserve(parsed.size());
+    load_idxs.reserve(parsed.size());
+    for (auto& p : parsed) {
+        infos.push_back(p.info);
+        load_idxs.push_back(p.load_idx);
+    }
+    auto override_filter = mora::OverrideFilter::build(infos, runtime_index, load_idxs);
+
+    // Plugin-level facts (exists/load_index/is_master/is_light/
+    // master_of/version/extension) land in the shared FactDB before
+    // the per-plugin fact extraction kicks off. They're shared
+    // across rules regardless of which mods a rule touches.
+    mora::populate_plugin_facts(db, cr.pool, lo, infos, runtime_index);
+
+    // ── Phase 3: parallel fact extraction ──────────────────────────
     auto hw = std::max(1u, std::thread::hardware_concurrency());
-    size_t batch_size = (lo.plugins.size() + hw - 1) / hw;
+    size_t batch_size = (parsed.size() + hw - 1) / hw;
 
     struct BatchResult {
         mora::FactDB local_db;
@@ -356,24 +468,28 @@ static void load_esp_data(
         BatchResult(mora::StringPool& p) : local_db(p) {}
     };
 
-    std::vector<std::future<BatchResult>> futures;
-    for (size_t i = 0; i < lo.plugins.size(); i += batch_size) {
-        size_t end = std::min(i + batch_size, lo.plugins.size());
-        futures.push_back(std::async(std::launch::async,
+    std::vector<std::future<BatchResult>> extract_futures;
+    for (size_t i = 0; i < parsed.size(); i += batch_size) {
+        size_t end = std::min(i + batch_size, parsed.size());
+        extract_futures.push_back(std::async(std::launch::async,
             [&, i, end]() -> BatchResult {
                 BatchResult result(cr.pool);
                 schema.configure_fact_db(result.local_db);
-                mora::EspReader reader(cr.pool, cr.diags, schema);
-                reader.set_needed_relations(needed);
-                std::vector<std::filesystem::path> batch(
-                    lo.plugins.begin() + i, lo.plugins.begin() + end);
-                reader.read_load_order(batch, result.local_db);
-                result.editor_ids = reader.editor_id_map();
+                for (size_t k = i; k < end; k++) {
+                    mora::EspReader reader(cr.pool, cr.diags, schema);
+                    reader.set_needed_relations(needed);
+                    reader.set_runtime_index_map(&runtime_index);
+                    reader.set_override_filter(&override_filter, parsed[k].load_idx);
+                    reader.extract_from(parsed[k].file, parsed[k].info, result.local_db);
+                    for (auto& [edid, fid] : reader.editor_id_map()) {
+                        result.editor_ids[edid] = fid;
+                    }
+                }
                 return result;
             }));
     }
 
-    for (auto& fut : futures) {
+    for (auto& fut : extract_futures) {
         auto result = fut.get();
         db.merge_from(result.local_db);
         for (auto& [edid, formid] : result.editor_ids) {
@@ -386,7 +502,7 @@ static void load_esp_data(
     }
 
     out.phase_done(fmt::format("{} plugins, {} relations \xe2\x86\x92 {} facts",
-        lo.plugins.size(), needed.size(), db.fact_count()));
+        parsed.size(), needed.size(), db.fact_count()));
 }
 
 // Evaluate .mora rules via Datalog and merge results into PatchBuffer.
@@ -547,7 +663,7 @@ static int write_patch_file(
 }
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
-                        const std::string& data_dir,
+                        const std::string& data_dir, const std::string& plugins_txt,
                         mora::Output& out, bool use_color) {
     auto start = std::chrono::steady_clock::now();
     out.print_header("0.1.0");
@@ -585,7 +701,40 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::PluginSet loaded_plugins;
 
     if (!data_dir.empty()) {
-        load_esp_data(cr, db, evaluator, data_dir, out, editor_id_map, loaded_plugins);
+        load_esp_data(cr, db, evaluator, data_dir, plugins_txt, out, editor_id_map, loaded_plugins);
+    }
+
+    // Enforce `requires mod("X")` — a module whose declared
+    // dependencies aren't in the resolved load order gets a warning
+    // and its rules are skipped (emitting facts rooted in forms from
+    // missing plugins would produce patches that never apply).
+    {
+        std::unordered_set<std::string> loaded_lower;
+        for (auto& name : loaded_plugins) {
+            std::string lo = name;
+            for (auto& c : lo) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            loaded_lower.insert(std::move(lo));
+        }
+        size_t skipped = 0;
+        cr.modules.erase(std::remove_if(cr.modules.begin(), cr.modules.end(),
+            [&](const mora::Module& m) {
+                for (auto& req : m.requires_decls) {
+                    std::string want = std::string(cr.pool.get(req.mod_name));
+                    for (auto& c : want) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (loaded_lower.count(want)) continue;
+                    cr.diags.warning(
+                        "requires-unmet",
+                        fmt::format("required mod \"{}\" is not in the load order; "
+                                    "module rules skipped", std::string(cr.pool.get(req.mod_name))),
+                        req.span, "");
+                    skipped++;
+                    return true;
+                }
+                return false;
+            }), cr.modules.end());
+        if (skipped > 0) {
+            mora::log::info("  Skipped {} module(s) with unmet `requires mod(...)` — see warnings\n", skipped);
+        }
     }
 
     mora::PatchBuffer patch_buf;
@@ -784,6 +933,7 @@ int main(int argc, char* argv[]) {
     std::string target_path = ".";
     std::string output_dir = "MoraCache";
     std::string data_dir;
+    std::string plugins_txt;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -791,11 +941,16 @@ int main(int argc, char* argv[]) {
         else if (arg == "--conflicts") show_conflicts = true;
         else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
         else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }
+        else if (arg == "--plugins-txt" && i + 1 < argc) { plugins_txt = argv[++i]; }
         else target_path = arg;
     }
 
     if (data_dir.empty() && (command == "compile" || command == "info")) {
         data_dir = detect_skyrim_data_dir();
+    }
+
+    if (plugins_txt.empty() && command == "compile" && !data_dir.empty()) {
+        plugins_txt = detect_plugins_txt(data_dir);
     }
 
     bool use_color = !force_no_color && mora::color_enabled();
@@ -807,7 +962,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "compile") {
-        return cmd_compile(target_path, output_dir, data_dir, out, use_color);
+        return cmd_compile(target_path, output_dir, data_dir, plugins_txt, out, use_color);
     }
 
     if (command == "inspect") {

@@ -1,7 +1,9 @@
 #pragma once
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
+#include "mora/esp/load_order.h"
 #include "mora/esp/mmap_file.h"
+#include "mora/esp/override_filter.h"
 #include "mora/esp/plugin_index.h"
 #include "mora/core/string_pool.h"
 #include "mora/diag/diagnostic.h"
@@ -20,8 +22,27 @@ public:
     // Pass the set of relation names that rules actually reference.
     void set_needed_relations(const std::unordered_set<uint32_t>& relation_name_indexes);
 
+    // Attach a RuntimeIndexMap for globalizing local form ids. Without
+    // one, the reader falls back to the legacy directory-walk index —
+    // correct for single-plugin callers (tests, `mora info` against a
+    // fixture) but wrong for a real load order where the compile-time
+    // order diverges from the runtime one.
+    void set_runtime_index_map(const RuntimeIndexMap* map);
+
+    // Attach an OverrideFilter and this reader's per-plugin scalar
+    // load index. When set, records whose global FormID lost the
+    // override race emit zero facts. Without a filter the reader
+    // emits every record it scans (legacy single-plugin behavior).
+    void set_override_filter(const OverrideFilter* filter, uint32_t load_idx);
+
     // Read a single plugin file, populate facts into db
     void read_plugin(const std::filesystem::path& path, FactDB& db);
+
+    // Extract facts from an already-mmapped, already-indexed plugin.
+    // Lets the caller share a single build_plugin_index parse between
+    // the override-filter build step and the final fact emission step
+    // so the heavy GRUP walk happens exactly once.
+    void extract_from(const MmapFile& file, const PluginInfo& info, FactDB& db);
 
     // Read all plugins in order
     void read_load_order(const std::vector<std::filesystem::path>& plugins, FactDB& db);
@@ -60,6 +81,9 @@ private:
     size_t facts_generated_ = 0;
     size_t relations_skipped_ = 0;
     uint32_t current_load_index_ = 0;
+    const RuntimeIndexMap* runtime_index_ = nullptr;
+    const OverrideFilter* override_filter_ = nullptr;
+    uint32_t reader_load_idx_ = 0;
 };
 
 } // namespace mora
