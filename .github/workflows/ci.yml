@@ -339,10 +339,22 @@ jobs:
 
           # Dedup in case something's listed in both base + CCC, and
           # append any remaining Data/ plugins we haven't covered.
+          # Skyrim.ccc casing occasionally drifts from the actual file
+          # on disk (e.g. ccMTYSSE001-KnightsoftheNine.esl vs ...OfTheNine.esl).
+          # Wine at runtime is case-insensitive so those all load, but
+          # a compile-time case-sensitive file check would silently
+          # drop them and throw off ESL indices for every subsequent
+          # light plugin. Map filenames via a case-insensitive index.
           python3 - "$GEN_TXT" /skyrim-base/Data <<'PY'
           import os, sys
           gen = sys.argv[1]
           data_dir = sys.argv[2]
+          try:
+              disk_files = os.listdir(data_dir)
+          except FileNotFoundError:
+              disk_files = []
+          by_lower = {f.lower(): f for f in disk_files}
+
           seen_lower = set()
           with open(gen) as f:
               lines = [ln.rstrip("\n") for ln in f if ln.strip()]
@@ -352,20 +364,20 @@ jobs:
               key = name.lower()
               if key in seen_lower:
                   continue
+              actual = by_lower.get(key)
+              if not actual:
+                  continue
               seen_lower.add(key)
-              if os.path.isfile(os.path.join(data_dir, name)):
-                  out.append("*" + name)
+              out.append("*" + actual)  # use the on-disk casing
+
           # Append remaining plugins that exist in Data/ but aren't listed.
-          try:
-              for entry in sorted(os.listdir(data_dir), key=str.lower):
-                  if not entry.lower().endswith((".esm", ".esp", ".esl")):
-                      continue
-                  if entry.lower() in seen_lower:
-                      continue
-                  seen_lower.add(entry.lower())
-                  out.append("*" + entry)
-          except FileNotFoundError:
-              pass
+          for entry in sorted(disk_files, key=str.lower):
+              if not entry.lower().endswith((".esm", ".esp", ".esl")):
+                  continue
+              if entry.lower() in seen_lower:
+                  continue
+              seen_lower.add(entry.lower())
+              out.append("*" + entry)
           with open(gen, "w") as f:
               f.write("\n".join(out) + "\n")
           PY
