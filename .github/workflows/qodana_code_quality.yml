@@ -32,16 +32,52 @@ jobs:
           xmake-version: latest
 
       - name: Generate compile_commands.json
+        # qodana-clang reads compile_commands.json and invokes clang on
+        # each TU. xmake emits entries with absolute paths — the repo
+        # root (GITHUB_WORKSPACE) and include dirs into xmake's package
+        # cache ($HOME/.xmake/packages/...). Neither resolves inside
+        # the qodana-clang container, which bind-mounts only the repo
+        # checkout at /data/project/ (and nothing else). Fix by:
+        #   1. fetching every package + building once so the cache is
+        #      fully populated (xmake's lazy fetch won't run inside the
+        #      container);
+        #   2. copying the xmake cache into the repo at .xmake-deps/
+        #      so it survives the mount into the container;
+        #   3. rewriting both path prefixes to their in-container
+        #      equivalents (/data/project/...).
         run: |
+          set -euo pipefail
+
           xmake f -y -m releasedbg \
             --cxflags="-pthread -Wno-dangling-reference" \
             --ldflags=-pthread
-          # xmake takes the output directory as a positional arg (not
-          # a -x flag). End result is ./build/compile_commands.json —
-          # the default path qodana-clang's --compile-commands looks at.
+
+          # Populate the package cache for every TU; xmake's TU
+          # arguments reference package includedirs that only appear
+          # after packages have been fetched + installed.
+          xmake build -y
+
+          # Stage the xmake cache inside the repo so qodana-clang's
+          # bind-mount sees it.
+          rm -rf .xmake-deps
+          cp -a "$HOME/.xmake" .xmake-deps
+
+          # Emit compile_commands.json, then rewrite absolute paths
+          # so they resolve inside qodana-clang's /data/project/ mount.
           xmake project -k compile_commands build
           test -s build/compile_commands.json
-          echo "compile_commands.json: $(wc -l < build/compile_commands.json) lines"
+
+          sed -i \
+            -e "s|$HOME/.xmake|/data/project/.xmake-deps|g" \
+            -e "s|$GITHUB_WORKSPACE|/data/project|g" \
+            build/compile_commands.json
+
+          # Sanity: no stray absolute host paths left.
+          if grep -E "(/home/runner|$HOME)" build/compile_commands.json; then
+            echo "::error::compile_commands.json still has host-absolute paths"
+            exit 1
+          fi
+          echo "compile_commands.json: $(wc -l < build/compile_commands.json) lines, rewritten for container"
 
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2025.3
