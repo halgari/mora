@@ -306,13 +306,18 @@ jobs:
           # mora falls back to a directory-walk whose CC/DLC ordering
           # diverges from the engine, producing FormIDs that don't
           # map 1:1 at runtime (see #5 + #9).
-          PLUGINS_TXT=$(find /opt/warm-prefix /skyrim-base -maxdepth 10 \
-                             -iname Plugins.txt -type f 2>/dev/null | head -1)
+          PLUGINS_TXT=$(find /opt /tmp/prefix /skyrim-base /skyrim-baseline /root /home 2>/dev/null \
+                             -maxdepth 12 -iname Plugins.txt -type f 2>/dev/null | head -1)
           if [[ -n "$PLUGINS_TXT" ]]; then
             echo "Using Plugins.txt: $PLUGINS_TXT"
+            head -5 "$PLUGINS_TXT"; echo "...; total $(wc -l < "$PLUGINS_TXT") lines"
             PLUGINS_ARG=(--plugins-txt "$PLUGINS_TXT")
           else
             echo "::warning::no Plugins.txt found on runner — mora will fall back to directory-walk load order"
+            echo "[debug] candidate dirs:"
+            ls -la /opt 2>/dev/null | head -10 || true
+            ls -la /skyrim-base 2>/dev/null | head -10 || true
+            find / -maxdepth 5 -iname "Plugins.txt" -type f 2>/dev/null | head -20 || true
             PLUGINS_ARG=()
           fi
 
