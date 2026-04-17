@@ -95,8 +95,6 @@ Body clauses are queries:
 - **Negation**: `not ns/rel(args)`. True when it doesn't. Only use on
   clauses whose variables are already bound by earlier clauses.
 - **Comparison**: `Expr op Expr` with `>`, `<`, `>=`, `<=`, `==`, `!=`.
-- **Set membership**: `Var in [v1, v2, ...]`.
-- **Disjunction**: `or: branch1; branch2;`.
 
 Example combining most of them:
 
@@ -199,15 +197,16 @@ has no retract handler.
 
 ## Arithmetic and built-in functions
 
-Arithmetic works in both bodies and heads, with standard precedence
-(`*` `/` bind tighter than `+` `-`):
+Arithmetic works in head-position expressions, with standard precedence
+(`*` `/` bind tighter than `+` `-`). Variables are bound by body clauses;
+arithmetic only reads them:
 
 ```mora
-heavy_tax(W, Taxed):
+heavy_tax(W):
     form/weapon(W)
     form/gold_value(W, V)
     V > 100
-    Taxed = V * 2 - 50
+    => set form/gold_value(W, V * 2 - 50)
 ```
 
 Built-in functions: `max`, `min`, `abs`, `clamp`. They're pure,
@@ -254,7 +253,7 @@ definition would otherwise be copied.
 
 ---
 
-## Negation and disjunction
+## Negation
 
 ```mora
 silver_but_not_greatsword(W):
@@ -267,16 +266,21 @@ silver_but_not_greatsword(W):
 Negation applies to a single clause and requires its variables to be
 already bound by earlier clauses.
 
+Disjunction — matching "A or B" inside one rule body — is not yet a
+surface feature. For now, factor each branch into its own derived rule
+and consume both where you need the union:
+
 ```mora
-valuable_item(Item):
-    or:
-        form/weapon(Item)
-        form/armor(Item)
+valuable_weapon(Item):
+    form/weapon(Item)
+    form/gold_value(Item, V)
+    V >= 1000
+
+valuable_armor(Item):
+    form/armor(Item)
     form/gold_value(Item, V)
     V >= 1000
 ```
-
-Clauses outside the `or:` block apply to every branch.
 
 ---
 
