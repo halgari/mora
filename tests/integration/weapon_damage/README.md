@@ -14,11 +14,8 @@ indices agree only for Skyrim.esm; CC/DLC weapons (formids
 `0x01xxxxxx`+) show a shift. That's a separate bug — this test scopes
 its assertion to the set that's actually deterministic.
 
-## Why not Nazeem?
+## Related cases
 
-The original design called for `form/npc(N) => set form/name(N, "Nazeem")`
-but `mora compile` currently drops string-valued patches at the
-PatchSet → PatchBuffer conversion (`src/main.cpp`, the emit switch has no
-`Kind::String` case even though `PatchValueType::StringIndex = 3` is
-reserved in the binary format). Once string-patch emission lands, add a
-`tests/integration/nazeem/` case alongside this one.
+- `tests/integration/nazeem/` — the scalar<String> counterpart (every NPC
+  renamed "Nazeem"), added alongside the #4 fix that taught the fast-path
+  PatchBuffer serializer to emit a StringTable section.

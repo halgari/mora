@@ -231,7 +231,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [weapon_damage]
+        case: [weapon_damage, nazeem]
     steps:
       - uses: actions/checkout@v4
 

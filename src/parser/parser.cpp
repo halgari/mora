@@ -641,7 +641,15 @@ Expr Parser::parse_primary() {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = StringLiteral{tok.string_id, tok.span};
+        // Lexer interns the full lexeme (including surrounding quotes); the
+        // AST carries the logical value without them. Mirrors the ad-hoc
+        // strip in parse_requires().
+        std::string_view sv = pool_.get(tok.string_id);
+        StringId content_id = tok.string_id;
+        if (sv.size() >= 2 && sv.front() == '"' && sv.back() == '"') {
+            content_id = pool_.intern(sv.substr(1, sv.size() - 2));
+        }
+        e.data = StringLiteral{content_id, tok.span};
         return e;
     }
 
