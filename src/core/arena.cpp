@@ -1,4 +1,5 @@
 #include "mora/core/arena.h"
+#include <algorithm>
 #include <cassert>
 #include <memory>
 
@@ -25,9 +26,7 @@ void* Arena::alloc_raw(size_t size, size_t align) {
 
     // Need a new chunk. Make it large enough for worst-case alignment + size.
     size_t new_chunk_size = chunk_size_;
-    if (size + align > new_chunk_size) {
-        new_chunk_size = size + align;
-    }
+    new_chunk_size = std::max(size + align, new_chunk_size);
 
     Chunk const& chunk = chunks_.emplace_back(Chunk{
         std::make_unique<std::byte[]>(new_chunk_size),

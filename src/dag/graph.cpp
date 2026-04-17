@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "mora/dag/graph.h"
 
 namespace mora::dag {
@@ -12,7 +14,7 @@ uint32_t DagGraph::add_node(DagNode n) {
 void DagGraph::set_input(uint32_t node_id, uint8_t slot, uint32_t source_id) {
     auto& n = nodes_[node_id];
     n.inputs[slot] = source_id;
-    if (slot + 1 > n.input_count) n.input_count = slot + 1;
+    n.input_count = std::max<int>(slot + 1, n.input_count);
 }
 
 std::vector<uint32_t> DagGraph::topological_order() const {

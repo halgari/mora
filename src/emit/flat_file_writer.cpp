@@ -45,7 +45,7 @@ std::vector<uint8_t> FlatFileWriter::finish() {
         e.flags      = 0;
         e.offset     = offsets[i];
         e.size       = sections_[i].payload.size();
-        std::memcpy(out.data() + header_size + i * sizeof(e), &e, sizeof(e));
+        std::memcpy(out.data() + header_size + (i * sizeof(e)), &e, sizeof(e));
 
         if (e.size) std::memcpy(out.data() + e.offset, sections_[i].payload.data(), e.size);
     }

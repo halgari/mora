@@ -19,17 +19,18 @@ U32RowRange ArrangementView::equal_range_u32(uint32_t key) const {
     const uint32_t count = header_.row_count;
     const uint8_t  k_col = header_.key_column_index;
 
-    size_t lo = 0, hi = count;
+    size_t lo = 0;
+    size_t hi = count;
     while (lo < hi) {
         size_t const mid = (lo + hi) / 2;
-        if (rows[mid * cols + k_col] < key) lo = mid + 1;
+        if (rows[(mid * cols) + k_col] < key) lo = mid + 1;
         else                                hi = mid;
     }
     const size_t first = lo;
     size_t last = first;
-    while (last < count && rows[last * cols + k_col] == key) ++last;
+    while (last < count && rows[(last * cols) + k_col] == key) ++last;
 
-    return { rows + first * cols, last - first, static_cast<uint16_t>(cols) };
+    return { rows + (first * cols), last - first, static_cast<uint16_t>(cols) };
 }
 
 } // namespace mora::rt

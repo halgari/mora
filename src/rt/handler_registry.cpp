@@ -8,7 +8,7 @@ void HandlerRegistry::bind_read(model::HandlerId id, ReadFn fn)       { reads_[s
 
 bool HandlerRegistry::has_impl(model::HandlerId id) const {
     auto k = static_cast<uint16_t>(id);
-    return effects_.count(k) || retracts_.count(k) || reads_.count(k);
+    return effects_.contains(k) || retracts_.contains(k) || reads_.contains(k);
 }
 
 EffectHandle HandlerRegistry::invoke_effect(model::HandlerId id, const EffectArgs& a) {
