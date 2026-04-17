@@ -83,6 +83,11 @@ jobs:
         uses: JetBrains/qodana-action@v2025.3
         with:
           pr-mode: false
+          # Upload the qodana-report artifact even on failure so we can
+          # download logs and see why the container-side scan produced
+          # no SARIF — the action's surface output hides those logs.
+          upload-result: true
+          args: --log-level,debug
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN_868088967 }}
           QODANA_ENDPOINT: 'https://qodana.cloud'
