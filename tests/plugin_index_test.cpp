@@ -1,18 +1,18 @@
 #include <gtest/gtest.h>
 #include "mora/esp/plugin_index.h"
+#include "skyrim_fixture.h"
 #include <filesystem>
+#include <string>
 
-static const char* SKYRIM_ESM = "/home/tbaldrid/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data/Skyrim.esm";
+static std::string skyrim_esm() {
+    return mora::test::skyrim_esm_path().string();
+}
 
-class PluginIndexTest : public ::testing::Test {
-protected:
-    bool skyrim_available() { return std::filesystem::exists(SKYRIM_ESM); }
-};
+class PluginIndexTest : public ::testing::Test {};
 
 TEST_F(PluginIndexTest, SkyrimEsmHeader) {
-    if (!skyrim_available()) GTEST_SKIP();
 
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(skyrim_esm());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     EXPECT_EQ(info.filename, "Skyrim.esm");
@@ -25,9 +25,8 @@ TEST_F(PluginIndexTest, SkyrimEsmHeader) {
 }
 
 TEST_F(PluginIndexTest, SkyrimHasNPCs) {
-    if (!skyrim_available()) GTEST_SKIP();
 
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(skyrim_esm());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     auto it = info.by_type.find("NPC_");
@@ -37,9 +36,8 @@ TEST_F(PluginIndexTest, SkyrimHasNPCs) {
 }
 
 TEST_F(PluginIndexTest, SkyrimHasWeapons) {
-    if (!skyrim_available()) GTEST_SKIP();
 
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(skyrim_esm());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     auto it = info.by_type.find("WEAP");
@@ -48,9 +46,8 @@ TEST_F(PluginIndexTest, SkyrimHasWeapons) {
 }
 
 TEST_F(PluginIndexTest, SkyrimHasKeywords) {
-    if (!skyrim_available()) GTEST_SKIP();
 
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(skyrim_esm());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     auto it = info.by_type.find("KYWD");
@@ -79,9 +76,8 @@ TEST_F(PluginIndexTest, FormIDResolution) {
 }
 
 TEST_F(PluginIndexTest, RecordTypeCounts) {
-    if (!skyrim_available()) GTEST_SKIP();
 
-    mora::MmapFile file(SKYRIM_ESM);
+    mora::MmapFile file(skyrim_esm());
     auto info = mora::build_plugin_index(file, "Skyrim.esm");
 
     // Print some record type counts for verification
