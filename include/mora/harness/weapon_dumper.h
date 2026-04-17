@@ -10,9 +10,24 @@ namespace mora::harness {
 struct WeaponData {
     uint32_t formid = 0;
     std::string name;
+
+    // Shared components
     uint16_t damage = 0;
     int32_t value = 0;
     float weight = 0.0F;
+
+    // WeaponDirect scalars (absolute offsets on TESObjectWEAP)
+    float speed       = 0.0F;
+    float reach       = 0.0F;
+    float range_min   = 0.0F;
+    float range_max   = 0.0F;
+    float stagger     = 0.0F;
+    uint16_t crit_damage = 0;
+
+    // TESEnchantableForm.formEnchanting → dereferenced to FormID
+    uint32_t enchantment_formid = 0;
+
+    // BGSKeywordForm
     std::vector<uint32_t> keyword_formids;
 };
 

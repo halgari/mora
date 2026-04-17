@@ -3,7 +3,6 @@
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
 #include "skyrim_fixture.h"
-#include <filesystem>
 #include <string>
 
 // Skyrim.esm is a hard prerequisite — resolved via skyrim_fixture.h

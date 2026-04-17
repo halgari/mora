@@ -3,6 +3,8 @@
 #include "mora/harness/tcp_listener.h"
 #include "mora/harness/weapon_dumper.h"
 #include "mora/harness/npc_dumper.h"
+#include "mora/harness/armor_dumper.h"
+#include "mora/harness/leveled_list_dumper.h"
 #include "mora/harness/ini_reader.h"
 #include "mora/rt/form_ops.h"
 #include "mora/codegen/address_library.h"
@@ -128,6 +130,57 @@ static std::string handle_dump_npcs(const std::string&) {
            R"(","count":)" + std::to_string(npcs.size()) + "}";
 }
 
+static void armor_collector(void* form, void* ctx) {
+    auto* out = static_cast<std::vector<mora::harness::ArmorData>*>(ctx);
+    mora::harness::ArmorData data;
+    mora::harness::read_armor_fields(form, data);
+    out->push_back(std::move(data));
+}
+
+static std::string handle_dump_armors(const std::string&) {
+    if (!g_data_loaded) return R"({"ok":false,"error":"forms not loaded"})";
+
+    std::vector<mora::harness::ArmorData> armors;
+    mora::rt::for_each_form_of_type(0x1A, armor_collector, &armors);
+
+    fs::path dump_dir = g_config.dump_path;
+    fs::create_directories(dump_dir);
+    fs::path dump_file = dump_dir / "armors.jsonl";
+    {
+        std::ofstream out(dump_file);
+        mora::harness::write_armors_jsonl(armors, out);
+    }
+    return std::string(R"({"ok":true,"file":")") + dump_file.generic_string() +
+           R"(","count":)" + std::to_string(armors.size()) + "}";
+}
+
+static void leveled_list_collector(void* form, void* ctx) {
+    auto* out = static_cast<std::vector<mora::harness::LeveledListData>*>(ctx);
+    mora::harness::LeveledListData data;
+    mora::harness::read_leveled_list_fields(form, data);
+    out->push_back(std::move(data));
+}
+
+static std::string handle_dump_leveled_lists(const std::string&) {
+    if (!g_data_loaded) return R"({"ok":false,"error":"forms not loaded"})";
+
+    std::vector<mora::harness::LeveledListData> lists;
+    // 0x2D = TESLevItem; iterate both LVLI and LVLN (0x2C) so one command
+    // covers the full family of leveled lists.
+    mora::rt::for_each_form_of_type(0x2D, leveled_list_collector, &lists);
+    mora::rt::for_each_form_of_type(0x2C, leveled_list_collector, &lists);
+
+    fs::path dump_dir = g_config.dump_path;
+    fs::create_directories(dump_dir);
+    fs::path dump_file = dump_dir / "leveled_lists.jsonl";
+    {
+        std::ofstream out(dump_file);
+        mora::harness::write_leveled_lists_jsonl(lists, out);
+    }
+    return std::string(R"({"ok":true,"file":")") + dump_file.generic_string() +
+           R"(","count":)" + std::to_string(lists.size()) + "}";
+}
+
 static std::string handle_lookup(const std::string& cmd) {
     uint32_t formid = 0;
     if (cmd.size() > 7) {
@@ -179,6 +232,8 @@ static void message_handler(SKSEMessage* msg) {
     g_listener->on("status", handle_status);
     g_listener->on("dump weapons", handle_dump_weapons);
     g_listener->on("dump npcs", handle_dump_npcs);
+    g_listener->on("dump armors", handle_dump_armors);
+    g_listener->on("dump leveled_lists", handle_dump_leveled_lists);
     g_listener->on("lookup", handle_lookup);
     g_listener->on("quit", handle_quit);
     g_listener->start();

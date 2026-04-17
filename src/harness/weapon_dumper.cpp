@@ -6,14 +6,35 @@
 
 namespace mora::harness {
 
-// Offsets from skyrim_abi.h weapon_offsets
-static constexpr size_t kFormIdOffset      = 0x14;
-static constexpr size_t kFullNameOffset    = 0x030 + 0x08; // TESFullName.fullName
-static constexpr size_t kValueOffset       = 0x0A0 + 0x08; // TESValueForm.value
-static constexpr size_t kWeightOffset      = 0x0B0 + 0x08; // TESWeightForm.weight
-static constexpr size_t kDamageOffset      = 0x0C0 + 0x08; // TESAttackDamageForm.attackDamage
-static constexpr size_t kKeywordsArrayOffset = 0x140 + 0x08; // BGSKeywordForm.keywords
-static constexpr size_t kKeywordsCountOffset = 0x140 + 0x10; // BGSKeywordForm.numKeywords
+// Offsets mirror include/mora/data/form_model.h — same source of truth as
+// patch_walker.cpp's typed writes.
+
+// TESForm
+static constexpr size_t kFormIdOffset         = 0x14;
+
+// Shared components on WEAP (from kWeaponSlots)
+static constexpr size_t kFullNameOffset       = 0x030 + 0x08;
+static constexpr size_t kEnchantableOffset    = 0x088 + 0x08; // formEnchanting
+static constexpr size_t kValueOffset          = 0x0A0 + 0x08;
+static constexpr size_t kWeightOffset         = 0x0B0 + 0x08;
+static constexpr size_t kDamageOffset         = 0x0C0 + 0x08;
+static constexpr size_t kKeywordsArrayOffset  = 0x140 + 0x08;
+static constexpr size_t kKeywordsCountOffset  = 0x140 + 0x10;
+
+// WeaponDirect absolute offsets (kWeaponDirectMembers in form_model.h)
+static constexpr size_t kSpeedOffset      = 0x170;
+static constexpr size_t kReachOffset      = 0x174;
+static constexpr size_t kRangeMinOffset   = 0x178;
+static constexpr size_t kRangeMaxOffset   = 0x17C;
+static constexpr size_t kStaggerOffset    = 0x188;
+static constexpr size_t kCritDamageOffset = 0x1B0;
+
+static uint32_t deref_formid(const void* form_ptr) {
+    if (!form_ptr) return 0;
+    uint32_t fid = 0;
+    std::memcpy(&fid, static_cast<const char*>(form_ptr) + kFormIdOffset, sizeof(fid));
+    return fid;
+}
 
 void read_weapon_fields(const void* form, WeaponData& out) {
     auto base = static_cast<const char*>(form);
@@ -23,6 +44,13 @@ void read_weapon_fields(const void* form, WeaponData& out) {
     std::memcpy(&out.value,  base + kValueOffset,  sizeof(out.value));
     std::memcpy(&out.weight, base + kWeightOffset, sizeof(out.weight));
 
+    std::memcpy(&out.speed,       base + kSpeedOffset,      sizeof(out.speed));
+    std::memcpy(&out.reach,       base + kReachOffset,      sizeof(out.reach));
+    std::memcpy(&out.range_min,   base + kRangeMinOffset,   sizeof(out.range_min));
+    std::memcpy(&out.range_max,   base + kRangeMaxOffset,   sizeof(out.range_max));
+    std::memcpy(&out.stagger,     base + kStaggerOffset,    sizeof(out.stagger));
+    std::memcpy(&out.crit_damage, base + kCritDamageOffset, sizeof(out.crit_damage));
+
     // Name: BSFixedString is a pointer to string data. In test mocks this is
     // nullptr; at runtime we read through the pointer.
     void* name_ptr = nullptr;
@@ -30,6 +58,11 @@ void read_weapon_fields(const void* form, WeaponData& out) {
     if (name_ptr) {
         out.name = static_cast<const char*>(name_ptr);
     }
+
+    // Enchantment: dereferenced TESEnchantableForm.formEnchanting → FormID
+    void* ench_ptr = nullptr;
+    std::memcpy(static_cast<void*>(&ench_ptr), base + kEnchantableOffset, sizeof(ench_ptr));
+    out.enchantment_formid = deref_formid(ench_ptr);
 
     // Keywords: read pointer to array and count
     void* kw_array = nullptr;
@@ -79,6 +112,13 @@ std::string weapon_to_jsonl(const WeaponData& data) {
     ss << ",\"damage\":" << data.damage;
     ss << ",\"value\":" << data.value;
     ss << ",\"weight\":" << data.weight;
+    ss << ",\"speed\":" << data.speed;
+    ss << ",\"reach\":" << data.reach;
+    ss << ",\"range_min\":" << data.range_min;
+    ss << ",\"range_max\":" << data.range_max;
+    ss << ",\"stagger\":" << data.stagger;
+    ss << ",\"crit_damage\":" << data.crit_damage;
+    ss << ",\"enchantment\":\"" << format_hex(data.enchantment_formid) << "\"";
 
     ss << ",\"keywords\":[";
     auto sorted_kw = data.keyword_formids;
