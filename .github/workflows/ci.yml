@@ -147,10 +147,12 @@ jobs:
         run: xmake f -p windows -a x64 -m release -y
 
       - name: Build mora.exe + MoraRuntime.dll + MoraTestHarness.dll
-        # Single invocation so xmake schedules all three targets'
-        # shared compile units against one job pool (all three depend
-        # on most of mora_lib).
-        run: xmake build -y mora mora_runtime mora_test_harness
+        # xmake 2.9.9 on the runner only accepts one positional target
+        # per invocation (3.x+ supports a list). Keep three lines.
+        run: |
+          xmake build -y mora
+          xmake build -y mora_runtime
+          xmake build -y mora_test_harness
 
       - name: List built binaries
         run: ls -lh build/windows/x64/release/
