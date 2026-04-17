@@ -14,10 +14,10 @@ namespace {
 // bytes were read. The trailing \r\n is consumed but not included.
 bool read_header_line(std::istream& in, std::string& line) {
     line.clear();
-    char c;
+    char c{};
     while (in.get(c)) {
         if (c == '\r') {
-            char next;
+            char next{};
             if (in.get(next) && next == '\n') return true;
             // \r without \n — malformed, but treat as end of line.
             return true;
