@@ -31,10 +31,14 @@ ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags,
             auto it = im.refer_to_ns.find(key);
             if (it != im.refer_to_ns.end() && it->second != ns) {
                 std::string const line = cur ? cur->get_line(u.span.start_line) : "";
-                diags.error("E013",
-                            "name '" + key + "' referred from both '" +
-                                it->second + "' and '" + ns + "'",
-                            u.span, line);
+                std::string msg = "name '";
+                msg += key;
+                msg += "' referred from both '";
+                msg += it->second;
+                msg += "' and '";
+                msg += ns;
+                msg += "'";
+                diags.error("E013", msg, u.span, line);
             }
             im.refer_to_ns[key] = ns;
         }

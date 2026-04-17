@@ -131,7 +131,12 @@ std::string TcpListener::dispatch(const std::string& command) {
 } // namespace mora::harness
 
 #else
-// Linux stub — TCP listener is Windows-only (runs inside Skyrim)
+// Linux stub — TCP listener is Windows-only (runs inside Skyrim).
+// The no-op bodies don't touch member state, so clang-tidy flags them
+// as convert-to-static or value-param, but the Windows build above
+// does use members; these signatures must match the header declarations
+// verbatim.
+// NOLINTBEGIN(readability-convert-member-functions-to-static,performance-unnecessary-value-param)
 namespace mora::harness {
 
 TcpListener::TcpListener(uint16_t) : port_(0) {}
@@ -144,4 +149,5 @@ void TcpListener::listen_loop() {}
 void TcpListener::handle_connection(void*) {}
 
 } // namespace mora::harness
+// NOLINTEND(readability-convert-member-functions-to-static,performance-unnecessary-value-param)
 #endif

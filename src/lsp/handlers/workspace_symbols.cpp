@@ -47,7 +47,14 @@ Result on_workspace_symbol(Workspace& ws, const nlohmann::json& params) {
         for (const auto& e : doc->symbol_index().entries()) {
             if (e.kind != SymbolKind::RuleHead) continue;
             std::string const rule_name = std::string(pool.get(e.name));
-            std::string qualified = ns_name.empty() ? rule_name : (ns_name + "." + rule_name);
+            std::string qualified;
+            if (ns_name.empty()) {
+                qualified = rule_name;
+            } else {
+                qualified = ns_name;
+                qualified += '.';
+                qualified += rule_name;
+            }
             if (!fuzzy_contains(qualified, query)) continue;
             results.push_back({
                 {"name", qualified},
