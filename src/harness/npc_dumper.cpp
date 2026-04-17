@@ -16,7 +16,7 @@ void read_npc_fields(const void* form, NpcData& out) {
     std::memcpy(&out.formid, base + kFormIdOffset, sizeof(out.formid));
 
     void* name_ptr = nullptr;
-    std::memcpy(&name_ptr, base + kFullNameOffset, sizeof(name_ptr));
+    std::memcpy(static_cast<void*>(&name_ptr), base + kFullNameOffset, sizeof(name_ptr));
     if (name_ptr) {
         out.name = static_cast<const char*>(name_ptr);
     }

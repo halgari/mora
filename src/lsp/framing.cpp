@@ -44,16 +44,16 @@ ReadResult read_message(std::istream& in, std::string& body_out) {
     body_out.clear();
     size_t content_length = 0;
     bool have_length = false;
-    bool any_header = false;
 
     while (true) {
         std::string line;
         if (!read_header_line(in, line)) {
-            // EOF before any header byte (clean) or mid-header (truncated).
-            return any_header ? ReadResult::Eof : ReadResult::Eof;
+            // Both clean EOF and mid-header truncation surface as Eof
+            // — see LspFraming.ReadEofMidHeader; the caller treats both
+            // as "stop reading."
+            return ReadResult::Eof;
         }
         if (line.empty()) break; // end of headers
-        any_header = true;
         if (starts_with_ci(line, "Content-Length:")) {
             std::string_view v(line);
             v.remove_prefix(std::string_view("Content-Length:").size());

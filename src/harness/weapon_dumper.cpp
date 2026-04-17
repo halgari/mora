@@ -26,7 +26,7 @@ void read_weapon_fields(const void* form, WeaponData& out) {
     // Name: BSFixedString is a pointer to string data. In test mocks this is
     // nullptr; at runtime we read through the pointer.
     void* name_ptr = nullptr;
-    std::memcpy(&name_ptr, base + kFullNameOffset, sizeof(name_ptr));
+    std::memcpy(static_cast<void*>(&name_ptr), base + kFullNameOffset, sizeof(name_ptr));
     if (name_ptr) {
         out.name = static_cast<const char*>(name_ptr);
     }
@@ -34,7 +34,7 @@ void read_weapon_fields(const void* form, WeaponData& out) {
     // Keywords: read pointer to array and count
     void* kw_array = nullptr;
     uint32_t kw_count = 0;
-    std::memcpy(&kw_array, base + kKeywordsArrayOffset, sizeof(kw_array));
+    std::memcpy(static_cast<void*>(&kw_array), base + kKeywordsArrayOffset, sizeof(kw_array));
     std::memcpy(&kw_count, base + kKeywordsCountOffset, sizeof(kw_count));
 
     out.keyword_formids.clear();

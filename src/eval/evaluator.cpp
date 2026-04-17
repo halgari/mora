@@ -571,8 +571,7 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                 double x = numeric(vs[0]);
                 double lo = numeric(vs[1]);
                 double hi = numeric(vs[2]);
-                double r = x < lo ? lo : (x > hi ? hi : x);
-                return make_num(r);
+                return make_num(std::clamp(x, lo, hi));
             }
             // Unknown or arity-wrong built-in: return unbound var.
             return Value::make_var();

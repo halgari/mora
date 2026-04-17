@@ -605,7 +605,7 @@ MoraType TypeChecker::lookup_variable(StringId name) const {
     return it->second;
 }
 
-void TypeChecker::check_unused_variables(const Rule& rule) {
+void TypeChecker::check_unused_variables([[maybe_unused]] const Rule& rule) {
     for (const auto& [id, span] : var_def_spans_) {
         if (var_used_.count(id)) continue;
 
