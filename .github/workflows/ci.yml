@@ -301,25 +301,75 @@ jobs:
           fi
           echo "Using mora binary: $MORA_BIN"
 
-          # Locate the runtime Plugins.txt so compile-time load-order
-          # indices match what Skyrim will use at launch. Without this
-          # mora falls back to a directory-walk whose CC/DLC ordering
-          # diverges from the engine, producing FormIDs that don't
-          # map 1:1 at runtime (see #5 + #9).
-          PLUGINS_TXT=$(find /opt /tmp/prefix /skyrim-base /skyrim-baseline /root /home 2>/dev/null \
-                             -maxdepth 12 -iname Plugins.txt -type f 2>/dev/null | head -1)
-          if [[ -n "$PLUGINS_TXT" ]]; then
-            echo "Using Plugins.txt: $PLUGINS_TXT"
-            head -5 "$PLUGINS_TXT"; echo "...; total $(wc -l < "$PLUGINS_TXT") lines"
-            PLUGINS_ARG=(--plugins-txt "$PLUGINS_TXT")
+          # Synthesize a plugins.txt matching a clean GOG AE install's
+          # runtime load order, because the runner image doesn't ship
+          # a real Plugins.txt in any standard location. Without a
+          # plugins.txt, mora's directory-walk fallback mis-orders CC
+          # content and compile-time FormIDs diverge from runtime.
+          # Order (mirrors engine behavior for a user with an empty
+          # Plugins.txt):
+          #   1. Bethesda hardcoded base masters, canonical order.
+          #   2. Creation Club plugins listed in Skyrim.ccc.
+          #   3. Anything else in Data/ alphabetically (belt-and-braces).
+          GEN_TXT="$GITHUB_WORKSPACE/plugins.gen.txt"
+          : > "$GEN_TXT"
+
+          for p in Skyrim.esm Update.esm Dawnguard.esm HearthFires.esm Dragonborn.esm; do
+            [[ -f "/skyrim-base/Data/$p" ]] && echo "*$p" >> "$GEN_TXT"
+          done
+
+          CCC_FILE=""
+          for cand in /skyrim-base/Skyrim.ccc /skyrim-base/skyrim.ccc; do
+            [[ -f "$cand" ]] && CCC_FILE="$cand" && break
+          done
+
+          if [[ -n "$CCC_FILE" ]]; then
+            echo "Found CC manifest: $CCC_FILE ($(wc -l < "$CCC_FILE") entries)"
+            awk '{sub(/\r$/,""); gsub(/^[[:space:]]+|[[:space:]]+$/,""); if (length) print "*" $0}' \
+              "$CCC_FILE" >> "$GEN_TXT"
           else
-            echo "::warning::no Plugins.txt found on runner — mora will fall back to directory-walk load order"
-            echo "[debug] candidate dirs:"
-            ls -la /opt 2>/dev/null | head -10 || true
-            ls -la /skyrim-base 2>/dev/null | head -10 || true
-            find / -maxdepth 5 -iname "Plugins.txt" -type f 2>/dev/null | head -20 || true
-            PLUGINS_ARG=()
+            echo "::warning::No Skyrim.ccc on runner — CC load order may mismatch runtime"
+            ls -la /skyrim-base 2>/dev/null | head -20 || true
           fi
+
+          # Dedup in case something's listed in both base + CCC, and
+          # append any remaining Data/ plugins we haven't covered.
+          python3 - "$GEN_TXT" /skyrim-base/Data <<'PY'
+          import os, sys
+          gen = sys.argv[1]
+          data_dir = sys.argv[2]
+          seen_lower = set()
+          with open(gen) as f:
+              lines = [ln.rstrip("\n") for ln in f if ln.strip()]
+          out = []
+          for ln in lines:
+              name = ln.lstrip("*").strip()
+              key = name.lower()
+              if key in seen_lower:
+                  continue
+              seen_lower.add(key)
+              if os.path.isfile(os.path.join(data_dir, name)):
+                  out.append("*" + name)
+          # Append remaining plugins that exist in Data/ but aren't listed.
+          try:
+              for entry in sorted(os.listdir(data_dir), key=str.lower):
+                  if not entry.lower().endswith((".esm", ".esp", ".esl")):
+                      continue
+                  if entry.lower() in seen_lower:
+                      continue
+                  seen_lower.add(entry.lower())
+                  out.append("*" + entry)
+          except FileNotFoundError:
+              pass
+          with open(gen, "w") as f:
+              f.write("\n".join(out) + "\n")
+          PY
+
+          echo "Generated plugins.txt ($(wc -l < "$GEN_TXT") entries):"
+          head -20 "$GEN_TXT"
+          echo "  ..."
+          tail -5 "$GEN_TXT"
+          PLUGINS_ARG=(--plugins-txt "$GEN_TXT")
 
           "$MORA_BIN" compile \
             "tests/integration/${CASE}/rules.mora" \
