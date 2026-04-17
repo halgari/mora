@@ -235,6 +235,34 @@ void SchemaRegistry::register_defaults() {
     // != Unspecified) AND isn't already registered via form_model.h above,
     // build a RelationSchema from the YAML declaration.
     register_yaml_relations();
+
+    // ── Plugin-level relations (populated from LoadOrder, not from ESP
+    //    scanning). Schemas declared here so rules can type-check
+    //    against them; rows are pushed by populate_plugin_facts().
+    auto string_type = MoraType::make(TypeKind::String);
+    auto int_type    = MoraType::make(TypeKind::Int);
+    auto float_type  = MoraType::make(TypeKind::Float);
+    auto reg_unary = [&](const char* n) {
+        RelationSchema s;
+        s.name = id(n);
+        s.column_types   = {string_type};
+        s.indexed_columns = {0};
+        register_schema(std::move(s));
+    };
+    auto reg_pair = [&](const char* n, MoraType second) {
+        RelationSchema s;
+        s.name = id(n);
+        s.column_types   = {string_type, second};
+        s.indexed_columns = {0};
+        register_schema(std::move(s));
+    };
+    reg_unary("plugin_exists");
+    reg_unary("plugin_is_master");
+    reg_unary("plugin_is_light");
+    reg_pair ("plugin_load_index", int_type);
+    reg_pair ("plugin_version",    float_type);
+    reg_pair ("plugin_extension",  string_type);
+    reg_pair ("plugin_master_of",  string_type);
 }
 
 namespace {

@@ -18,16 +18,17 @@ void EspReader::set_runtime_index_map(const RuntimeIndexMap* map) {
     runtime_index_ = map;
 }
 
+void EspReader::set_override_filter(const OverrideFilter* filter, uint32_t load_idx) {
+    override_filter_ = filter;
+    reader_load_idx_ = load_idx;
+}
+
 bool EspReader::is_relation_needed(StringId name) const {
     if (!filter_active_) return true;
     return needed_relations_.count(name.index) > 0;
 }
 
-void EspReader::read_plugin(const std::filesystem::path& path, FactDB& db) {
-    MmapFile file(path.string());
-    std::string filename = path.filename().string();
-    PluginInfo info = build_plugin_index(file, filename);
-
+void EspReader::extract_from(const MmapFile& file, const PluginInfo& info, FactDB& db) {
     for (auto& [type, records] : info.by_type) {
         auto all_schemas = schema_.schemas_for_record(type);
         if (all_schemas.empty()) continue;
@@ -53,7 +54,13 @@ void EspReader::read_plugin(const std::filesystem::path& path, FactDB& db) {
             extract_record_facts(file, info, loc, schemas, db);
         }
     }
+}
 
+void EspReader::read_plugin(const std::filesystem::path& path, FactDB& db) {
+    MmapFile file(path.string());
+    std::string filename = path.filename().string();
+    PluginInfo info = build_plugin_index(file, filename);
+    extract_from(file, info, db);
     current_load_index_++;
 }
 
@@ -92,10 +99,18 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                                       const RecordLocation& loc,
                                       const std::vector<const RelationSchema*>& schemas,
                                       FactDB& db) {
+    uint32_t global_fid = make_global_formid(loc.form_id, info);
+
+    // Skyrim's whole-record-replacement: only the plugin that wins
+    // the override race for `global_fid` emits facts. Earlier
+    // plugins' records are discarded entirely. See OverrideFilter.
+    if (override_filter_ && !override_filter_->is_winner(global_fid, reader_load_idx_)) {
+        return;
+    }
+
     auto data = file.span(loc.offset + sizeof(RawRecordHeader), loc.data_size);
     SubrecordReader reader(data, loc.flags);
 
-    uint32_t global_fid = make_global_formid(loc.form_id, info);
     records_processed_++;
 
     // Extract EDID for the editor_ids_ map (case-insensitive — Skyrim
