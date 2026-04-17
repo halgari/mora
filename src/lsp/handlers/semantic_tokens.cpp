@@ -11,20 +11,20 @@ namespace mora::lsp {
 namespace {
 
 // Token type indices — must match the legend order in server_capabilities().
-// The *_DEP variants and TM_DEPRECATED are reserved for a follow-up that
+// The *Dep variants and kTmDeprecated are reserved for a follow-up that
 // tags undefined/unresolved tokens; v1's SymbolIndex doesn't carry that
 // info yet, so they're declared (so the legend stays stable) but unused.
-constexpr uint32_t TT_FUNCTION        = 0;  // defined rule head / call
-[[maybe_unused]] constexpr uint32_t TT_FUNCTION_DEP    = 1;
-constexpr uint32_t TT_PARAMETER       = 2;  // variable binding or use (bound)
-[[maybe_unused]] constexpr uint32_t TT_PARAMETER_DEP   = 3;
-constexpr uint32_t TT_ENUM_MEMBER     = 4;  // resolved atom
-[[maybe_unused]] constexpr uint32_t TT_ENUM_MEMBER_DEP = 5;
-constexpr uint32_t TT_NAMESPACE       = 6;  // built-in namespace
+constexpr uint32_t kTtFunction       = 0;  // defined rule head / call
+[[maybe_unused]] constexpr uint32_t kTtFunctionDep   = 1;
+constexpr uint32_t kTtParameter      = 2;  // variable binding or use (bound)
+[[maybe_unused]] constexpr uint32_t kTtParameterDep  = 3;
+constexpr uint32_t kTtEnumMember     = 4;  // resolved atom
+[[maybe_unused]] constexpr uint32_t kTtEnumMemberDep = 5;
+constexpr uint32_t kTtNamespace      = 6;  // built-in namespace
 
 // Modifier bit flags — must match tokenModifiers legend.
-constexpr uint32_t TM_DEFAULT_LIB = 1U << 0;  // built-in relation
-[[maybe_unused]] constexpr uint32_t TM_DEPRECATED = 1U << 1;
+constexpr uint32_t kTmDefaultLib = 1U << 0;  // built-in relation
+[[maybe_unused]] constexpr uint32_t kTmDeprecated = 1U << 1;
 
 Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
     std::string const uri = params.at("textDocument").at("uri").get<std::string>();
@@ -54,26 +54,26 @@ Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
         // Skip zero-length tokens (degenerate spans).
         if (e.span.start_col == 0) continue;
 
-        uint32_t type      = TT_FUNCTION;
+        uint32_t type      = kTtFunction;
         uint32_t modifiers = 0;
         switch (e.kind) {
             case SymbolKind::RuleHead:
             case SymbolKind::RuleCall:
-                type = TT_FUNCTION;
+                type = kTtFunction;
                 break;
             case SymbolKind::Relation:
-                type = TT_FUNCTION;
-                modifiers |= TM_DEFAULT_LIB;
+                type = kTtFunction;
+                modifiers |= kTmDefaultLib;
                 break;
             case SymbolKind::VariableBinding:
             case SymbolKind::VariableUse:
-                type = TT_PARAMETER;
+                type = kTtParameter;
                 break;
             case SymbolKind::Atom:
-                type = TT_ENUM_MEMBER;
+                type = kTtEnumMember;
                 break;
             case SymbolKind::Namespace:
-                type = TT_NAMESPACE;
+                type = kTtNamespace;
                 break;
         }
 

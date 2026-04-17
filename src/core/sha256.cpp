@@ -3,6 +3,10 @@
 
 namespace mora::sha256 {
 
+// NOLINTBEGIN(readability-identifier-naming): SHA-256 FIPS 180-4 names
+// `K`, `S0`/`S1` intentionally match the spec's uppercase notation
+// (Σ₀, Σ₁ vs lowercase σ₀, σ₁ in the schedule-extension loop above).
+
 static constexpr uint32_t K[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -47,6 +51,7 @@ static void transform(Ctx& c, const uint8_t d[64]) {
     c.state[0]+=a; c.state[1]+=b; c.state[2]+=cc; c.state[3]+=d2;
     c.state[4]+=e; c.state[5]+=f; c.state[6]+=g;  c.state[7]+=h;
 }
+// NOLINTEND(readability-identifier-naming)
 
 void init(Ctx& c) {
     c.datalen = 0; c.bitlen = 0;

@@ -54,7 +54,7 @@ struct DistTypeInfo {
     FieldOp     op;
 };
 
-static constexpr DistTypeInfo SPID_DIST_TYPES[] = {
+static constexpr DistTypeInfo kSpidDistTypes[] = {
     {"keyword", FieldId::Keywords, FieldOp::Add},
     {"spell",   FieldId::Spells,   FieldOp::Add},
     {"perk",    FieldId::Perks,    FieldOp::Add},
@@ -62,7 +62,7 @@ static constexpr DistTypeInfo SPID_DIST_TYPES[] = {
     {"faction", FieldId::Factions, FieldOp::Add},
 };
 
-static constexpr DistTypeInfo KID_DIST_TYPES[] = {
+static constexpr DistTypeInfo kKidDistTypes[] = {
     {"keyword", FieldId::Keywords, FieldOp::Add},
 };
 
@@ -342,7 +342,7 @@ void evaluate_distributions_columnar(
     const auto* spid_no_filter_rel = store.get(spid_no_filter_sid);
 
     if (spid_dist_rel) {
-        for (const auto& dt : SPID_DIST_TYPES) {
+        for (const auto& dt : kSpidDistTypes) {
             auto dist_type_sid = pool.intern(dt.name);
             build_rule_target_map(*spid_dist_rel, dist_type_sid.index, rule_to_target);
             if (rule_to_target.empty()) continue;
@@ -370,7 +370,7 @@ void evaluate_distributions_columnar(
     const auto* kid_no_filter_rel = store.get(kid_no_filter_sid);
 
     if (kid_dist_rel) {
-        for (const auto& dt : KID_DIST_TYPES) {
+        for (const auto& dt : kKidDistTypes) {
             auto dist_type_sid = pool.intern(dt.name);
             build_rule_target_map(*kid_dist_rel, dist_type_sid.index, rule_to_target);
             if (rule_to_target.empty()) continue;
@@ -427,7 +427,7 @@ void evaluate_distributions_columnar(
     const auto* spid_no_filter_rel = store.get(spid_no_filter_sid);
 
     if (spid_dist_rel) {
-        for (const auto& dt : SPID_DIST_TYPES) {
+        for (const auto& dt : kSpidDistTypes) {
             auto dist_type_sid = pool.intern(dt.name);
             build_rule_target_map(*spid_dist_rel, dist_type_sid.index, rule_to_target);
             if (rule_to_target.empty()) continue;
@@ -455,7 +455,7 @@ void evaluate_distributions_columnar(
     const auto* kid_no_filter_rel = store.get(kid_no_filter_sid);
 
     if (kid_dist_rel) {
-        for (const auto& dt : KID_DIST_TYPES) {
+        for (const auto& dt : kKidDistTypes) {
             auto dist_type_sid = pool.intern(dt.name);
             build_rule_target_map(*kid_dist_rel, dist_type_sid.index, rule_to_target);
             if (rule_to_target.empty()) continue;
