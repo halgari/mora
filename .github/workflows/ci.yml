@@ -301,9 +301,25 @@ jobs:
           fi
           echo "Using mora binary: $MORA_BIN"
 
+          # Locate the runtime Plugins.txt so compile-time load-order
+          # indices match what Skyrim will use at launch. Without this
+          # mora falls back to a directory-walk whose CC/DLC ordering
+          # diverges from the engine, producing FormIDs that don't
+          # map 1:1 at runtime (see #5 + #9).
+          PLUGINS_TXT=$(find /opt/warm-prefix /skyrim-base -maxdepth 10 \
+                             -iname Plugins.txt -type f 2>/dev/null | head -1)
+          if [[ -n "$PLUGINS_TXT" ]]; then
+            echo "Using Plugins.txt: $PLUGINS_TXT"
+            PLUGINS_ARG=(--plugins-txt "$PLUGINS_TXT")
+          else
+            echo "::warning::no Plugins.txt found on runner — mora will fall back to directory-walk load order"
+            PLUGINS_ARG=()
+          fi
+
           "$MORA_BIN" compile \
             "tests/integration/${CASE}/rules.mora" \
             --data-dir /skyrim-base/Data \
+            "${PLUGINS_ARG[@]}" \
             --output "$STAGE/Data/SKSE/Plugins"
 
           # Sanity: mora_patches.bin must exist AND be bigger than just a

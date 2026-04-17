@@ -75,6 +75,11 @@ static std::string detect_plugins_txt(const std::string& data_dir) {
         // GOG portable prefix layout used by scripts/deploy_runtime.sh.
         candidates.push_back(h / "Games/gog/the-elder-scrolls-v-skyrim-special-edition/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition GOG/Plugins.txt");
     }
+    // Self-hosted CI runner warm-prefix layout (skyrim-runner image).
+    // Compile runs before /tmp/prefix is staged, so we read from the
+    // immutable source at /opt/warm-prefix.
+    candidates.push_back("/opt/warm-prefix/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
+    candidates.push_back("/tmp/prefix/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
     if (const char* localapp = std::getenv("LOCALAPPDATA")) {
         candidates.push_back(fs::path(localapp) / "Skyrim Special Edition" / "Plugins.txt");
     }
