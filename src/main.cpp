@@ -402,6 +402,22 @@ static void load_esp_data(
         mora::log::info("  Load order:    {} ({} plugins)\n", plugins_txt, lo.plugins.size());
     }
 
+    // Surface any plugins.txt entries that weren't found on disk —
+    // otherwise a `requires mod("X")` failure downstream would blame
+    // the missing mod when the real cause is a typo / deleted file.
+    for (auto& name : lo.missing) {
+        cr.diags.warning(
+            "plugin-missing",
+            fmt::format("plugins.txt entry \"{}\" has no matching file under {} "
+                        "— skipped (case-insensitive search tried)",
+                        name, data_dir),
+            mora::SourceSpan{}, "");
+    }
+    if (!lo.missing.empty()) {
+        mora::log::warn("  {} plugin(s) in plugins.txt couldn't be resolved on disk; see warnings\n",
+            lo.missing.size());
+    }
+
     auto runtime_index = lo.runtime_index_map();
     auto needed = collect_used_relations(cr.modules);
 
@@ -704,6 +720,17 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     // and its rules are skipped (emitting facts rooted in forms from
     // missing plugins would produce patches that never apply).
     {
+        // If no data-dir/plugins.txt resolved and modules still have
+        // requires decls, tell the user once up front that every
+        // check will fail for a common reason (they forgot --data-dir)
+        // so the per-module warnings aren't mysterious.
+        bool any_requires = false;
+        for (auto& m : cr.modules) if (!m.requires_decls.empty()) { any_requires = true; break; }
+        if (any_requires && loaded_plugins.empty()) {
+            mora::log::warn(
+                "  no --data-dir; can't validate `requires mod(...)` — every requires will fail\n");
+        }
+
         std::unordered_set<std::string> loaded_lower;
         for (auto& name : loaded_plugins) {
             std::string lo = name;
