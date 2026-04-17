@@ -7,7 +7,13 @@
 #include <iostream>
 namespace mora::lsp {
 int run(int, char**) {
-    std::cerr << "mora lsp is not yet supported on Windows.\n";
+    std::cerr <<
+        "mora lsp is not supported on Windows.\n"
+        "  The server's run loop uses POSIX select(2) for stdin polling;\n"
+        "  there is no equivalent primitive on Win32 without a porting\n"
+        "  layer. Use WSL2 or a native Linux/macOS shell. (The compiler\n"
+        "  itself — mora check / compile / inspect — cross-compiles to\n"
+        "  Windows via clang-cl + xwin and runs natively.)\n";
     return 1;
 }
 } // namespace mora::lsp

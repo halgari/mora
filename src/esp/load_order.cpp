@@ -1,4 +1,5 @@
 #include "mora/esp/load_order.h"
+#include "mora/core/string_utils.h"
 #include "mora/esp/mmap_file.h"
 #include "mora/esp/plugin_index.h"
 #include "mora/esp/record_types.h"
@@ -9,11 +10,6 @@
 namespace mora {
 
 namespace {
-
-std::string to_lower(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
 
 void trim_trailing(std::string& s) {
     while (!s.empty() &&
