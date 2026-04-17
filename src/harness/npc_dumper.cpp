@@ -50,9 +50,9 @@ static constexpr size_t kClassOffset          = 0x1C0;
 static constexpr size_t kOutfitOffset         = 0x218;
 
 // ACBS flag bits (see form_model.h kFlags).
-static constexpr uint32_t kFlagEssential     = 1u << 1;
-static constexpr uint32_t kFlagProtected     = 1u << 11;
-static constexpr uint32_t kFlagAutoCalcStats = 1u << 4;
+static constexpr uint32_t kFlagEssential     = 1U << 1;
+static constexpr uint32_t kFlagProtected     = 1U << 11;
+static constexpr uint32_t kFlagAutoCalcStats = 1U << 4;
 
 // Deref a (possibly null) TESForm pointer and return its FormID, or 0.
 static uint32_t deref_formid(const void* form_ptr) {
