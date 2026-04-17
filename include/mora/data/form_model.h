@@ -359,7 +359,7 @@ inline constexpr FieldDef kFields[] = {
     {FieldId::ArmorRating, "armor_rating",  "set_armor_rating",  kCompArmorDirect, 0},
 
     // NPC-specific scalar fields
-    {FieldId::Level,       "base_level",    "set_level",         kCompNpcDirect, 0},
+    {FieldId::Level,       "base_level",    "set_base_level",    kCompNpcDirect, 0},
     {FieldId::CalcLevelMin,"calc_level_min","set_calc_level_min",kCompNpcDirect, 1},
     {FieldId::CalcLevelMax,"calc_level_max","set_calc_level_max",kCompNpcDirect, 2},
     {FieldId::SpeedMult,   "speed_mult",    "set_speed_mult",    kCompNpcDirect, 3},
