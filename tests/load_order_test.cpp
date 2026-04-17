@@ -31,9 +31,21 @@ protected:
         f << body;
         return p;
     }
+
+    // Seed an empty stub file in tmp_dir so `from_plugins_txt`'s
+    // on-disk lookup finds it. Content doesn't matter for the parser
+    // tests — `resolve_entries` isn't called here.
+    void touch(const std::string& name) {
+        std::ofstream f(tmp_dir / name, std::ios::binary);
+        (void)f;
+    }
 };
 
 TEST_F(PluginsTxtTest, ReadsEnabledEntriesInOrder) {
+    touch("Skyrim.esm");
+    touch("Update.esm");
+    touch("Dawnguard.esm");
+    touch("ModEnabled.esp");
     auto txt = write("Plugins.txt",
         "# header comment\n"
         "*Skyrim.esm\n"
@@ -49,12 +61,17 @@ TEST_F(PluginsTxtTest, ReadsEnabledEntriesInOrder) {
     EXPECT_EQ(lo.plugins[1].filename(), "Update.esm");
     EXPECT_EQ(lo.plugins[2].filename(), "Dawnguard.esm");
     EXPECT_EQ(lo.plugins[3].filename(), "ModEnabled.esp");
+    EXPECT_TRUE(lo.missing.empty());
 }
 
 TEST_F(PluginsTxtTest, ForcesSkyrimEsmFirst) {
     // If Plugins.txt lists Update.esm before Skyrim.esm (or omits
     // Skyrim.esm entirely), the engine still loads Skyrim.esm first.
-    // Our parser must reflect that invariant.
+    // Our parser must reflect that invariant — but only if Skyrim.esm
+    // actually exists on disk; we don't fabricate a phantom path.
+    touch("Skyrim.esm");
+    touch("Update.esm");
+    touch("Modish.esp");
     auto txt = write("Plugins.txt",
         "*Update.esm\n"
         "*Modish.esp\n");
@@ -63,9 +80,28 @@ TEST_F(PluginsTxtTest, ForcesSkyrimEsmFirst) {
 
     ASSERT_GE(lo.plugins.size(), 1u);
     EXPECT_EQ(lo.plugins.front().filename(), "Skyrim.esm");
+    EXPECT_TRUE(lo.missing.empty());
+}
+
+TEST_F(PluginsTxtTest, MissingSkyrimEsmRecordedNotFabricated) {
+    // If Skyrim.esm is genuinely missing from Data/, the parser must
+    // flag it in `missing` rather than silently inserting a nonexistent
+    // path that'd crash downstream MmapFile parsing.
+    touch("SomethingElse.esp");
+    auto txt = write("Plugins.txt", "*SomethingElse.esp\n");
+
+    auto lo = mora::LoadOrder::from_plugins_txt(txt, tmp_dir);
+    // Skyrim.esm should NOT be prepended since no file backs it.
+    for (auto& p : lo.plugins) {
+        EXPECT_NE(p.filename(), "Skyrim.esm");
+    }
+    ASSERT_EQ(lo.missing.size(), 1u);
+    EXPECT_EQ(lo.missing[0], "Skyrim.esm");
 }
 
 TEST_F(PluginsTxtTest, TrimsCarriageReturns) {
+    touch("Skyrim.esm");
+    touch("Mod.esp");
     auto txt = write("Plugins.txt",
         "*Skyrim.esm\r\n"
         "*Mod.esp\r\n");
@@ -74,6 +110,39 @@ TEST_F(PluginsTxtTest, TrimsCarriageReturns) {
     ASSERT_EQ(lo.plugins.size(), 2u);
     EXPECT_EQ(lo.plugins[0].filename(), "Skyrim.esm");
     EXPECT_EQ(lo.plugins[1].filename(), "Mod.esp");
+}
+
+TEST_F(PluginsTxtTest, CaseInsensitiveMatchUsesOnDiskCasing) {
+    // Runtime (Wine) treats filenames as case-insensitive, so Skyrim.ccc
+    // and on-disk casing routinely drift. Compile-time must resolve
+    // through the real file instead of silently dropping the plugin,
+    // which would shift every downstream ESL light index.
+    touch("Skyrim.esm");
+    touch("ccMTYSSE001-KnightsOfTheNine.esl");   // real on-disk casing
+    auto txt = write("Plugins.txt",
+        "*Skyrim.esm\n"
+        "*ccMTYSSE001-KnightsoftheNine.esl\n");  // manifest casing
+
+    auto lo = mora::LoadOrder::from_plugins_txt(txt, tmp_dir);
+    ASSERT_EQ(lo.plugins.size(), 2u);
+    EXPECT_EQ(lo.plugins[1].filename(), "ccMTYSSE001-KnightsOfTheNine.esl");
+    EXPECT_TRUE(lo.missing.empty());
+}
+
+TEST_F(PluginsTxtTest, ReportsTrulyMissingPlugins) {
+    // A plugin listed in plugins.txt that genuinely isn't on disk —
+    // typo, deleted mod, case-insensitive match also fails — gets
+    // recorded in `missing` so main.cpp can emit a warning instead of
+    // silently dropping the entry.
+    touch("Skyrim.esm");
+    auto txt = write("Plugins.txt",
+        "*Skyrim.esm\n"
+        "*NotAPlugin.esp\n");
+
+    auto lo = mora::LoadOrder::from_plugins_txt(txt, tmp_dir);
+    EXPECT_EQ(lo.plugins.size(), 1u);
+    ASSERT_EQ(lo.missing.size(), 1u);
+    EXPECT_EQ(lo.missing[0], "NotAPlugin.esp");
 }
 
 TEST_F(PluginsTxtTest, MissingFileReturnsEmpty) {

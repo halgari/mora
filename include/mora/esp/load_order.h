@@ -44,6 +44,13 @@ struct RuntimeIndexMap {
 struct LoadOrder {
     std::vector<std::filesystem::path> plugins;
     std::filesystem::path data_dir;
+    // Basenames listed in the input (plugins.txt / path list) that
+    // couldn't be resolved to a file under `data_dir` — neither by
+    // exact-case nor case-insensitive lookup. Populated only by
+    // `from_plugins_txt`. Callers should surface these as warnings so
+    // a typo'd plugin name doesn't later show up as a mysterious
+    // `requires mod()` failure or as a silent load-order shift.
+    std::vector<std::string> missing;
 
     // Read all .esm and .esp files from a directory, ESMs first then ESPs
     static LoadOrder from_directory(const std::filesystem::path& data_dir);
@@ -51,6 +58,11 @@ struct LoadOrder {
     // Read from a plugins.txt file (MO2/vanilla format). Only `*`-prefixed
     // (enabled) plugin lines are honored, comments and disabled entries
     // are ignored. Skyrim.esm is always forced to load first.
+    //
+    // File lookup is case-insensitive against `data_dir`'s on-disk
+    // listing — Wine treats filenames as case-insensitive at runtime,
+    // so plugins.txt casing routinely drifts from the actual file.
+    // The returned path uses the on-disk casing.
     static LoadOrder from_plugins_txt(const std::filesystem::path& plugins_txt,
                                        const std::filesystem::path& data_dir);
 

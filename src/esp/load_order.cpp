@@ -133,6 +133,25 @@ LoadOrder LoadOrder::from_plugins_txt(const std::filesystem::path& plugins_txt,
     std::ifstream file(plugins_txt);
     if (!file.is_open()) return lo;
 
+    // Build a case-insensitive basename→on-disk-filename index once.
+    // Wine is case-insensitive at runtime, so plugins.txt casing
+    // routinely drifts from the actual file (e.g. CI hit
+    // ccMTYSSE001-KnightsoftheNine.esl vs ...KnightsOfTheNine.esl).
+    // A Linux compiler reading plugins.txt verbatim would silently
+    // drop the mismatched plugin, shifting every downstream ESL
+    // index. Resolve via the lowercase key so compile and runtime
+    // converge on the on-disk file set; record misses in `missing`.
+    std::unordered_map<std::string, std::string> by_lower;
+    std::error_code dir_ec;
+    if (std::filesystem::exists(data_dir, dir_ec) &&
+        std::filesystem::is_directory(data_dir, dir_ec)) {
+        for (auto& entry : std::filesystem::directory_iterator(data_dir, dir_ec)) {
+            if (!entry.is_regular_file()) continue;
+            auto name = entry.path().filename().string();
+            by_lower.emplace(to_lower(name), name);
+        }
+    }
+
     std::string line;
     while (std::getline(file, line)) {
         if (line.empty()) continue;
@@ -141,7 +160,13 @@ LoadOrder LoadOrder::from_plugins_txt(const std::filesystem::path& plugins_txt,
         std::string plugin_name = line.substr(1);
         trim_trailing(plugin_name);
         if (plugin_name.empty()) continue;
-        lo.plugins.push_back(data_dir / plugin_name);
+
+        auto it = by_lower.find(to_lower(plugin_name));
+        if (it != by_lower.end()) {
+            lo.plugins.push_back(data_dir / it->second);
+        } else {
+            lo.missing.push_back(plugin_name);
+        }
     }
 
     // Skyrim.esm is always loaded first by the engine, regardless of
@@ -151,12 +176,22 @@ LoadOrder LoadOrder::from_plugins_txt(const std::filesystem::path& plugins_txt,
     auto is_skyrim_esm = [](const std::filesystem::path& p) {
         return to_lower(p.filename().string()) == "skyrim.esm";
     };
-    auto it = std::find_if(lo.plugins.begin(), lo.plugins.end(), is_skyrim_esm);
-    if (it == lo.plugins.end()) {
-        lo.plugins.insert(lo.plugins.begin(), data_dir / "Skyrim.esm");
-    } else if (it != lo.plugins.begin()) {
-        auto path = *it;
-        lo.plugins.erase(it);
+    auto skyrim_it = std::find_if(lo.plugins.begin(), lo.plugins.end(), is_skyrim_esm);
+    if (skyrim_it == lo.plugins.end()) {
+        auto it = by_lower.find("skyrim.esm");
+        if (it != by_lower.end()) {
+            // Skyrim.esm exists on disk but wasn't listed in plugins.txt
+            // (engine loads it implicitly): prepend using the real casing.
+            lo.plugins.insert(lo.plugins.begin(), data_dir / it->second);
+        } else {
+            // No Skyrim.esm anywhere — don't fabricate a phantom path
+            // that'll crash MmapFile downstream. Record the absence so
+            // callers can warn instead.
+            lo.missing.push_back("Skyrim.esm");
+        }
+    } else if (skyrim_it != lo.plugins.begin()) {
+        auto path = *skyrim_it;
+        lo.plugins.erase(skyrim_it);
         lo.plugins.insert(lo.plugins.begin(), path);
     }
 
