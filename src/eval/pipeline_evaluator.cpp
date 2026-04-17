@@ -79,8 +79,8 @@ static void build_rule_target_map(
     scan_filtered(dist_rel, 1, dist_type_val, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
-            uint32_t rule_id = dc.u32(0)->data[row];
-            uint32_t target  = dc.u32(2)->data[row];
+            uint32_t const rule_id = dc.u32(0)->data[row];
+            uint32_t const target  = dc.u32(2)->data[row];
             rule_to_target[rule_id] = target;
         }
     });
@@ -112,8 +112,8 @@ static void emit_keyword_filtered_buf(
                       joined, [&](DataChunk& verified) {
                 for (size_t i = 0; i < verified.sel.count; i++) {
                     auto row = verified.sel.indices[i];
-                    uint32_t rule_id = verified.u32(0)->data[row];
-                    uint32_t npc_fid = verified.u32(2)->data[row];
+                    uint32_t const rule_id = verified.u32(0)->data[row];
+                    uint32_t const npc_fid = verified.u32(2)->data[row];
                     auto it = rule_to_target.find(rule_id);
                     if (it == rule_to_target.end()) continue;
                     patch_buf.emit(npc_fid,
@@ -149,8 +149,8 @@ static void emit_form_filtered_buf(
                       joined, [&](DataChunk& verified) {
                 for (size_t i = 0; i < verified.sel.count; i++) {
                     auto row = verified.sel.indices[i];
-                    uint32_t rule_id = verified.u32(0)->data[row];
-                    uint32_t npc_fid = verified.u32(2)->data[row];
+                    uint32_t const rule_id = verified.u32(0)->data[row];
+                    uint32_t const npc_fid = verified.u32(2)->data[row];
                     auto it = rule_to_target.find(rule_id);
                     if (it == rule_to_target.end()) continue;
                     patch_buf.emit(npc_fid,
@@ -177,7 +177,7 @@ static void emit_no_filter_buf(
     scan(no_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
-            uint32_t rule_id = dc.u32(0)->data[row];
+            uint32_t const rule_id = dc.u32(0)->data[row];
 
             auto it = rule_to_target.find(rule_id);
             if (it == rule_to_target.end()) continue;
@@ -186,7 +186,7 @@ static void emit_no_filter_buf(
             // Distribute to ALL NPCs.
             scan(*npc_rel, [&](const DataChunk& npc_dc) {
                 for (size_t ni = 0; ni < npc_dc.sel.count; ni++) {
-                    uint32_t npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
+                    uint32_t const npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
                     patch_buf.emit(npc_fid,
                                    static_cast<uint8_t>(field),
                                    static_cast<uint8_t>(op),
@@ -217,17 +217,17 @@ static void emit_keyword_filtered(
     scan(kw_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
-            uint32_t rule_id = dc.u32(0)->data[row];
-            uint32_t kw_fid  = dc.u32(1)->data[row];
+            uint32_t const rule_id = dc.u32(0)->data[row];
+            uint32_t const kw_fid  = dc.u32(1)->data[row];
 
             auto it = rule_to_target.find(rule_id);
             if (it == rule_to_target.end()) continue;
-            uint32_t target = it->second;
+            uint32_t const target = it->second;
 
             const auto& refs = has_keyword_rel->lookup(1, kw_fid);
             for (const auto& ref : refs) {
                 const auto* npc_col = has_keyword_rel->u32_chunk(0, ref.chunk_idx);
-                uint32_t npc_fid = npc_col->data[ref.row_idx];
+                uint32_t const npc_fid = npc_col->data[ref.row_idx];
 
                 const auto& npc_refs = npc_rel->lookup(0, npc_fid);
                 if (npc_refs.empty()) continue;
@@ -254,17 +254,17 @@ static void emit_form_filtered(
     scan(form_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
-            uint32_t rule_id = dc.u32(0)->data[row];
-            uint32_t form_id = dc.u32(1)->data[row];
+            uint32_t const rule_id = dc.u32(0)->data[row];
+            uint32_t const form_id = dc.u32(1)->data[row];
 
             auto it = rule_to_target.find(rule_id);
             if (it == rule_to_target.end()) continue;
-            uint32_t target = it->second;
+            uint32_t const target = it->second;
 
             const auto& refs = race_of_rel->lookup(1, form_id);
             for (const auto& ref : refs) {
                 const auto* npc_col = race_of_rel->u32_chunk(0, ref.chunk_idx);
-                uint32_t npc_fid = npc_col->data[ref.row_idx];
+                uint32_t const npc_fid = npc_col->data[ref.row_idx];
 
                 const auto& npc_refs = npc_rel->lookup(0, npc_fid);
                 if (npc_refs.empty()) continue;
@@ -290,7 +290,7 @@ static void emit_no_filter(
     scan(no_filter_rel, [&](const DataChunk& dc) {
         for (size_t i = 0; i < dc.sel.count; i++) {
             auto row = dc.sel.indices[i];
-            uint32_t rule_id = dc.u32(0)->data[row];
+            uint32_t const rule_id = dc.u32(0)->data[row];
 
             auto it = rule_to_target.find(rule_id);
             if (it == rule_to_target.end()) continue;
@@ -298,7 +298,7 @@ static void emit_no_filter(
 
             scan(*npc_rel, [&](const DataChunk& npc_dc) {
                 for (size_t ni = 0; ni < npc_dc.sel.count; ni++) {
-                    uint32_t npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
+                    uint32_t const npc_fid = npc_dc.u32(0)->data[npc_dc.sel.indices[ni]];
                     patches.add_patch(npc_fid, field, op,
                                       Value::make_formid(target), anon_mod, 0);
                 }

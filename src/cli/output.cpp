@@ -14,8 +14,8 @@ std::string Output::format_duration(long long ms) {
 }
 
 std::string Output::dot_pad(std::string_view left, std::string_view right, size_t width) const {
-    size_t left_len = left.size() + 4; // "  ✓ " prefix
-    size_t right_len = right.size();
+    size_t const left_len = left.size() + 4; // "  ✓ " prefix
+    size_t const right_len = right.size();
     size_t dots_len = 0;
     if (left_len + right_len + 2 < width) {
         dots_len = width - left_len - right_len;
@@ -29,7 +29,7 @@ std::string Output::dot_pad(std::string_view left, std::string_view right, size_
 }
 
 void Output::print_header(std::string_view version) {
-    std::string banner(MORA_BANNER);
+    std::string const banner(MORA_BANNER);
     fmt::print("{}\n", TermStyle::cyan(banner, color_));
     fmt::print("{}\n{}\n\n",
         TermStyle::dim(fmt::format("   v{}", version), color_),
@@ -90,7 +90,7 @@ void Output::table(const std::vector<TableRow>& rows) {
 
 void Output::section_header(std::string_view title, size_t width) {
     std::string t = fmt::format(" {} ", title);
-    size_t fill = (width > t.size() + 4) ? width - t.size() - 4 : 0;
+    size_t const fill = (width > t.size() + 4) ? width - t.size() - 4 : 0;
     std::string fill_str;
     fill_str.reserve(fill * 3); // UTF-8 ─ is 3 bytes
     for (size_t i = 0; i < fill; ++i) fill_str += "\xe2\x94\x80";

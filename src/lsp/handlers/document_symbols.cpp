@@ -18,7 +18,7 @@ nlohmann::json span_to_range(const mora::SourceSpan& span) {
 }
 
 Result on_document_symbol(Workspace& ws, const nlohmann::json& params) {
-    std::string uri = params.at("textDocument").at("uri").get<std::string>();
+    std::string const uri = params.at("textDocument").at("uri").get<std::string>();
     Document* doc = ws.get(uri);
     if (!doc) return nlohmann::json::array();
 

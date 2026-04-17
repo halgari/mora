@@ -72,7 +72,7 @@ void walk_expr(const mora::Expr& expr,
 mora::SourceSpan fact_name_span(const mora::FactPattern& fp,
                                 const mora::StringPool& pool) {
     // The name portion begins at fp.span.start_*. Length = interned string length.
-    std::string_view name_str = pool.get(fp.name);
+    std::string_view const name_str = pool.get(fp.name);
     if (name_str.empty()) return fp.span;
     mora::SourceSpan s;
     s.file       = fp.span.file;
@@ -107,7 +107,7 @@ void walk_clause(const mora::Clause& clause,
         // Distinguish: if this fact is registered as a user rule, emit RuleCall;
         // otherwise emit Relation.
         const FactSignature* sig = resolver.lookup_fact(fp->name);
-        bool is_rule = sig != nullptr && resolver.rules().count(fp->name.index) > 0;
+        bool const is_rule = sig != nullptr && resolver.rules().count(fp->name.index) > 0;
         e.kind = is_rule ? SymbolKind::RuleCall : SymbolKind::Relation;
         e.span = fact_name_span(*fp, pool);
         e.name = fp->name;
@@ -131,7 +131,7 @@ void walk_clause(const mora::Clause& clause,
                 // Inline fact pattern handling for or-branches.
                 SymbolEntry e;
                 const FactSignature* sig2 = resolver.lookup_fact(fp2.name);
-                bool is_rule2 = sig2 != nullptr && resolver.rules().count(fp2.name.index) > 0;
+                bool const is_rule2 = sig2 != nullptr && resolver.rules().count(fp2.name.index) > 0;
                 e.kind = is_rule2 ? SymbolKind::RuleCall : SymbolKind::Relation;
                 e.span = fact_name_span(fp2, pool);
                 e.name = fp2.name;
@@ -221,7 +221,7 @@ const SymbolEntry* SymbolIndex::find_at(uint32_t line, uint32_t col) const {
         if (line == e.span.end_line   && col > e.span.end_col)   continue;
         // Compute "size" = (end_line - start_line) * 2^32 + (end_col - start_col)
         // so multi-line spans always rank as larger than single-line spans.
-        uint64_t size =
+        uint64_t const size =
             (static_cast<uint64_t>(e.span.end_line - e.span.start_line) << 32) +
             static_cast<uint64_t>(e.span.end_col - e.span.start_col);
         if (size < best_size) {

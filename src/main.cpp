@@ -60,7 +60,7 @@ static std::string detect_plugins_txt(const std::string& data_dir) {
     std::vector<fs::path> candidates;
 
     if (!data_dir.empty()) {
-        fs::path base(data_dir);
+        fs::path const base(data_dir);
         // Directly adjacent to Data/ (matches /skyrim-base/Plugins.txt
         // on the self-hosted runner image and most portable layouts).
         if (base.has_parent_path()) {
@@ -73,7 +73,7 @@ static std::string detect_plugins_txt(const std::string& data_dir) {
     }
 
     if (const char* home = std::getenv("HOME")) {
-        fs::path h(home);
+        fs::path const h(home);
         // Steam + Proton prefix for Skyrim SE (app id 489830).
         candidates.push_back(h / ".local/share/Steam/steamapps/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
         // GOG portable prefix layout used by scripts/deploy_runtime.sh.
@@ -328,7 +328,7 @@ static bool run_check_pipeline(
 
     // Render diagnostics if any
     if (!result.diags.all().empty()) {
-        mora::DiagRenderer renderer(use_color);
+        mora::DiagRenderer const renderer(use_color);
         mora::log::info("\n{}", renderer.render_all(result.diags));
         if (result.diags.error_count() > mora::DiagBag::kMaxErrors) {
             mora::log::info("\n  ... and {} more errors (showing first {})\n",
@@ -472,7 +472,7 @@ static void load_esp_data(
 
     // ── Phase 3: parallel fact extraction ──────────────────────────
     auto hw = std::max(1u, std::thread::hardware_concurrency());
-    size_t batch_size = (parsed.size() + hw - 1) / hw;
+    size_t const batch_size = (parsed.size() + hw - 1) / hw;
 
     struct BatchResult {
         mora::FactDB local_db;
@@ -482,7 +482,7 @@ static void load_esp_data(
 
     std::vector<std::future<BatchResult>> extract_futures;
     for (size_t i = 0; i < parsed.size(); i += batch_size) {
-        size_t end = std::min(i + batch_size, parsed.size());
+        size_t const end = std::min(i + batch_size, parsed.size());
         extract_futures.push_back(std::async(std::launch::async,
             [&, i, end]() -> BatchResult {
                 BatchResult result(cr.pool);
@@ -693,7 +693,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // Phase classification
     out.phase_start("Classifying");
-    mora::PhaseClassifier classifier(cr.pool);
+    mora::PhaseClassifier const classifier(cr.pool);
     size_t static_count = 0, dynamic_count = 0;
 
     for (auto& mod : cr.modules) {
@@ -740,7 +740,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         cr.modules.erase(std::remove_if(cr.modules.begin(), cr.modules.end(),
             [&](const mora::Module& m) {
                 for (auto& req : m.requires_decls) {
-                    std::string want = mora::to_lower(std::string(cr.pool.get(req.mod_name)));
+                    std::string const want = mora::to_lower(std::string(cr.pool.get(req.mod_name)));
                     if (loaded_lower.count(want)) continue;
                     cr.diags.warning(
                         "requires-unmet",
@@ -764,7 +764,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
+    int const write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
     if (write_rc != 0) return write_rc;
 
     // Summary
@@ -836,12 +836,12 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
     for (auto& mod : modules) checker.check(mod);
 
     if (diags.has_errors()) {
-        mora::DiagRenderer renderer(use_color);
+        mora::DiagRenderer const renderer(use_color);
         mora::log::info("{}", renderer.render_all(diags));
         return 1;
     }
 
-    mora::FactDB db(pool);
+    mora::FactDB const db(pool);
     mora::Evaluator evaluator(pool, diags, db);
     mora::PatchSet all_patches;
     for (auto& mod : modules) {
@@ -912,8 +912,8 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
 
     mora::log::info("  Mora rules:    {} across {} files\n", rule_count, files.size());
 
-    fs::path cache_dir = base / "MoraCache";
-    fs::path dll_path = cache_dir / "MoraRuntime.dll";
+    fs::path const cache_dir = base / "MoraCache";
+    fs::path const dll_path = cache_dir / "MoraRuntime.dll";
 
     if (!fs::exists(cache_dir) || !fs::exists(dll_path)) {
         mora::log::info("  Cache status:  no DLL (run mora compile)\n");
@@ -923,7 +923,7 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     }
 
     if (!data_dir.empty()) {
-        mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+        mora::LoadOrder const lo = mora::LoadOrder::from_directory(data_dir);
         mora::log::info("  Data dir:      {}\n", data_dir);
         mora::log::info("  Plugins found: {}\n", lo.plugins.size());
 
@@ -1019,8 +1019,8 @@ int main(int argc, char* argv[]) try {
         return app.exit(e);
     }
 
-    bool use_color = !force_no_color && mora::color_enabled();
-    bool is_tty = mora::stdout_is_tty();
+    bool const use_color = !force_no_color && mora::color_enabled();
+    bool const is_tty = mora::stdout_is_tty();
     mora::Output out(use_color, is_tty);
 
     if (*c_check) {
@@ -1030,9 +1030,9 @@ int main(int argc, char* argv[]) try {
         // Query CLI11 for whether each path-flag was explicitly passed —
         // separates "user opted in" from "defaulted" so we can tag each
         // entry in the summary and decide whether to auto-derive --output.
-        bool explicit_output      = c_compile->get_option("--output")->count()     > 0;
-        bool explicit_data_dir    = c_compile->get_option("--data-dir")->count()   > 0;
-        bool explicit_plugins_txt = c_compile->get_option("--plugins-txt")->count() > 0;
+        bool const explicit_output      = c_compile->get_option("--output")->count()     > 0;
+        bool const explicit_data_dir    = c_compile->get_option("--data-dir")->count()   > 0;
+        bool const explicit_plugins_txt = c_compile->get_option("--plugins-txt")->count() > 0;
 
         // Auto-detect data-dir + plugins.txt when not explicitly provided.
         if (!explicit_data_dir) comp_data_dir = detect_skyrim_data_dir();

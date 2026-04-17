@@ -24,7 +24,7 @@ OverrideFilter OverrideFilter::build(const std::vector<PluginInfo>& plugins,
         const uint32_t load_idx = i < load_idxs.size() ? load_idxs[i] : 0;
         for (auto& [type, records] : info.by_type) {
             for (auto& loc : records) {
-                uint32_t gfid = rtmap.globalize(loc.form_id, info);
+                uint32_t const gfid = rtmap.globalize(loc.form_id, info);
                 f.observe(gfid, load_idx);
             }
         }

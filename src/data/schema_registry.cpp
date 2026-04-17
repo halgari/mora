@@ -9,7 +9,7 @@ namespace mora {
 SchemaRegistry::SchemaRegistry(StringPool& pool) : pool_(pool) {}
 
 void SchemaRegistry::register_schema(RelationSchema schema) {
-    uint32_t key = schema.name.index;
+    uint32_t const key = schema.name.index;
     schemas_.insert_or_assign(key, std::move(schema));
 }
 

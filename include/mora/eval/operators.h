@@ -22,7 +22,7 @@ void hash_probe(const ColumnarRelation& build_rel,
                 const DataChunk& input,
                 ChunkPool& pool,
                 Sink&& sink) {
-    size_t out_col_count = input.col_count + build_rel.arity();
+    size_t const out_col_count = input.col_count + build_rel.arity();
 
     // Acquire output column chunks (all U32 for now)
     std::vector<U32Chunk*> out_chunks(out_col_count);
@@ -51,7 +51,7 @@ void hash_probe(const ColumnarRelation& build_rel,
 
     for (size_t si = 0; si < input.sel.count; si++) {
         auto row = input.sel.indices[si];
-        uint32_t probe_val = input.u32(probe_col)->data[row];
+        uint32_t const probe_val = input.u32(probe_col)->data[row];
 
         const auto& refs = build_rel.lookup(build_key_col, probe_val);
         for (const auto& ref : refs) {
@@ -92,7 +92,7 @@ void semi_join(const ColumnarRelation& rel,
     new_sel.count = 0;
     for (size_t i = 0; i < input.sel.count; i++) {
         auto row = input.sel.indices[i];
-        uint32_t val = col->data[row];
+        uint32_t const val = col->data[row];
         if (!rel.lookup(key_col, val).empty()) {
             new_sel.indices[new_sel.count++] = row;
         }

@@ -22,19 +22,19 @@ static void transform(Ctx& c, const uint8_t d[64]) {
         m[i] = (uint32_t(d[j]) << 24) | (uint32_t(d[j+1]) << 16) |
                (uint32_t(d[j+2]) << 8) | uint32_t(d[j+3]);
     for (int i = 16; i < 64; ++i) {
-        uint32_t s0 = rotr(m[i-15],7)  ^ rotr(m[i-15],18) ^ (m[i-15] >> 3);
-        uint32_t s1 = rotr(m[i-2],17)  ^ rotr(m[i-2],19)  ^ (m[i-2] >> 10);
+        uint32_t const s0 = rotr(m[i-15],7)  ^ rotr(m[i-15],18) ^ (m[i-15] >> 3);
+        uint32_t const s1 = rotr(m[i-2],17)  ^ rotr(m[i-2],19)  ^ (m[i-2] >> 10);
         m[i] = m[i-16] + s0 + m[i-7] + s1;
     }
     uint32_t a=c.state[0],b=c.state[1],cc=c.state[2],d2=c.state[3];
     uint32_t e=c.state[4],f=c.state[5],g=c.state[6],h=c.state[7];
     for (int i = 0; i < 64; ++i) {
-        uint32_t S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
-        uint32_t ch = (e & f) ^ (~e & g);
-        uint32_t t1 = h + S1 + ch + K[i] + m[i];
-        uint32_t S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
-        uint32_t mj = (a & b) ^ (a & cc) ^ (b & cc);
-        uint32_t t2 = S0 + mj;
+        uint32_t const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+        uint32_t const ch = (e & f) ^ (~e & g);
+        uint32_t const t1 = h + S1 + ch + K[i] + m[i];
+        uint32_t const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+        uint32_t const mj = (a & b) ^ (a & cc) ^ (b & cc);
+        uint32_t const t2 = S0 + mj;
         h = g; g = f; f = e; e = d2 + t1;
         d2 = cc; cc = b; b = a; a = t1 + t2;
     }

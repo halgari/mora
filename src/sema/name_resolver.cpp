@@ -22,15 +22,15 @@ static ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags
                                 const Module* cur) {
     ImportMap im;
     for (const UseDecl& u : m.use_decls) {
-        std::string ns{pool.get(u.namespace_path)};
+        std::string const ns{pool.get(u.namespace_path)};
         if (u.alias.index != 0) {
             im.alias_to_ns[std::string{pool.get(u.alias)}] = ns;
         }
-        for (StringId name_id : u.refer) {
-            std::string key{pool.get(name_id)};
+        for (StringId const name_id : u.refer) {
+            std::string const key{pool.get(name_id)};
             auto it = im.refer_to_ns.find(key);
             if (it != im.refer_to_ns.end() && it->second != ns) {
-                std::string line = cur ? cur->get_line(u.span.start_line) : "";
+                std::string const line = cur ? cur->get_line(u.span.start_line) : "";
                 diags.error("E013",
                             "name '" + key + "' referred from both '" +
                                 it->second + "' and '" + ns + "'",
@@ -45,13 +45,13 @@ static ImportMap build_imports(const Module& m, StringPool& pool, DiagBag& diags
 static void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
                                    StringPool& pool) {
     if (fp.qualifier.index == 0) {
-        std::string name{pool.get(fp.name)};
+        std::string const name{pool.get(fp.name)};
         auto it = im.refer_to_ns.find(name);
         if (it != im.refer_to_ns.end()) {
             fp.qualifier = pool.intern(it->second);
         }
     } else {
-        std::string q{pool.get(fp.qualifier)};
+        std::string const q{pool.get(fp.qualifier)};
         auto it = im.alias_to_ns.find(q);
         if (it != im.alias_to_ns.end()) {
             fp.qualifier = pool.intern(it->second);
@@ -62,13 +62,13 @@ static void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
 static void apply_imports_to_effect(Effect& eff, const ImportMap& im,
                                      StringPool& pool) {
     if (eff.namespace_.index == 0) {
-        std::string name{pool.get(eff.name)};
+        std::string const name{pool.get(eff.name)};
         auto it = im.refer_to_ns.find(name);
         if (it != im.refer_to_ns.end()) {
             eff.namespace_ = pool.intern(it->second);
         }
     } else {
-        std::string q{pool.get(eff.namespace_)};
+        std::string const q{pool.get(eff.namespace_)};
         auto it = im.alias_to_ns.find(q);
         if (it != im.alias_to_ns.end()) {
             eff.namespace_ = pool.intern(it->second);
@@ -120,7 +120,7 @@ NameResolver::NameResolver(StringPool& pool, DiagBag& diags)
 void NameResolver::register_builtins() {
     // Helper lambda to register one fact by name string + type list
     auto reg = [&](const char* n, std::vector<MoraType> types) {
-        StringId id = pool_.intern(n);
+        StringId const id = pool_.intern(n);
         facts_.emplace(id.index, make_sig(id, std::move(types)));
     };
 
@@ -201,15 +201,15 @@ void NameResolver::register_builtins() {
         auto& f = m::kFields[i];
         if (!f.set_action) continue;
         auto& member = m::kComponents[f.component_idx].members[f.member_idx];
-        T form_tk = m::effect_form_type_kind(f.component_idx);
-        T val_tk = m::value_type_to_type_kind(member.value_type);
+        T const form_tk = m::effect_form_type_kind(f.component_idx);
+        T const val_tk = m::value_type_to_type_kind(member.value_type);
         reg(f.set_action, { t(form_tk), t(val_tk) });
     }
 
     // Form array operations: add_keyword, remove_keyword, add_spell, etc.
     for (size_t i = 0; i < m::kFormArrayCount; i++) {
         auto& fa = m::kFormArrays[i];
-        T form_tk = m::effect_form_type_kind(fa.component_idx);
+        T const form_tk = m::effect_form_type_kind(fa.component_idx);
         // Determine value type from the field id
         T val_tk = T::FormID;
         if (fa.field_id == FieldId::Keywords) val_tk = T::KeywordID;
@@ -225,7 +225,7 @@ void NameResolver::register_builtins() {
     for (size_t i = 0; i < m::kFlagCount; i++) {
         auto& fl = m::kFlags[i];
         if (!fl.set_action) continue;
-        T form_tk = m::effect_form_type_kind(fl.component_idx);
+        T const form_tk = m::effect_form_type_kind(fl.component_idx);
         reg(fl.set_action, { t(form_tk), t(T::Int) });
     }
 
@@ -264,7 +264,7 @@ void NameResolver::resolve(Module& mod) {
 
     // Pass 0: build the import map from `use` declarations and rewrite
     // qualifiers on FactPatterns / Effects accordingly.
-    ImportMap imports = build_imports(mod, pool_, diags_, current_mod_);
+    ImportMap const imports = build_imports(mod, pool_, diags_, current_mod_);
     for (Rule& rule : mod.rules) {
         for (Clause& clause : rule.body) {
             apply_imports_to_clause(clause, imports, pool_);
@@ -325,8 +325,8 @@ void NameResolver::register_rule_as_fact(const Rule& rule) {
 void NameResolver::check_fact_exists(const FactPattern& pattern) {
     // If the pattern is namespace-qualified and the namespaced relation exists
     // in the kRelations registry, defer to the type-checker for validation.
-    std::string_view ns = pool_.get(pattern.qualifier);
-    std::string_view nm = pool_.get(pattern.name);
+    std::string_view const ns = pool_.get(pattern.qualifier);
+    std::string_view const nm = pool_.get(pattern.name);
     if (!ns.empty()) {
         if (model::find_relation(ns, nm, model::kRelations, model::kRelationCount)) {
             return;
@@ -357,8 +357,8 @@ static void check_action_name(StringId action, const SourceSpan& span,
 static void check_effect_name(StringId ns, StringId action, const SourceSpan& span,
                                const NameResolver& resolver, DiagBag& diags,
                                StringPool& pool, const std::string& src_line) {
-    std::string_view ns_sv = pool.get(ns);
-    std::string_view nm_sv = pool.get(action);
+    std::string_view const ns_sv = pool.get(ns);
+    std::string_view const nm_sv = pool.get(action);
     if (!ns_sv.empty()) {
         if (model::find_relation(ns_sv, nm_sv, model::kRelations, model::kRelationCount)) {
             return;

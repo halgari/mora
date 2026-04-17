@@ -28,7 +28,7 @@ void Document::update(std::string text, int version) {
 const std::vector<mora::Diagnostic>& Document::diagnostics() {
     if (!cache_stale_) return diagnostics_;
 
-    std::string path = path_from_uri(uri_);
+    std::string const path = path_from_uri(uri_);
 
     // Allocate pool and module on the heap so they survive past this scope.
     // StringPool is not movable (contains shared_mutex), so we heap-allocate

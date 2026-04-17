@@ -25,7 +25,7 @@ void DiagBag::warning(const std::string& code, const std::string& msg,
 }
 
 void DiagBag::add(Diagnostic diag) {
-    std::lock_guard lock(mu_);
+    std::lock_guard const lock(mu_);
     if (diag.level == DiagLevel::Error) {
         ++error_count_;
         if (error_count_ > kMaxErrors) return;
@@ -38,7 +38,7 @@ void DiagBag::add(Diagnostic diag) {
 
 std::vector<Diagnostic> DiagBag::drain_for_file(std::string_view path) {
     std::vector<Diagnostic> out;
-    std::lock_guard<std::mutex> g(mu_);
+    std::lock_guard<std::mutex> const g(mu_);
     auto it = diags_.begin();
     while (it != diags_.end()) {
         if (it->span.file == path) {

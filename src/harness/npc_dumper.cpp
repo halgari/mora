@@ -31,7 +31,7 @@ static std::string format_hex(uint32_t val) {
 static std::string escape_json_string(const std::string& s) {
     std::string out;
     out.reserve(s.size());
-    for (char c : s) {
+    for (char const c : s) {
         switch (c) {
             case '"':  out += "\\\""; break;
             case '\\': out += "\\\\"; break;

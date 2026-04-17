@@ -87,7 +87,7 @@ void ColumnarRelation::build_index(size_t col) {
     for (size_t ci = 0; ci < n_chunks; ++ci) {
         const auto* chunk = static_cast<const U32Chunk*>(col_chunks_[col][ci]);
         for (size_t ri = 0; ri < chunk->count; ++ri) {
-            uint32_t val = chunk->data[ri];
+            uint32_t const val = chunk->data[ri];
             idx[val].push_back(RowRef{
                 static_cast<uint32_t>(ci),
                 static_cast<uint16_t>(ri)

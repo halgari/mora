@@ -7,7 +7,7 @@ static constexpr uint32_t kDagMagic = 0x31474144u; // 'DAG1' little-endian
 
 std::vector<uint8_t> serialize_dag(const DagGraph& g) {
     uint32_t header[2] = { kDagMagic, static_cast<uint32_t>(g.node_count()) };
-    size_t total = sizeof(header) + g.node_count() * sizeof(DagNode);
+    size_t const total = sizeof(header) + g.node_count() * sizeof(DagNode);
     std::vector<uint8_t> out(total);
     std::memcpy(out.data(), header, sizeof(header));
     if (g.node_count())

@@ -10,7 +10,7 @@ StringPool::StringPool() {
 StringId StringPool::intern(std::string_view str) {
     // Fast path: already interned (shared/read lock).
     {
-        std::shared_lock lock(mu_);
+        std::shared_lock const lock(mu_);
         auto it = lookup_.find(str);
         if (it != lookup_.end()) {
             return it->second;
@@ -18,7 +18,7 @@ StringId StringPool::intern(std::string_view str) {
     }
 
     // Slow path: insert (exclusive/write lock).
-    std::unique_lock lock(mu_);
+    std::unique_lock const lock(mu_);
     // Re-check after acquiring write lock.
     auto it = lookup_.find(str);
     if (it != lookup_.end()) {
@@ -32,12 +32,12 @@ StringId StringPool::intern(std::string_view str) {
 }
 
 std::string_view StringPool::get(StringId id) const {
-    std::shared_lock lock(mu_);
+    std::shared_lock const lock(mu_);
     return strings_[id.index];
 }
 
 size_t StringPool::size() const {
-    std::shared_lock lock(mu_);
+    std::shared_lock const lock(mu_);
     return strings_.size();
 }
 

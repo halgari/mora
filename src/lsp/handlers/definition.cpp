@@ -39,7 +39,7 @@ nlohmann::json location_json(std::string_view uri, const mora::SourceSpan& span)
 // Uses string comparison to avoid cross-pool StringId issues.
 nlohmann::json find_rule_definition(Workspace& ws,
                                     std::string_view name_str) {
-    for (Document* d : ws.all_documents()) {
+    for (Document const* d : ws.all_documents()) {
         for (const auto& rule : d->module().rules) {
             if (d->pool().get(rule.name) == name_str) {
                 return location_json(d->uri(), rule.span);
@@ -58,7 +58,7 @@ nlohmann::json find_relation_definition(Workspace& ws,
     const std::filesystem::path& rel_dir = ws.relations_dir();
     if (rel_dir.empty()) return nlohmann::json(nullptr);
 
-    std::string name_str = std::string(doc_pool.get(entry.name));
+    std::string const name_str = std::string(doc_pool.get(entry.name));
     std::filesystem::path yaml_path;
     if (entry.ns_path.empty()) {
         yaml_path = rel_dir / (name_str + ".yaml");
@@ -79,9 +79,9 @@ nlohmann::json find_relation_definition(Workspace& ws,
 }
 
 Result on_definition(Workspace& ws, const nlohmann::json& params) {
-    std::string uri = params.at("textDocument").at("uri").get<std::string>();
-    int line_zb = params.at("position").at("line").get<int>();
-    int char_zb = params.at("position").at("character").get<int>();
+    std::string const uri = params.at("textDocument").at("uri").get<std::string>();
+    int const line_zb = params.at("position").at("line").get<int>();
+    int const char_zb = params.at("position").at("character").get<int>();
 
     Document* doc = ws.get(uri);
     if (!doc) return nlohmann::json(nullptr);
@@ -96,11 +96,11 @@ Result on_definition(Workspace& ws, const nlohmann::json& params) {
     switch (entry->kind) {
         case SymbolKind::RuleHead: {
             // Jump to own definition — the rule head itself.
-            std::string_view name_str = doc->pool().get(entry->name);
+            std::string_view const name_str = doc->pool().get(entry->name);
             return find_rule_definition(ws, name_str);
         }
         case SymbolKind::RuleCall: {
-            std::string_view name_str = doc->pool().get(entry->name);
+            std::string_view const name_str = doc->pool().get(entry->name);
             return find_rule_definition(ws, name_str);
         }
         case SymbolKind::Relation: {

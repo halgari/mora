@@ -27,7 +27,7 @@ constexpr uint32_t TM_DEFAULT_LIB = 1u << 0;  // built-in relation
 [[maybe_unused]] constexpr uint32_t TM_DEPRECATED = 1u << 1;
 
 Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
-    std::string uri = params.at("textDocument").at("uri").get<std::string>();
+    std::string const uri = params.at("textDocument").at("uri").get<std::string>();
     Document* doc = ws.get(uri);
     nlohmann::json data = nlohmann::json::array();
     if (!doc) return nlohmann::json{{"data", data}};
@@ -77,18 +77,18 @@ Result on_semantic_tokens_full(Workspace& ws, const nlohmann::json& params) {
         }
 
         // Convert 1-based mora coords to 0-based LSP coords.
-        uint32_t line = e.span.start_line - 1;
-        uint32_t col  = e.span.start_col  - 1;
+        uint32_t const line = e.span.start_line - 1;
+        uint32_t const col  = e.span.start_col  - 1;
         // Token length: end_col - start_col (both 1-based, same line).
-        uint32_t len  = (e.span.end_col > e.span.start_col)
+        uint32_t const len  = (e.span.end_col > e.span.start_col)
                         ? (e.span.end_col - e.span.start_col)
                         : 1;
 
         // Delta encoding: deltaLine is absolute from previous token's line.
         // deltaStart is absolute from previous token's start col if same line,
         // else absolute from 0.
-        uint32_t dl = line - prev_line;
-        uint32_t dc = (dl == 0) ? (col - prev_col) : col;
+        uint32_t const dl = line - prev_line;
+        uint32_t const dc = (dl == 0) ? (col - prev_col) : col;
 
         data.push_back(dl);
         data.push_back(dc);

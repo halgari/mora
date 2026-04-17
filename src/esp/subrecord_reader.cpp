@@ -20,9 +20,9 @@ SubrecordReader::SubrecordReader(std::span<const uint8_t> record_data, uint32_t 
 
         uLongf dest_len = decompressed_size;
         const Bytef* src = record_data.data() + 4;
-        uLong src_len = static_cast<uLong>(record_data.size() - 4);
+        uLong const src_len = static_cast<uLong>(record_data.size() - 4);
 
-        int result = uncompress(decompressed_.data(), &dest_len, src, src_len);
+        int const result = uncompress(decompressed_.data(), &dest_len, src, src_len);
         if (result != Z_OK) {
             throw std::runtime_error("SubrecordReader: zlib decompression failed (code " + std::to_string(result) + ")");
         }

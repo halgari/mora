@@ -87,7 +87,7 @@ MmapFile& MmapFile::operator=(MmapFile&& other) noexcept {
 #else // POSIX
 
 MmapFile::MmapFile(const std::string& path) {
-    int fd = ::open(path.c_str(), O_RDONLY);
+    int const fd = ::open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         std::fprintf(stderr, "MmapFile: failed to open: %s\n", path.c_str());
         return;

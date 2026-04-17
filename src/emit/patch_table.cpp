@@ -45,12 +45,12 @@ std::vector<uint8_t> build_patch_entries_and_string_table(
     for (const auto& rp : sorted) {
         for (const auto& fp : rp.fields) {
             if (fp.value.kind() == Value::Kind::String) {
-                uint32_t sid = fp.value.as_string().index;
+                uint32_t const sid = fp.value.as_string().index;
                 if (string_offsets.count(sid)) continue;
-                std::string_view sv = pool.get(fp.value.as_string());
-                uint32_t offset = static_cast<uint32_t>(string_table.size());
+                std::string_view const sv = pool.get(fp.value.as_string());
+                uint32_t const offset = static_cast<uint32_t>(string_table.size());
                 string_offsets[sid] = offset;
-                uint16_t len = static_cast<uint16_t>(sv.size());
+                uint16_t const len = static_cast<uint16_t>(sv.size());
                 append_bytes(string_table, len);
                 string_table.insert(string_table.end(), sv.begin(), sv.end());
             }
@@ -102,7 +102,7 @@ std::vector<uint8_t> build_patch_entries_and_string_table(
 
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool) {
-    std::array<uint8_t, 32> zero{};
+    std::array<uint8_t, 32> const zero{};
     return serialize_patch_table(patches, pool, zero);
 }
 
@@ -124,7 +124,7 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
 }
 
 std::vector<uint8_t> serialize_patch_table(const std::vector<PatchEntry>& entries) {
-    std::array<uint8_t, 32> zero{};
+    std::array<uint8_t, 32> const zero{};
     return serialize_patch_table(entries, zero);
 }
 
@@ -159,7 +159,7 @@ std::vector<uint8_t> serialize_patch_table(
     const std::vector<uint8_t>& arrangements_section,
     const std::vector<uint8_t>& dag_bytecode) {
 
-    std::vector<uint8_t> empty;
+    std::vector<uint8_t> const empty;
     return serialize_patch_table(entries, esp_digest, arrangements_section,
                                  dag_bytecode, empty);
 }

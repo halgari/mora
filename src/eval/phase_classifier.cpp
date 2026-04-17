@@ -17,7 +17,7 @@ static constexpr const char* kInstanceFacts[] = {
 
 PhaseClassifier::PhaseClassifier(StringPool& pool) : pool_(&pool) {
     for (const char* name : kInstanceFacts) {
-        StringId id = pool.intern(name);
+        StringId const id = pool.intern(name);
         instance_facts_.insert(id.index);
     }
 }
@@ -25,7 +25,7 @@ PhaseClassifier::PhaseClassifier(StringPool& pool) : pool_(&pool) {
 PhaseClassifier::PhaseClassifier(StringPool& pool, DiagBag& diag)
     : pool_(&pool), diag_(&diag) {
     for (const char* name : kInstanceFacts) {
-        StringId id = pool.intern(name);
+        StringId const id = pool.intern(name);
         instance_facts_.insert(id.index);
     }
 }
@@ -56,7 +56,7 @@ std::vector<RuleClassification> PhaseClassifier::classify_module(const Module& m
     std::vector<RuleClassification> results;
     results.reserve(mod.rules.size());
     for (const Rule& rule : mod.rules) {
-        Phase phase = classify(rule);
+        Phase const phase = classify(rule);
         std::string reason;
         if (phase == Phase::Dynamic) {
             reason = "body references instance-level fact";
@@ -79,8 +79,8 @@ PhaseClass classify_rule_v2(const Rule& r, StringPool& pool, DiagBag* diag) {
     for (const auto& c : r.body) {
         if (!std::holds_alternative<FactPattern>(c.data)) continue;
         const auto& fp = std::get<FactPattern>(c.data);
-        std::string ns{pool.get(fp.qualifier)};
-        std::string nm{pool.get(fp.name)};
+        std::string const ns{pool.get(fp.qualifier)};
+        std::string const nm{pool.get(fp.name)};
         if (ns.empty()) continue;
         const auto* rel = model::find_relation(ns, nm,
             model::kRelations, model::kRelationCount);

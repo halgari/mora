@@ -13,7 +13,7 @@ std::string make_underline(uint32_t start_col, uint32_t end_col) {
     std::string result;
     // start_col is 1-based; indent by (start_col - 1) spaces
     result.append(start_col > 0 ? start_col - 1 : 0, ' ');
-    uint32_t len = (end_col > start_col) ? (end_col - start_col) : 1;
+    uint32_t const len = (end_col > start_col) ? (end_col - start_col) : 1;
     result.append(len, '-');
     return result;
 }
@@ -33,7 +33,7 @@ std::string DiagRenderer::render(const Diagnostic& diag) const {
     std::ostringstream out;
 
     // Header: error[E012]: type mismatch
-    std::string lvl = level_str(diag.level);
+    std::string const lvl = level_str(diag.level);
     std::string header;
     if (!diag.code.empty()) {
         header = lvl + "[" + diag.code + "]: " + diag.message;
@@ -64,13 +64,13 @@ std::string DiagRenderer::render(const Diagnostic& diag) const {
     out << "  " << colored_header << "\n";
 
     // Compute gutter width from line number
-    std::string line_num = std::to_string(diag.span.start_line);
-    size_t gutter_width = line_num.size() + 2; // "  " prefix before line number
-    std::string gutter(gutter_width, ' ');      // blank gutter for non-numbered lines
+    std::string const line_num = std::to_string(diag.span.start_line);
+    size_t const gutter_width = line_num.size() + 2; // "  " prefix before line number
+    std::string const gutter(gutter_width, ' ');      // blank gutter for non-numbered lines
 
     // Location line: ┌─ file:line:col
     if (!diag.span.file.empty()) {
-        std::string loc = diag.span.file + ":"
+        std::string const loc = diag.span.file + ":"
                         + std::to_string(diag.span.start_line) + ":"
                         + std::to_string(diag.span.start_col);
         out << gutter << TermStyle::dim("\u250C\u2500", color_)
@@ -88,7 +88,7 @@ std::string DiagRenderer::render(const Diagnostic& diag) const {
             << " " << diag.source_line << "\n";
 
         // Underline (offset by 1 for the space after │)
-        std::string ul = make_underline(diag.span.start_col, diag.span.end_col);
+        std::string const ul = make_underline(diag.span.start_col, diag.span.end_col);
         if (!ul.empty()) {
             std::string colored_ul;
             if (diag.level == DiagLevel::Error) {
@@ -119,19 +119,19 @@ std::string DiagRenderer::render_all(const DiagBag& bag) const {
     }
 
     // Summary line
-    size_t errs = bag.error_count();
-    size_t warns = bag.warning_count();
+    size_t const errs = bag.error_count();
+    size_t const warns = bag.warning_count();
     if (errs > 0 || warns > 0) {
         out << "\n";
         if (errs > 0) {
-            std::string summary = std::to_string(errs) + " error" + (errs != 1 ? "s" : "");
+            std::string const summary = std::to_string(errs) + " error" + (errs != 1 ? "s" : "");
             out << TermStyle::bold(TermStyle::red(summary, color_), color_);
         }
         if (errs > 0 && warns > 0) {
             out << ", ";
         }
         if (warns > 0) {
-            std::string summary = std::to_string(warns) + " warning" + (warns != 1 ? "s" : "");
+            std::string const summary = std::to_string(warns) + " warning" + (warns != 1 ? "s" : "");
             out << TermStyle::bold(TermStyle::yellow(summary, color_), color_);
         }
         out << "\n";

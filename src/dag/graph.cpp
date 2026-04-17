@@ -3,7 +3,7 @@
 namespace mora::dag {
 
 uint32_t DagGraph::add_node(DagNode n) {
-    uint32_t id = static_cast<uint32_t>(nodes_.size());
+    uint32_t const id = static_cast<uint32_t>(nodes_.size());
     n.node_id = id;
     nodes_.push_back(n);
     return id;

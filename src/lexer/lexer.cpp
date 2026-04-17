@@ -21,7 +21,7 @@ void Lexer::index_lines() {
 
 std::string_view Lexer::get_line(uint32_t line) const {
     if (line == 0 || line > line_starts_.size()) return {};
-    size_t start = line_starts_[line - 1];
+    size_t const start = line_starts_[line - 1];
     size_t end = 0;
     if (line < line_starts_.size()) {
         end = line_starts_[line];
@@ -44,7 +44,7 @@ char Lexer::peek_next() const {
 }
 
 char Lexer::advance() {
-    char c = source_[pos_];
+    char const c = source_[pos_];
     pos_++;
     if (c == '\n') {
         line_++;
@@ -82,7 +82,7 @@ Token Lexer::lex_comment() {
     // Pre: peek() == '#'. Reads '#' followed by everything until end of
     // line (excluding the newline). The token's text excludes the '#'.
     advance(); // consume '#'
-    size_t saved_start = token_start_;
+    size_t const saved_start = token_start_;
     token_start_ = pos_;
     while (!at_end() && peek() != '\n') advance();
     Token tok = make_token(TokenKind::Comment);
@@ -91,10 +91,10 @@ Token Lexer::lex_comment() {
 }
 
 Token Lexer::make_token(TokenKind kind) {
-    std::string_view text(source_.data() + token_start_, pos_ - token_start_);
-    SourceSpan span{filename_, token_start_line_, token_start_col_,
+    std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
+    SourceSpan const span{filename_, token_start_line_, token_start_col_,
                     line_, col_};
-    StringId sid = pool_.intern(text);
+    StringId const sid = pool_.intern(text);
     Token tok;
     tok.kind = kind;
     tok.span = span;
@@ -116,12 +116,12 @@ Token Lexer::make_token(TokenKind kind, double float_val) {
 }
 
 Token Lexer::error_token(const std::string& msg) {
-    SourceSpan span{filename_, token_start_line_, token_start_col_,
+    SourceSpan const span{filename_, token_start_line_, token_start_col_,
                     line_, col_};
-    std::string src_line(get_line(token_start_line_));
+    std::string const src_line(get_line(token_start_line_));
     diags_.error("E0001", msg, span, src_line);
-    std::string_view text(source_.data() + token_start_, pos_ - token_start_);
-    StringId sid = pool_.intern(text);
+    std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
+    StringId const sid = pool_.intern(text);
     Token tok;
     tok.kind = TokenKind::Error;
     tok.span = span;
@@ -144,7 +144,7 @@ Token Lexer::lex_identifier_or_keyword() {
         advance();
     }
 
-    std::string_view text(source_.data() + token_start_, pos_ - token_start_);
+    std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
 
     // Discard: lone underscore
     if (text == "_") {
@@ -188,8 +188,8 @@ Token Lexer::lex_number() {
         while (!at_end() && std::isxdigit(static_cast<unsigned char>(peek()))) {
             advance();
         }
-        std::string_view text(source_.data() + token_start_, pos_ - token_start_);
-        int64_t val = static_cast<int64_t>(std::strtoll(std::string(text).c_str(), nullptr, 16));
+        std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
+        int64_t const val = static_cast<int64_t>(std::strtoll(std::string(text).c_str(), nullptr, 16));
         return make_token(TokenKind::Integer, val);
     }
 
@@ -204,13 +204,13 @@ Token Lexer::lex_number() {
         while (!at_end() && std::isdigit(static_cast<unsigned char>(peek()))) {
             advance();
         }
-        std::string_view text(source_.data() + token_start_, pos_ - token_start_);
-        double val = std::strtod(std::string(text).c_str(), nullptr);
+        std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
+        double const val = std::strtod(std::string(text).c_str(), nullptr);
         return make_token(TokenKind::Float, val);
     }
 
-    std::string_view text(source_.data() + token_start_, pos_ - token_start_);
-    int64_t val = static_cast<int64_t>(std::strtoll(std::string(text).c_str(), nullptr, 10));
+    std::string_view const text(source_.data() + token_start_, pos_ - token_start_);
+    int64_t const val = static_cast<int64_t>(std::strtoll(std::string(text).c_str(), nullptr, 10));
     return make_token(TokenKind::Integer, val);
 }
 
@@ -230,13 +230,13 @@ Token Lexer::lex_string() {
 Token Lexer::lex_symbol() {
     advance(); // consume ':'
     if (!at_end() && std::isalpha(static_cast<unsigned char>(peek()))) {
-        size_t ident_start = pos_;
+        size_t const ident_start = pos_;
         while (!at_end() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_')) {
             advance();
         }
         // Build token with text = identifier only (stripping ':').
         // Span still covers the ':' + identifier range.
-        size_t saved_start = token_start_;
+        size_t const saved_start = token_start_;
         token_start_ = ident_start;
         Token tok = make_token(TokenKind::Symbol);
         token_start_ = saved_start;
@@ -265,7 +265,7 @@ Token Lexer::next() {
         at_line_start_ = false;
 
         // Count spaces at start of line
-        size_t indent_start = pos_;
+        size_t const indent_start = pos_;
         int indent = 0;
         while (!at_end() && (peek() == ' ' || peek() == '\t')) {
             if (peek() == '\t') {
@@ -298,7 +298,7 @@ Token Lexer::next() {
             // At EOF, fall through
         } else {
             // Real content line - check indent changes
-            int current_indent = indent_stack_.back();
+            int const current_indent = indent_stack_.back();
             if (indent > current_indent) {
                 indent_stack_.push_back(indent);
                 token_start_ = indent_start;
@@ -342,7 +342,7 @@ Token Lexer::next() {
         return make_token(TokenKind::Eof);
     }
 
-    char c = peek();
+    char const c = peek();
 
     // Comment
     if (c == '#') {
@@ -395,13 +395,13 @@ Token Lexer::next() {
     if (c == '@') {
         advance(); // consume '@'
         if (!at_end() && (std::isalpha(static_cast<unsigned char>(peek())) || peek() == '_')) {
-            size_t ident_start = pos_;
+            size_t const ident_start = pos_;
             while (!at_end() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_')) {
                 advance();
             }
             // Build token with text = identifier only (stripping '@').
             // Span still covers the '@' + identifier range.
-            size_t saved_start = token_start_;
+            size_t const saved_start = token_start_;
             token_start_ = ident_start;
             Token tok = make_token(TokenKind::EditorId);
             token_start_ = saved_start;

@@ -28,7 +28,7 @@ void publish_diagnostics(Workspace& ws, std::string_view uri) {
 
 Result on_did_open(Workspace& ws, const nlohmann::json& params) {
     const auto& td = params.at("textDocument");
-    std::string uri = td.at("uri").get<std::string>();
+    std::string const uri = td.at("uri").get<std::string>();
     ws.open(uri,
             td.at("text").get<std::string>(),
             td.at("version").get<int>());
@@ -45,7 +45,7 @@ Result on_did_change(Workspace& ws, const nlohmann::json& params) {
     // textDocumentSync = Full: exactly one entry whose `text` is the entire
     // new content.
     const std::string text = changes.back().at("text").get<std::string>();
-    std::string uri = td.at("uri").get<std::string>();
+    std::string const uri = td.at("uri").get<std::string>();
     ws.change(uri, text, td.at("version").get<int>());
     // Schedule a reparse 150ms in the future. The poll-based run loop calls
     // documents_due_for_reparse() and publishes diagnostics when due.
