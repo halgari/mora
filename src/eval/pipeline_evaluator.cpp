@@ -20,7 +20,7 @@ ColumnarRelation& ColumnarFactStore::get_or_create(StringId name,
     auto [inserted, ok] = relations_.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(name.index),
-        std::forward_as_tuple(types.size(), std::move(types), pool_));
+        std::forward_as_tuple(types.size(), types, pool_));
     return inserted->second;
 }
 

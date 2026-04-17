@@ -31,7 +31,7 @@ void FactDB::configure_relation(StringId name, size_t arity, const std::vector<s
     relations_.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(name.index),
-        std::forward_as_tuple(arity, std::move(indexes))
+        std::forward_as_tuple(arity, indexes)
     );
 }
 
