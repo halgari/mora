@@ -46,62 +46,81 @@ LoadOrder LoadOrder::from_directory(const std::filesystem::path& data_dir) {
     LoadOrder lo;
     lo.data_dir = data_dir;
 
-    std::vector<std::filesystem::path> esms;
-    std::vector<std::filesystem::path> esps;
-
     if (!std::filesystem::exists(data_dir) || !std::filesystem::is_directory(data_dir)) {
         return lo;
     }
 
+    // Collect every candidate plugin file together with its TES4
+    // flags. Bucketing keys on flags + extension, NOT on extension
+    // alone, because Skyrim engines treat ESM/ESL-flagged ESPs as
+    // "master-like" for load ordering and only fall back to the
+    // extension when no plugin file is readable.
+    struct Candidate {
+        std::filesystem::path path;
+        std::string ext_lower;
+        uint32_t flags = 0;
+        bool readable = false;
+        bool is_master() const {
+            // ESM or ESL flag → master-like for ordering purposes
+            // (ESPFESL ships in the master group even though the file
+            // is an .esp on disk). Extension is a secondary signal:
+            // .esm and .esl both imply master-ordering historically,
+            // which catches plugins whose TES4 couldn't be parsed
+            // *and* the rare "light master without the flag set".
+            if (readable && (flags & (RecordFlags::ESM | RecordFlags::ESL)) != 0) {
+                return true;
+            }
+            return ext_lower == ".esm" || ext_lower == ".esl";
+        }
+    };
+
+    std::vector<Candidate> candidates;
     for (auto& entry : std::filesystem::directory_iterator(data_dir)) {
         if (!entry.is_regular_file()) continue;
         auto ext_lower = to_lower(entry.path().extension().string());
-        if (ext_lower == ".esm" || ext_lower == ".esl") {
-            esms.push_back(entry.path());
-        } else if (ext_lower == ".esp") {
-            esps.push_back(entry.path());
-        }
+        if (ext_lower != ".esm" && ext_lower != ".esp" && ext_lower != ".esl") continue;
+        Candidate c;
+        c.path = entry.path();
+        c.ext_lower = std::move(ext_lower);
+        c.readable = read_header_flag(c.path, c.flags);
+        candidates.push_back(std::move(c));
     }
 
-    // Bethesda's hardcoded master order — these always load first in this order
+    // Bethesda's hardcoded master order — these always load first in
+    // this order regardless of alphabetical position.
     static const std::string bethesda_masters[] = {
         "Skyrim.esm", "Update.esm", "Dawnguard.esm",
         "HearthFires.esm", "Dragonborn.esm"
     };
-
-    // Partition ESMs into Bethesda masters (in fixed order) and others (alphabetical)
-    std::vector<std::filesystem::path> beth_esms;
-    std::vector<std::filesystem::path> other_esms;
-    for (auto& p : esms) {
-        bool is_beth = false;
-        for (auto& m : bethesda_masters) {
-            if (p.filename().string() == m) { is_beth = true; break; }
+    auto beth_rank = [&](const std::filesystem::path& p) -> int {
+        for (int i = 0; i < 5; i++) {
+            if (p.filename().string() == bethesda_masters[i]) return i;
         }
-        if (is_beth) beth_esms.push_back(p);
-        else other_esms.push_back(p);
+        return -1;
+    };
+
+    std::vector<Candidate> masters;
+    std::vector<Candidate> plugins;
+    for (auto& c : candidates) {
+        if (c.is_master()) masters.push_back(std::move(c));
+        else plugins.push_back(std::move(c));
     }
 
-    // Sort Bethesda masters into the canonical order
-    std::sort(beth_esms.begin(), beth_esms.end(),
-        [&](const std::filesystem::path& a, const std::filesystem::path& b) {
-            int ai = 99, bi = 99;
-            for (int i = 0; i < 5; i++) {
-                if (a.filename().string() == bethesda_masters[i]) ai = i;
-                if (b.filename().string() == bethesda_masters[i]) bi = i;
-            }
-            return ai < bi;
+    std::sort(masters.begin(), masters.end(),
+        [&](const Candidate& a, const Candidate& b) {
+            int ar = beth_rank(a.path), br = beth_rank(b.path);
+            bool a_beth = ar >= 0, b_beth = br >= 0;
+            if (a_beth != b_beth) return a_beth;  // Bethesda first
+            if (a_beth) return ar < br;            // canonical order
+            return a.path.filename() < b.path.filename();
+        });
+    std::sort(plugins.begin(), plugins.end(),
+        [](const Candidate& a, const Candidate& b) {
+            return a.path.filename() < b.path.filename();
         });
 
-    std::sort(other_esms.begin(), other_esms.end(), [](const std::filesystem::path& a, const std::filesystem::path& b) {
-        return a.filename() < b.filename();
-    });
-    std::sort(esps.begin(), esps.end(), [](const std::filesystem::path& a, const std::filesystem::path& b) {
-        return a.filename() < b.filename();
-    });
-
-    lo.plugins.insert(lo.plugins.end(), beth_esms.begin(), beth_esms.end());
-    lo.plugins.insert(lo.plugins.end(), other_esms.begin(), other_esms.end());
-    lo.plugins.insert(lo.plugins.end(), esps.begin(), esps.end());
+    for (auto& c : masters) lo.plugins.push_back(c.path);
+    for (auto& c : plugins) lo.plugins.push_back(c.path);
 
     return lo;
 }
@@ -159,7 +178,8 @@ std::vector<PluginOrderEntry> LoadOrder::resolve_entries() const {
         PluginOrderEntry e;
         e.path = p;
         e.basename_lower = to_lower(p.filename().string());
-        e.is_esl = (flags & RecordFlags::ESL) != 0;
+        e.is_esl    = (flags & RecordFlags::ESL) != 0;
+        e.is_master = (flags & RecordFlags::ESM) != 0;
         out.push_back(std::move(e));
     }
     return out;

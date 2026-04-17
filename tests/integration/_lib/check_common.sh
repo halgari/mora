@@ -175,4 +175,18 @@ stash_runtime_logs() {
     cp "$patches" "$LOG_DIR/mora_patches.bin" 2>/dev/null || true
     _log "stashed mora_patches.bin ($(stat -c %s "$patches") bytes)"
   fi
+  # Runtime-generated Plugins.txt / loadorder.txt. These are the
+  # engine's authoritative load-order source; without them we have
+  # to guess at compile time. Stashing them lets CI commit/inspect
+  # the actual order when compile-time divergence shows up.
+  local appdata="$prefix/drive_c/users/steamuser/AppData/Local"
+  if [[ -d "$appdata" ]]; then
+    find "$appdata" -maxdepth 3 -type f \
+         \( -iname "Plugins.txt" -o -iname "loadorder.txt" \) 2>/dev/null \
+    | while read -r f; do
+        local tag
+        tag="$(dirname "$f" | sed "s|$appdata/||" | tr '/ ' '__')"
+        cp "$f" "$LOG_DIR/${tag}__$(basename "$f")" 2>/dev/null || true
+      done
+  fi
 }

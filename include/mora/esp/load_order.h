@@ -12,7 +12,8 @@ namespace mora {
 struct PluginOrderEntry {
     std::filesystem::path path;
     std::string basename_lower;
-    bool is_esl;
+    bool is_esl = false;     // TES4 ESL flag — selects 0xFE FormID space
+    bool is_master = false;  // TES4 ESM flag — loads with the master group
 };
 
 // Maps plugin basename (lowercase) to its runtime load-order index.

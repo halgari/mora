@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "mora/esp/load_order.h"
 #include "mora/esp/plugin_index.h"
+#include "mora/esp/record_types.h"
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
@@ -201,4 +203,140 @@ TEST(RuntimeIndexMapGlobalize, UnknownPluginFallsBackToIdentity) {
     uint32_t local = 0xAB123456u;
     uint32_t g = map.globalize(local, info);
     EXPECT_EQ(g, 0xAB123456u);
+}
+
+// ── Flag-driven classification (from_directory bucketing) ───────────
+
+namespace {
+
+// Write a minimal plugin file: a 24-byte TES4 record with the given
+// raw TES4 flags (bit 0 = ESM, bit 9 = ESL) and zero data. `ext`
+// selects the filename extension independently so we can exercise the
+// "flag wins over extension" invariants.
+fs::path write_minimal_plugin(const fs::path& dir,
+                              const std::string& name,
+                              uint32_t tes4_flags) {
+    fs::create_directories(dir);
+    auto path = dir / name;
+    std::ofstream f(path, std::ios::binary);
+    // RawRecordHeader layout (record_types.h): type[4] size[4] flags[4]
+    //   form_id[4] timestamp[2] vcs_info[2] internal_version[2]
+    //   unknown[2] = 24 bytes total.
+    char hdr[24] = {};
+    hdr[0] = 'T'; hdr[1] = 'E'; hdr[2] = 'S'; hdr[3] = '4';
+    // data_size = 0 (bytes 4..7 stay zero)
+    std::memcpy(hdr + 8, &tes4_flags, 4);
+    // form_id, timestamps, version left zero
+    f.write(hdr, sizeof(hdr));
+    return path;
+}
+
+} // namespace
+
+class FromDirectoryFlagsTest : public ::testing::Test {
+protected:
+    fs::path tmp_dir;
+    void SetUp() override {
+        tmp_dir = fs::temp_directory_path() /
+                  ("mora_flags_" + std::to_string(::getpid()) + "_" +
+                   std::to_string(::testing::UnitTest::GetInstance()
+                       ->current_test_info()->name() ? 1 : 0));
+        fs::create_directories(tmp_dir);
+    }
+    void TearDown() override {
+        std::error_code ec;
+        fs::remove_all(tmp_dir, ec);
+    }
+};
+
+TEST_F(FromDirectoryFlagsTest, EsPfEslBucketsWithMasters) {
+    // An .esp file with the ESL flag set ("ESPFESL") loads with the
+    // master group at runtime — plugin managers always sort it before
+    // plain ESPs. from_directory approximates that by bucketing on
+    // flags, not on extension.
+    write_minimal_plugin(tmp_dir, "Skyrim.esm",   mora::RecordFlags::ESM);
+    write_minimal_plugin(tmp_dir, "AnESPfESL.esp", mora::RecordFlags::ESL);
+    write_minimal_plugin(tmp_dir, "ZPlainMod.esp", 0);
+
+    auto lo = mora::LoadOrder::from_directory(tmp_dir);
+    ASSERT_EQ(lo.plugins.size(), 3u);
+    EXPECT_EQ(lo.plugins[0].filename(), "Skyrim.esm");
+    EXPECT_EQ(lo.plugins[1].filename(), "AnESPfESL.esp");
+    EXPECT_EQ(lo.plugins[2].filename(), "ZPlainMod.esp");
+}
+
+TEST_F(FromDirectoryFlagsTest, MasterFlagOnEspBucketsWithMasters) {
+    // An .esp file with only the ESM flag (historically how some
+    // mods ship "master" data without an .esm extension) still sorts
+    // ahead of plain ESPs.
+    write_minimal_plugin(tmp_dir, "Skyrim.esm",     mora::RecordFlags::ESM);
+    write_minimal_plugin(tmp_dir, "ForcedMaster.esp", mora::RecordFlags::ESM);
+    write_minimal_plugin(tmp_dir, "APlainMod.esp",  0);
+
+    auto lo = mora::LoadOrder::from_directory(tmp_dir);
+    ASSERT_EQ(lo.plugins.size(), 3u);
+    EXPECT_EQ(lo.plugins[0].filename(), "Skyrim.esm");
+    EXPECT_EQ(lo.plugins[1].filename(), "ForcedMaster.esp");
+    EXPECT_EQ(lo.plugins[2].filename(), "APlainMod.esp");
+}
+
+TEST_F(FromDirectoryFlagsTest, EslExtensionWithoutEslFlagStillMaster) {
+    // The engine keys on flags — a .esl file that somehow lacks the
+    // ESL flag is still a master (its extension doesn't flip its
+    // FormID space, but it still loads ahead of plain ESPs).
+    write_minimal_plugin(tmp_dir, "Skyrim.esm",       mora::RecordFlags::ESM);
+    write_minimal_plugin(tmp_dir, "UnflaggedEsl.esl", 0);
+    write_minimal_plugin(tmp_dir, "APlainMod.esp",    0);
+
+    auto lo = mora::LoadOrder::from_directory(tmp_dir);
+    ASSERT_EQ(lo.plugins.size(), 3u);
+    EXPECT_EQ(lo.plugins[0].filename(), "Skyrim.esm");
+    EXPECT_EQ(lo.plugins[1].filename(), "UnflaggedEsl.esl");
+    EXPECT_EQ(lo.plugins[2].filename(), "APlainMod.esp");
+}
+
+TEST_F(FromDirectoryFlagsTest, ResolveEntriesReportsBothFlags) {
+    // resolve_entries must surface both is_master and is_esl so
+    // downstream consumers (override filter, plugin/* facts) can
+    // distinguish ESM / ESL / ESPFESL / ESM+ESL.
+    write_minimal_plugin(tmp_dir, "OnlyMaster.esp", mora::RecordFlags::ESM);
+    write_minimal_plugin(tmp_dir, "OnlyLight.esl",  mora::RecordFlags::ESL);
+    write_minimal_plugin(tmp_dir, "PlainPlugin.esp", 0);
+    write_minimal_plugin(tmp_dir, "Both.esp",
+                          mora::RecordFlags::ESM | mora::RecordFlags::ESL);
+
+    mora::LoadOrder lo;
+    lo.data_dir = tmp_dir;
+    lo.plugins = {tmp_dir / "OnlyMaster.esp",
+                  tmp_dir / "OnlyLight.esl",
+                  tmp_dir / "PlainPlugin.esp",
+                  tmp_dir / "Both.esp"};
+    auto entries = lo.resolve_entries();
+    ASSERT_EQ(entries.size(), 4u);
+    EXPECT_TRUE(entries[0].is_master);
+    EXPECT_FALSE(entries[0].is_esl);
+    EXPECT_FALSE(entries[1].is_master);
+    EXPECT_TRUE(entries[1].is_esl);
+    EXPECT_FALSE(entries[2].is_master);
+    EXPECT_FALSE(entries[2].is_esl);
+    EXPECT_TRUE(entries[3].is_master);
+    EXPECT_TRUE(entries[3].is_esl);
+}
+
+TEST(RuntimeIndexMapBuild, EspFeslLandsInLightSpace) {
+    // Downstream of resolve_entries(): the RuntimeIndexMap builder
+    // keys on is_esl only (light FormID space is strictly a flag
+    // property, independent of whether the plugin is also a master).
+    std::vector<mora::PluginOrderEntry> entries = {
+        {"/data/Skyrim.esm",      "skyrim.esm",      /*is_esl=*/false, /*is_master=*/true},
+        {"/data/AnEspFEsl.esp",   "anespfesl.esp",   /*is_esl=*/true,  /*is_master=*/false},
+        {"/data/PlainPlugin.esp", "plainplugin.esp", /*is_esl=*/false, /*is_master=*/false},
+    };
+    auto map = mora::RuntimeIndexMap::build(entries);
+
+    EXPECT_EQ(map.index.at("skyrim.esm"),      0u);
+    EXPECT_EQ(map.index.at("plainplugin.esp"), 1u);     // regular idx 1
+    EXPECT_EQ(map.index.at("anespfesl.esp"),   0u);     // light idx 0
+    EXPECT_EQ(map.light.count("anespfesl.esp"), 1u);
+    EXPECT_EQ(map.light.count("plainplugin.esp"), 0u);
 }
