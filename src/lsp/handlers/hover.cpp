@@ -45,7 +45,7 @@ std::string hover_for_rule(const SymbolEntry& e, const Document& doc) {
     const mora::StringPool& pool = doc.pool();
     const mora::Rule* rule = doc.find_rule_by_name(e.name);
 
-    std::string rule_name = std::string(pool.get(e.name));
+    std::string const rule_name = std::string(pool.get(e.name));
     std::string sig = rule_name;
     if (rule) {
         sig += format_head_args(*rule, pool);
@@ -62,8 +62,8 @@ std::string hover_for_rule(const SymbolEntry& e, const Document& doc) {
 std::string hover_for_relation(const SymbolEntry& e, const Workspace& ws,
                                const mora::StringPool& doc_pool) {
     // Get the relation name string from the document's pool.
-    std::string_view rel_name_sv = doc_pool.get(e.name);
-    std::string full_name = e.ns_path.empty()
+    std::string_view const rel_name_sv = doc_pool.get(e.name);
+    std::string const full_name = e.ns_path.empty()
         ? std::string(rel_name_sv)
         : e.ns_path + "/" + std::string(rel_name_sv);
 
@@ -71,7 +71,7 @@ std::string hover_for_relation(const SymbolEntry& e, const Workspace& ws,
 
     // Cross-intern: look up the schema via the workspace's own pool.
     // doc_pool and ws.schema_pool() are separate; we must re-intern.
-    mora::StringId schema_id = const_cast<Workspace&>(ws).schema_pool().intern(full_name);
+    mora::StringId const schema_id = const_cast<Workspace&>(ws).schema_pool().intern(full_name);
     const mora::RelationSchema* schema = ws.schema().lookup(schema_id);
     if (schema) {
         md += "\n\nBuilt-in relation with " +
@@ -82,7 +82,7 @@ std::string hover_for_relation(const SymbolEntry& e, const Workspace& ws,
 
 std::string hover_for_atom(const SymbolEntry& e, const Workspace& ws,
                            const mora::StringPool& doc_pool) {
-    std::string id = std::string(doc_pool.get(e.name));
+    std::string const id = std::string(doc_pool.get(e.name));
     std::string md = "```mora\n@" + id + "\n```";
 
     auto info = ws.editor_ids().lookup(id);
@@ -99,7 +99,7 @@ std::string hover_for_atom(const SymbolEntry& e, const Workspace& ws,
 }
 
 std::string hover_for_variable(const SymbolEntry& e, const mora::StringPool& doc_pool) {
-    std::string name = std::string(doc_pool.get(e.name));
+    std::string const name = std::string(doc_pool.get(e.name));
     std::string md = "```mora\n" + name + "\n```";
     if (e.kind == SymbolKind::VariableUse) {
         md += "\n\nBound on line " + std::to_string(e.binding_span.start_line) + ".";
@@ -110,9 +110,9 @@ std::string hover_for_variable(const SymbolEntry& e, const mora::StringPool& doc
 }
 
 Result on_hover(Workspace& ws, const nlohmann::json& params) {
-    std::string uri = params.at("textDocument").at("uri").get<std::string>();
-    int line_zb = params.at("position").at("line").get<int>();
-    int char_zb = params.at("position").at("character").get<int>();
+    std::string const uri = params.at("textDocument").at("uri").get<std::string>();
+    int const line_zb = params.at("position").at("line").get<int>();
+    int const char_zb = params.at("position").at("character").get<int>();
 
     Document* doc = ws.get(uri);
     if (!doc) return nlohmann::json(nullptr);

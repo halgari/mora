@@ -81,7 +81,7 @@ void Parser::synchronize() {
     // Skip tokens until we find a top-level position:
     // an identifier, keyword, or EOF at the base indent level.
     while (!check(TokenKind::Eof)) {
-        TokenKind k = peek().kind;
+        TokenKind const k = peek().kind;
         if (k == TokenKind::Dedent) {
             advance();
             continue;
@@ -110,7 +110,7 @@ Module Parser::parse_module() {
     skip_newlines();
 
     while (!check(TokenKind::Eof)) {
-        TokenKind k = peek().kind;
+        TokenKind const k = peek().kind;
 
         if (k == TokenKind::Newline) {
             advance();
@@ -166,8 +166,8 @@ Module Parser::parse_module() {
 
 NamespaceDecl Parser::parse_namespace() {
     pending_comments_.clear();
-    Token kw = advance(); // consume 'namespace'
-    StringId name = parse_dotted_name();
+    Token const kw = advance(); // consume 'namespace'
+    StringId const name = parse_dotted_name();
     NamespaceDecl decl;
     decl.name = name;
     decl.span = kw.span;
@@ -176,24 +176,24 @@ NamespaceDecl Parser::parse_namespace() {
 
 RequiresDecl Parser::parse_requires() {
     pending_comments_.clear();
-    Token kw = advance(); // consume 'requires'
+    Token const kw = advance(); // consume 'requires'
     expect(TokenKind::KwMod, "expected 'mod' after 'requires'");
     expect(TokenKind::LParen, "expected '(' after 'mod'");
-    Token str_tok = expect(TokenKind::String, "expected string literal");
+    Token const str_tok = expect(TokenKind::String, "expected string literal");
     // Strip quotes from string: the lexer includes them in the text,
     // but the string_id should be the content without quotes.
     // Actually, let's check what the lexer does with strings.
     // The lexer's lex_string strips quotes and stores the unquoted content.
     // But we need to verify. The text field includes quotes but string_id
     // is interned from the text including quotes. Let's handle both cases.
-    std::string_view sv = pool_.get(str_tok.string_id);
+    std::string_view const sv = pool_.get(str_tok.string_id);
     std::string stripped;
     if (sv.size() >= 2 && sv.front() == '"' && sv.back() == '"') {
         stripped = std::string(sv.substr(1, sv.size() - 2));
     } else {
         stripped = std::string(sv);
     }
-    StringId mod_name = pool_.intern(stripped);
+    StringId const mod_name = pool_.intern(stripped);
     expect(TokenKind::RParen, "expected ')' after string");
 
     RequiresDecl decl;
@@ -204,8 +204,8 @@ RequiresDecl Parser::parse_requires() {
 
 UseDecl Parser::parse_use() {
     pending_comments_.clear();
-    Token kw = advance(); // consume 'use'
-    StringId ns_path = parse_dotted_name();
+    Token const kw = advance(); // consume 'use'
+    StringId const ns_path = parse_dotted_name();
 
     UseDecl decl;
     decl.namespace_path = ns_path;
@@ -214,7 +214,7 @@ UseDecl Parser::parse_use() {
     if (match(TokenKind::KwOnly)) {
         expect(TokenKind::LBracket, "expected '[' after 'only'");
         while (!check(TokenKind::RBracket) && !check(TokenKind::Eof) && !check(TokenKind::Newline)) {
-            Token name_tok = expect(TokenKind::Identifier, "expected identifier in only list");
+            Token const name_tok = expect(TokenKind::Identifier, "expected identifier in only list");
             if (name_tok.kind == TokenKind::Identifier) {
                 decl.refer.push_back(name_tok.string_id);
             }
@@ -229,11 +229,11 @@ UseDecl Parser::parse_use() {
     // Symbol token whose string_id holds "foo", so we inspect the text to
     // dispatch between :as and :refer.
     while (check(TokenKind::Symbol)) {
-        Token sym = peek();
-        std::string_view text = pool_.get(sym.string_id);
+        Token const sym = peek();
+        std::string_view const text = pool_.get(sym.string_id);
         if (text == "as") {
             advance();
-            Token alias_tok = expect(TokenKind::Identifier,
+            Token const alias_tok = expect(TokenKind::Identifier,
                 "expected alias identifier after ':as'");
             if (alias_tok.kind == TokenKind::Identifier) {
                 decl.alias = alias_tok.string_id;
@@ -243,7 +243,7 @@ UseDecl Parser::parse_use() {
             expect(TokenKind::LBracket, "expected '[' after ':refer'");
             while (!check(TokenKind::RBracket) && !check(TokenKind::Eof) &&
                    !check(TokenKind::Newline)) {
-                Token name_tok = expect(TokenKind::Identifier,
+                Token const name_tok = expect(TokenKind::Identifier,
                     "expected identifier in :refer list");
                 if (name_tok.kind == TokenKind::Identifier) {
                     decl.refer.push_back(name_tok.string_id);
@@ -263,8 +263,8 @@ UseDecl Parser::parse_use() {
 
 ImportIniDecl Parser::parse_import_ini(ImportIniDecl::Kind kind) {
     pending_comments_.clear();
-    Token kw = advance(); // consume keyword
-    Token path_tok = expect(TokenKind::String, "expected string path");
+    Token const kw = advance(); // consume keyword
+    Token const path_tok = expect(TokenKind::String, "expected string path");
 
     ImportIniDecl decl;
     decl.kind = kind;
@@ -298,7 +298,7 @@ Rule Parser::parse_rule() {
         rule.kind = RuleKind::On;
     }
 
-    Token name_tok = expect(TokenKind::Identifier, "expected rule name");
+    Token const name_tok = expect(TokenKind::Identifier, "expected rule name");
     rule.name = name_tok.string_id;
     rule.span = name_tok.span;
 
@@ -350,14 +350,14 @@ Rule Parser::parse_rule() {
         if (check(TokenKind::Identifier)) {
             // Look ahead: is next token '(' ?
             // We need a two-token lookahead. Save state.
-            Token id_tok = advance();
+            Token const id_tok = advance();
             StringId qualifier{};
             StringId fact_name = id_tok.string_id;
             SourceSpan fact_span = id_tok.span;
 
             if (check(TokenKind::Slash)) {
                 advance(); // consume '/'
-                Token name_tok = expect(TokenKind::Identifier,
+                Token const name_tok = expect(TokenKind::Identifier,
                     "expected identifier after '/' in namespaced fact");
                 qualifier = id_tok.string_id;
                 fact_name = name_tok.string_id;
@@ -439,7 +439,7 @@ Rule Parser::parse_rule() {
 }
 
 FactPattern Parser::parse_fact_pattern(bool negated) {
-    Token name_tok = expect(TokenKind::Identifier, "expected fact name");
+    Token const name_tok = expect(TokenKind::Identifier, "expected fact name");
 
     FactPattern fp;
     fp.name = name_tok.string_id;
@@ -448,7 +448,7 @@ FactPattern Parser::parse_fact_pattern(bool negated) {
 
     if (check(TokenKind::Slash)) {
         advance(); // consume '/'
-        Token ns_name_tok = expect(TokenKind::Identifier,
+        Token const ns_name_tok = expect(TokenKind::Identifier,
             "expected identifier after '/' in namespaced fact");
         fp.qualifier = name_tok.string_id;
         fp.name = ns_name_tok.string_id;
@@ -467,7 +467,7 @@ Effect Parser::parse_effect() {
 
     // Expect a verb keyword: set | add | sub | remove
     VerbKind verb = VerbKind::Set;
-    SourceSpan start_span = peek().span;
+    SourceSpan const start_span = peek().span;
     switch (peek().kind) {
         case TokenKind::KwSet:    verb = VerbKind::Set;    advance(); break;
         case TokenKind::KwAdd:    verb = VerbKind::Add;    advance(); break;
@@ -482,16 +482,16 @@ Effect Parser::parse_effect() {
     eff.verb = verb;
 
     // Parse namespaced name: identifier '/' identifier
-    Token ns_tok = expect(TokenKind::Identifier, "expected namespace identifier");
+    Token const ns_tok = expect(TokenKind::Identifier, "expected namespace identifier");
     expect(TokenKind::Slash, "expected '/' after effect namespace");
-    Token name_tok = expect(TokenKind::Identifier, "expected effect name after '/'");
+    Token const name_tok = expect(TokenKind::Identifier, "expected effect name after '/'");
 
     eff.namespace_ = ns_tok.string_id;
     eff.name = name_tok.string_id;
 
     expect(TokenKind::LParen, "expected '(' after effect name");
     eff.args = parse_arg_list();
-    Token rparen = peek();
+    Token const rparen = peek();
     expect(TokenKind::RParen, "expected ')' in effect");
 
     eff.span = merge_spans(start_span, rparen.span);
@@ -510,7 +510,7 @@ Expr Parser::parse_comparison() {
     while (check(TokenKind::Eq) || check(TokenKind::Neq) ||
            check(TokenKind::Lt) || check(TokenKind::Gt) ||
            check(TokenKind::LtEq) || check(TokenKind::GtEq)) {
-        Token op_tok = advance();
+        Token const op_tok = advance();
         BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Eq:   op = BinaryExpr::Op::Eq;   break;
@@ -542,7 +542,7 @@ Expr Parser::parse_additive() {
     Expr left = parse_multiplicative();
 
     while (check(TokenKind::Plus) || check(TokenKind::Minus)) {
-        Token op_tok = advance();
+        Token const op_tok = advance();
         BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Plus:  op = BinaryExpr::Op::Add; break;
@@ -570,7 +570,7 @@ Expr Parser::parse_multiplicative() {
     Expr left = parse_primary();
 
     while (check(TokenKind::Star) || check(TokenKind::Slash)) {
-        Token op_tok = advance();
+        Token const op_tok = advance();
         BinaryExpr::Op op{};
         switch (op_tok.kind) {
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
@@ -595,7 +595,7 @@ Expr Parser::parse_multiplicative() {
 }
 
 Expr Parser::parse_primary() {
-    Token tok = peek();
+    Token const tok = peek();
 
     if (tok.kind == TokenKind::Variable) {
         advance();
@@ -644,7 +644,7 @@ Expr Parser::parse_primary() {
         // Lexer interns the full lexeme (including surrounding quotes); the
         // AST carries the logical value without them. Mirrors the ad-hoc
         // strip in parse_requires().
-        std::string_view sv = pool_.get(tok.string_id);
+        std::string_view const sv = pool_.get(tok.string_id);
         StringId content_id = tok.string_id;
         if (sv.size() >= 2 && sv.front() == '"' && sv.back() == '"') {
             content_id = pool_.intern(sv.substr(1, sv.size() - 2));
@@ -675,7 +675,7 @@ Expr Parser::parse_primary() {
         if (check(TokenKind::LParen)) {
             advance(); // consume '('
             std::vector<Expr> args = parse_arg_list();
-            Token rparen = peek();
+            Token const rparen = peek();
             expect(TokenKind::RParen, "expected ')' in function call");
             CallExpr call;
             call.name = tok.string_id;
@@ -704,7 +704,7 @@ Expr Parser::parse_primary() {
 // ── Helpers ──
 
 StringId Parser::parse_dotted_name() {
-    Token first = expect(TokenKind::Identifier, "expected name");
+    Token const first = expect(TokenKind::Identifier, "expected name");
     if (first.kind != TokenKind::Identifier) {
         return first.string_id; // error already reported
     }
@@ -713,7 +713,7 @@ StringId Parser::parse_dotted_name() {
 
     while (check(TokenKind::Dot)) {
         advance(); // consume '.'
-        Token part = expect(TokenKind::Identifier, "expected name after '.'");
+        Token const part = expect(TokenKind::Identifier, "expected name after '.'");
         if (part.kind == TokenKind::Identifier) {
             name += '.';
             name += pool_.get(part.string_id);

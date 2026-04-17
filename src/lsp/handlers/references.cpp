@@ -78,9 +78,9 @@ bool entries_match_for_refs(const SymbolEntry& target,
 }
 
 Result on_references(Workspace& ws, const nlohmann::json& params) {
-    std::string uri = params.at("textDocument").at("uri").get<std::string>();
-    int line_zb = params.at("position").at("line").get<int>();
-    int char_zb = params.at("position").at("character").get<int>();
+    std::string const uri = params.at("textDocument").at("uri").get<std::string>();
+    int const line_zb = params.at("position").at("line").get<int>();
+    int const char_zb = params.at("position").at("character").get<int>();
     bool include_decl = true;
     if (params.contains("context") && params["context"].contains("includeDeclaration")) {
         include_decl = params["context"]["includeDeclaration"].get<bool>();
@@ -97,7 +97,7 @@ Result on_references(Workspace& ws, const nlohmann::json& params) {
     if (!target) return nlohmann::json::array();
 
     // Resolve the target name to a string once, for cross-pool comparison.
-    std::string_view target_name_str = doc->pool().get(target->name);
+    std::string_view const target_name_str = doc->pool().get(target->name);
 
     nlohmann::json refs = nlohmann::json::array();
 

@@ -61,9 +61,9 @@ ReadResult read_message(std::istream& in, std::string& body_out) {
             while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) {
                 v.remove_prefix(1);
             }
-            std::string num(v);
+            std::string const num(v);
             char* end = nullptr;
-            unsigned long long n = std::strtoull(num.c_str(), &end, 10);
+            unsigned long long const n = std::strtoull(num.c_str(), &end, 10);
             if (end == num.c_str()) return ReadResult::ProtocolError;
             content_length = static_cast<size_t>(n);
             have_length = true;

@@ -23,8 +23,8 @@ static bool unpack_format2(FILE* f, int32_t pointer_size, int32_t count,
         uint8_t type = 0;
         if (!read_val(f, type)) return false;
 
-        uint8_t lo = type & 0xF;
-        uint8_t hi = type >> 4;
+        uint8_t const lo = type & 0xF;
+        uint8_t const hi = type >> 4;
 
         // Decode ID
         uint64_t id = 0;
@@ -41,7 +41,7 @@ static bool unpack_format2(FILE* f, int32_t pointer_size, int32_t count,
         }
 
         // Decode offset
-        uint64_t tmp = (hi & 8) ? (prev_offset / static_cast<uint64_t>(pointer_size)) : prev_offset;
+        uint64_t const tmp = (hi & 8) ? (prev_offset / static_cast<uint64_t>(pointer_size)) : prev_offset;
         uint64_t offset = 0;
         switch (hi & 7) {
             case 0: { uint64_t v{}; if (!read_val(f, v)) return false; offset = v; break; }

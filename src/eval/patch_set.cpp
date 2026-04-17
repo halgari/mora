@@ -74,7 +74,7 @@ ResolvedPatchSet PatchSet::resolve() const {
             auto it  = set_slots.find(key);
             if (it == set_slots.end()) {
                 // First Set op for this slot.
-                FieldPatch fp{p.field, p.op, p.value, p.source_mod, p.priority};
+                FieldPatch const fp{p.field, p.op, p.value, p.source_mod, p.priority};
                 set_slots.emplace(key, SetSlot{fp, {p}});
             } else {
                 // Existing slot — last-write-wins by priority (higher wins).
@@ -94,7 +94,7 @@ ResolvedPatchSet PatchSet::resolve() const {
     // Build patches_ map and conflict list.
     // First, insert all winning Set ops.
     for (auto& [key, slot] : set_slots) {
-        uint32_t formid = key.first;
+        uint32_t const formid = key.first;
         out.patches_[formid].push_back(slot.winner);
 
         // Record conflict when more than one Set op targeted this slot.

@@ -25,17 +25,17 @@ void populate_plugin_facts(FactDB& db, StringPool& pool,
                             const RuntimeIndexMap& rtmap) {
     (void)lo; // currently derived entirely from infos + rtmap
 
-    StringId rel_exists     = pool.intern("plugin_exists");
-    StringId rel_load_index = pool.intern("plugin_load_index");
-    StringId rel_is_master  = pool.intern("plugin_is_master");
-    StringId rel_is_light   = pool.intern("plugin_is_light");
-    StringId rel_master_of  = pool.intern("plugin_master_of");
-    StringId rel_version    = pool.intern("plugin_version");
-    StringId rel_extension  = pool.intern("plugin_extension");
+    StringId const rel_exists     = pool.intern("plugin_exists");
+    StringId const rel_load_index = pool.intern("plugin_load_index");
+    StringId const rel_is_master  = pool.intern("plugin_is_master");
+    StringId const rel_is_light   = pool.intern("plugin_is_light");
+    StringId const rel_master_of  = pool.intern("plugin_master_of");
+    StringId const rel_version    = pool.intern("plugin_version");
+    StringId const rel_extension  = pool.intern("plugin_extension");
 
     for (auto& info : infos) {
-        Value p = plugin_key(pool, info.filename);
-        std::string lowered = to_lower(info.filename);
+        Value const p = plugin_key(pool, info.filename);
+        std::string const lowered = to_lower(info.filename);
 
         db.add_fact(rel_exists, {p});
 

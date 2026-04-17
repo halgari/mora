@@ -24,7 +24,7 @@ void trim_trailing(std::string& s) {
 // needed at that stage.
 bool read_header_flag(const std::filesystem::path& path, uint32_t& out_flags) {
     try {
-        MmapFile file(path.string());
+        MmapFile const file(path.string());
         auto data = file.span();
         if (data.size() < sizeof(RawRecordHeader)) return false;
         auto* tes4 = read_record_header(data.data());
@@ -238,8 +238,8 @@ RuntimeIndexMap RuntimeIndexMap::build(const std::vector<PluginOrderEntry>& entr
 }
 
 uint32_t RuntimeIndexMap::globalize(uint32_t local_id, const PluginInfo& info) const {
-    uint8_t master_byte = static_cast<uint8_t>((local_id >> 24) & 0xFF);
-    uint32_t object_id = local_id & 0x00FFFFFF;
+    uint8_t const master_byte = static_cast<uint8_t>((local_id >> 24) & 0xFF);
+    uint32_t const object_id = local_id & 0x00FFFFFF;
 
     std::string target;
     if (master_byte < info.masters.size()) {
@@ -254,10 +254,10 @@ uint32_t RuntimeIndexMap::globalize(uint32_t local_id, const PluginInfo& info) c
     if (it == index.end()) return local_id;
 
     if (light.count(key)) {
-        uint32_t esl_idx = it->second & 0xFFF;
+        uint32_t const esl_idx = it->second & 0xFFF;
         return 0xFE000000u | (esl_idx << 12) | (object_id & 0xFFF);
     }
-    uint32_t idx = it->second & 0xFF;
+    uint32_t const idx = it->second & 0xFF;
     return (idx << 24) | (object_id & 0x00FFFFFFu);
 }
 

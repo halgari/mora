@@ -24,11 +24,11 @@ uint64_t DagEngine::maintain_key(uint32_t node_id, const TupleU32& t) const {
 }
 
 void DagEngine::fire_sink(const dag::DagNode& node, const Delta& d) {
-    EffectArgs args{.args = d.tuple};
+    EffectArgs const args{.args = d.tuple};
     if (node.opcode == dag::DagOpcode::OnSink) {
         if (d.diff > 0) reg_.invoke_effect(node.handler_id, args);
     } else if (node.opcode == dag::DagOpcode::MaintainSink) {
-        uint64_t key = maintain_key(node.node_id, d.tuple);
+        uint64_t const key = maintain_key(node.node_id, d.tuple);
         if (d.diff > 0) {
             auto h = reg_.invoke_effect(node.handler_id, args);
             maintain_state_[key] = h;
@@ -59,18 +59,18 @@ void DagEngine::propagate(uint32_t node_id, const Delta& d) {
     if (node.opcode == dag::DagOpcode::StaticProbe) {
         auto it = probes_.find(node_id);
         if (it == probes_.end()) return;  // no arrangement: drop delta
-        uint8_t kc = probe_key_cols_[node_id];
+        uint8_t const kc = probe_key_cols_[node_id];
         if (d.tuple.size() <= kc) return;
-        uint32_t key = d.tuple[kc];
+        uint32_t const key = d.tuple[kc];
         auto rng = it->second.equal_range_u32(key);
         if (rng.count == 0) return;  // filter: no match
-        for (uint32_t c : consumers_[node_id]) {
+        for (uint32_t const c : consumers_[node_id]) {
             queue_.push(c, d);
         }
         return;
     }
     // Pass-through for sources and not-yet-implemented operators.
-    for (uint32_t c : consumers_[node_id]) {
+    for (uint32_t const c : consumers_[node_id]) {
         queue_.push(c, d);
     }
 }

@@ -29,7 +29,7 @@ bool fuzzy_contains(std::string_view haystack, std::string_view needle) {
 }
 
 Result on_workspace_symbol(Workspace& ws, const nlohmann::json& params) {
-    std::string query = params.at("query").get<std::string>();
+    std::string const query = params.at("query").get<std::string>();
     nlohmann::json results = nlohmann::json::array();
     for (Document* doc : ws.all_documents()) {
         // Ensure parse is up to date before reading the symbol index.
@@ -46,7 +46,7 @@ Result on_workspace_symbol(Workspace& ws, const nlohmann::json& params) {
         }
         for (const auto& e : doc->symbol_index().entries()) {
             if (e.kind != SymbolKind::RuleHead) continue;
-            std::string rule_name = std::string(pool.get(e.name));
+            std::string const rule_name = std::string(pool.get(e.name));
             std::string qualified = ns_name.empty() ? rule_name : (ns_name + "." + rule_name);
             if (!fuzzy_contains(qualified, query)) continue;
             results.push_back({

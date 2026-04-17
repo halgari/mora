@@ -44,8 +44,8 @@ Result on_initialize(Workspace& ws, const nlohmann::json& params) {
     // Default: <rootUri>/data/relations/  (matches the project convention)
     std::filesystem::path relations_dir;
     if (params.contains("rootUri") && params["rootUri"].is_string()) {
-        std::string root_uri = params["rootUri"].get<std::string>();
-        std::string root_path = path_from_uri(root_uri);
+        std::string const root_uri = params["rootUri"].get<std::string>();
+        std::string const root_path = path_from_uri(root_uri);
         if (!root_path.empty()) {
             relations_dir = std::filesystem::path(root_path) / "data" / "relations";
         }

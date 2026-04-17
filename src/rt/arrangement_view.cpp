@@ -21,7 +21,7 @@ U32RowRange ArrangementView::equal_range_u32(uint32_t key) const {
 
     size_t lo = 0, hi = count;
     while (lo < hi) {
-        size_t mid = (lo + hi) / 2;
+        size_t const mid = (lo + hi) / 2;
         if (rows[mid * cols + k_col] < key) lo = mid + 1;
         else                                hi = mid;
     }

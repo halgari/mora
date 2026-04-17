@@ -22,7 +22,7 @@ void info(fmt::format_string<Args...> fmtstr, Args&&... args) {
 // warn: stderr, yellow "warning: " prefix
 template <typename... Args>
 void warn(fmt::format_string<Args...> fmtstr, Args&&... args) {
-    bool c = color_enabled();
+    bool const c = color_enabled();
     if (c) fmt::print(stderr, "\033[33m");
     fmt::print(stderr, "warning: ");
     if (c) fmt::print(stderr, "\033[0m");
@@ -32,7 +32,7 @@ void warn(fmt::format_string<Args...> fmtstr, Args&&... args) {
 // error: stderr, red "error: " prefix
 template <typename... Args>
 void error(fmt::format_string<Args...> fmtstr, Args&&... args) {
-    bool c = color_enabled();
+    bool const c = color_enabled();
     if (c) fmt::print(stderr, "\033[31m");
     fmt::print(stderr, "error: ");
     if (c) fmt::print(stderr, "\033[0m");
@@ -43,7 +43,7 @@ void error(fmt::format_string<Args...> fmtstr, Args&&... args) {
 template <typename... Args>
 void debug(fmt::format_string<Args...> fmtstr, Args&&... args) {
     if (!detail::verbose_enabled) return;
-    bool c = color_enabled();
+    bool const c = color_enabled();
     if (c) fmt::print(stderr, "\033[2m");
     fmt::print(stderr, fmtstr, std::forward<Args>(args)...);
     if (c) fmt::print(stderr, "\033[0m");

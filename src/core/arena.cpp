@@ -12,11 +12,11 @@ Arena::~Arena() = default;
 void* Arena::alloc_raw(size_t size, size_t align) {
     // Try to fit into the current (last) chunk first.
     if (!chunks_.empty()) {
-        Chunk& current = chunks_.back();
+        Chunk const& current = chunks_.back();
         void* ptr = current.data.get() + current_offset_;
         size_t space = current.size - current_offset_;
         if (std::align(align, size, ptr, space)) {
-            size_t used = static_cast<std::byte*>(ptr) - current.data.get();
+            size_t const used = static_cast<std::byte*>(ptr) - current.data.get();
             current_offset_ = used + size;
             total_allocated_ += size;
             return ptr;
@@ -29,7 +29,7 @@ void* Arena::alloc_raw(size_t size, size_t align) {
         new_chunk_size = size + align;
     }
 
-    Chunk& chunk = chunks_.emplace_back(Chunk{
+    Chunk const& chunk = chunks_.emplace_back(Chunk{
         std::make_unique<std::byte[]>(new_chunk_size),
         new_chunk_size
     });
@@ -40,7 +40,7 @@ void* Arena::alloc_raw(size_t size, size_t align) {
     void* aligned = std::align(align, size, ptr, space);
     assert(aligned != nullptr && "Alignment failed on fresh chunk");
 
-    size_t used = static_cast<std::byte*>(aligned) - chunk.data.get();
+    size_t const used = static_cast<std::byte*>(aligned) - chunk.data.get();
     current_offset_ = used + size;
     total_allocated_ += size;
     return aligned;

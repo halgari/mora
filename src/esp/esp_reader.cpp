@@ -58,9 +58,9 @@ void EspReader::extract_from(const MmapFile& file, const PluginInfo& info, FactD
 }
 
 void EspReader::read_plugin(const std::filesystem::path& path, FactDB& db) {
-    MmapFile file(path.string());
-    std::string filename = path.filename().string();
-    PluginInfo info = build_plugin_index(file, filename);
+    MmapFile const file(path.string());
+    std::string const filename = path.filename().string();
+    PluginInfo const info = build_plugin_index(file, filename);
     extract_from(file, info, db);
     current_load_index_++;
 }
@@ -97,7 +97,7 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                                       const RecordLocation& loc,
                                       const std::vector<const RelationSchema*>& schemas,
                                       FactDB& db) {
-    uint32_t global_fid = make_global_formid(loc.form_id, info);
+    uint32_t const global_fid = make_global_formid(loc.form_id, info);
 
     // Skyrim's whole-record-replacement: only the plugin that wins
     // the override race for `global_fid` emits facts. Earlier
@@ -124,12 +124,12 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
         reader.reset();
     }
 
-    bool is_localized = info.is_localized();
+    bool const is_localized = info.is_localized();
 
     for (auto* schema : schemas) {
         for (auto& src : schema->esp_sources) {
             // Only process sources matching this record's type
-            std::string record_type(read_record_header(file.span().data() + loc.offset)->type.as_sv());
+            std::string const record_type(read_record_header(file.span().data() + loc.offset)->type.as_sv());
             if (src.record_type != record_type) continue;
 
             switch (src.kind) {
@@ -186,16 +186,16 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                 auto sub_data = reader.find(src.subrecord_tag.c_str());
                 if (sub_data.empty() || src.element_size == 0) break;
 
-                size_t count = sub_data.size() / src.element_size;
+                size_t const count = sub_data.size() / src.element_size;
                 for (size_t i = 0; i < count; i++) {
-                    size_t elem_offset = i * src.element_size;
+                    size_t const elem_offset = i * src.element_size;
                     if (elem_offset + src.element_size > sub_data.size()) break;
 
                     // For FormID array elements, resolve local -> global
                     if (src.read_type == ReadType::FormID && src.element_size >= 4) {
                         uint32_t local_id = 0;
                         std::memcpy(&local_id, sub_data.data() + elem_offset, 4);
-                        uint32_t gfid = make_global_formid(local_id, info);
+                        uint32_t const gfid = make_global_formid(local_id, info);
 
                         Tuple t;
                         t.push_back(Value::make_formid(global_fid));
@@ -260,7 +260,7 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                         if (sub_data.size() < src.offset + 4) continue;
                         uint32_t local_id = 0;
                         std::memcpy(&local_id, sub_data.data() + src.offset, 4);
-                        uint32_t gfid = make_global_formid(local_id, info);
+                        uint32_t const gfid = make_global_formid(local_id, info);
 
                         Tuple t;
                         t.push_back(Value::make_formid(global_fid));
@@ -268,7 +268,7 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                         db.add_fact(schema->name, std::move(t));
                         facts_generated_++;
                     } else {
-                        size_t needed = src.offset + 1;
+                        size_t const needed = src.offset + 1;
                         if (sub_data.size() < needed) continue;
                         Value val = read_esp_value(sub_data, src.offset, src.read_type, is_localized);
                         Tuple t;
@@ -339,8 +339,8 @@ Value EspReader::read_esp_value(std::span<const uint8_t> data, size_t offset,
     case ReadType::ZString: {
         if (offset >= data.size()) return Value::make_string(pool_.intern(""));
         const char* str = reinterpret_cast<const char*>(data.data() + offset);
-        size_t max_len = data.size() - offset;
-        size_t len = strnlen(str, max_len);
+        size_t const max_len = data.size() - offset;
+        size_t const len = strnlen(str, max_len);
         return Value::make_string(pool_.intern(std::string_view(str, len)));
     }
     case ReadType::LString: {
@@ -354,8 +354,8 @@ Value EspReader::read_esp_value(std::span<const uint8_t> data, size_t offset,
             // Not localized: treat as ZString
             if (offset >= data.size()) return Value::make_string(pool_.intern(""));
             const char* str = reinterpret_cast<const char*>(data.data() + offset);
-            size_t max_len = data.size() - offset;
-            size_t len = strnlen(str, max_len);
+            size_t const max_len = data.size() - offset;
+            size_t const len = strnlen(str, max_len);
             return Value::make_string(pool_.intern(std::string_view(str, len)));
         }
     }

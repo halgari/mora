@@ -110,7 +110,7 @@ void TypeChecker::check_rule(Rule& rule) {
     // ── Rule-kind constraints (shape-only; mostly dormant until Plan 3) ──
     // event/* relations may only appear in 'on' rules.
     auto check_event_usage = [&](const FactPattern& fp) {
-        std::string_view ns = pool_.get(fp.qualifier);
+        std::string_view const ns = pool_.get(fp.qualifier);
         if (ns == "event" && rule.kind != RuleKind::On) {
             diags_.error("E036",
                 "event/* relations are only allowed in 'on' rules",
@@ -129,8 +129,8 @@ void TypeChecker::check_rule(Rule& rule) {
     // Maintain rules: all effects must be retractable.
     if (rule.kind == RuleKind::Maintain) {
         auto check_retractable = [&](const Effect& e) {
-            std::string_view ns = pool_.get(e.namespace_);
-            std::string_view nm = pool_.get(e.name);
+            std::string_view const ns = pool_.get(e.namespace_);
+            std::string_view const nm = pool_.get(e.name);
             if (ns.empty()) return;
             const auto* rel = model::find_relation(
                 ns, nm, model::kRelations, model::kRelationCount);
@@ -168,8 +168,8 @@ void TypeChecker::check_rule(Rule& rule) {
 
 void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
     // ── New: namespaced-relation validation against kRelations ──
-    std::string_view fp_ns = pool_.get(pattern.qualifier);
-    std::string_view fp_nm = pool_.get(pattern.name);
+    std::string_view const fp_ns = pool_.get(pattern.qualifier);
+    std::string_view const fp_nm = pool_.get(pattern.name);
     if (!fp_ns.empty()) {
         const model::RelationEntry* rel = model::find_relation(
             fp_ns, fp_nm, model::kRelations, model::kRelationCount);
@@ -201,7 +201,7 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
             // non-trivial arg exprs so built-in call nodes get validated.
             for (const Expr& arg : pattern.args) {
                 if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
-                    MoraType existing = lookup_variable(var->name);
+                    MoraType const existing = lookup_variable(var->name);
                     if (existing.kind == TypeKind::Unknown) {
                         bind_variable(var->name, existing, arg.span);
                     } else {
@@ -236,10 +236,10 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
     // Check each argument
     for (size_t i = 0; i < pattern.args.size(); ++i) {
         const Expr& arg = pattern.args[i];
-        MoraType expected = sig->param_types[i];
+        MoraType const expected = sig->param_types[i];
 
         if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
-            MoraType existing = lookup_variable(var->name);
+            MoraType const existing = lookup_variable(var->name);
             if (existing.kind == TypeKind::Unknown) {
                 // First occurrence — bind to expected type (not "used" yet)
                 bind_variable(var->name, expected, arg.span);
@@ -260,7 +260,7 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
             // Skip discard
         } else {
             // Literal or symbol — infer type and check
-            MoraType actual = infer_expr_type(arg);
+            MoraType const actual = infer_expr_type(arg);
             if (actual.kind != TypeKind::Unknown &&
                 actual.kind != TypeKind::Error &&
                 !actual.is_subtype_of(expected)) {
@@ -280,8 +280,8 @@ void TypeChecker::check_fact_pattern(const FactPattern& pattern) {
 
 void TypeChecker::check_effect(const Effect& effect) {
     // ── New: namespaced-relation validation against kRelations ──
-    std::string_view eff_ns = pool_.get(effect.namespace_);
-    std::string_view eff_nm = pool_.get(effect.name);
+    std::string_view const eff_ns = pool_.get(effect.namespace_);
+    std::string_view const eff_nm = pool_.get(effect.name);
     if (!eff_ns.empty()) {
         const model::RelationEntry* rel = model::find_relation(
             eff_ns, eff_nm, model::kRelations, model::kRelationCount);
@@ -341,11 +341,11 @@ void TypeChecker::check_effect(const Effect& effect) {
     // Type-check each argument (same logic as check_fact_pattern)
     for (size_t i = 0; i < effect.args.size(); ++i) {
         const Expr& arg = effect.args[i];
-        MoraType expected = sig->param_types[i];
+        MoraType const expected = sig->param_types[i];
 
         if (auto* var = std::get_if<VariableExpr>(&arg.data)) {
             var_used_.insert(var->name.index);
-            MoraType existing = lookup_variable(var->name);
+            MoraType const existing = lookup_variable(var->name);
             if (existing.kind != TypeKind::Unknown &&
                 !existing.is_subtype_of(expected) &&
                 !expected.is_subtype_of(existing)) {
@@ -361,7 +361,7 @@ void TypeChecker::check_effect(const Effect& effect) {
         } else if (std::get_if<DiscardExpr>(&arg.data)) {
             // skip
         } else {
-            MoraType actual = infer_expr_type(arg);
+            MoraType const actual = infer_expr_type(arg);
             if (actual.kind != TypeKind::Unknown &&
                 actual.kind != TypeKind::Error &&
                 !actual.is_subtype_of(expected)) {
@@ -446,7 +446,7 @@ void TypeChecker::check_guard(const Expr& expr) {
             var_used_.insert(node.name.index);
         } else if constexpr (std::is_same_v<NodeT, CallExpr>) {
             // Validate name/arity; recurse into args so vars get marked used.
-            std::string_view nm = pool_.get(node.name);
+            std::string_view const nm = pool_.get(node.name);
             const model::BuiltinFn* b = model::find_builtin(nm);
             if (!b) {
                 diags_.error("E040",
@@ -465,17 +465,17 @@ void TypeChecker::check_guard(const Expr& expr) {
             if (node.left) check_guard(*node.left);
             if (node.right) check_guard(*node.right);
 
-            MoraType left = node.left ? infer_expr_type(*node.left)
+            MoraType const left = node.left ? infer_expr_type(*node.left)
                                       : MoraType::make(TypeKind::Unknown);
-            MoraType right = node.right ? infer_expr_type(*node.right)
+            MoraType const right = node.right ? infer_expr_type(*node.right)
                                         : MoraType::make(TypeKind::Unknown);
 
-            bool is_arith = (node.op == BinaryExpr::Op::Add ||
+            bool const is_arith = (node.op == BinaryExpr::Op::Add ||
                              node.op == BinaryExpr::Op::Sub ||
                              node.op == BinaryExpr::Op::Mul ||
                              node.op == BinaryExpr::Op::Div);
 
-            bool is_cmp = (node.op == BinaryExpr::Op::Lt ||
+            bool const is_cmp = (node.op == BinaryExpr::Op::Lt ||
                            node.op == BinaryExpr::Op::Gt ||
                            node.op == BinaryExpr::Op::LtEq ||
                            node.op == BinaryExpr::Op::GtEq);
@@ -530,7 +530,7 @@ MoraType TypeChecker::infer_expr_type(const Expr& expr) {
             return MoraType::make(TypeKind::Unknown);
         } else if constexpr (std::is_same_v<NodeT, CallExpr>) {
             // Validate name/arity; infer result type from arg types.
-            std::string_view nm = pool_.get(node.name);
+            std::string_view const nm = pool_.get(node.name);
             const model::BuiltinFn* b = model::find_builtin(nm);
             if (!b) {
                 diags_.error("E040",
@@ -549,14 +549,14 @@ MoraType TypeChecker::infer_expr_type(const Expr& expr) {
             }
             bool any_float = false;
             for (const auto& a : node.args) {
-                MoraType t = infer_expr_type(a);
+                MoraType const t = infer_expr_type(a);
                 if (t.kind == TypeKind::Float) any_float = true;
             }
             return MoraType::make(any_float ? TypeKind::Float : TypeKind::Int);
         } else if constexpr (std::is_same_v<NodeT, BinaryExpr>) {
-            MoraType left = node.left ? infer_expr_type(*node.left)
+            MoraType const left = node.left ? infer_expr_type(*node.left)
                                       : MoraType::make(TypeKind::Unknown);
-            MoraType right = node.right ? infer_expr_type(*node.right)
+            MoraType const right = node.right ? infer_expr_type(*node.right)
                                         : MoraType::make(TypeKind::Unknown);
 
             switch (node.op) {
@@ -612,7 +612,7 @@ void TypeChecker::check_unused_variables([[maybe_unused]] const Rule& rule) {
         // Look up the name to check for "_" prefix
         StringId sid;
         sid.index = id;
-        std::string_view name = pool_.get(sid);
+        std::string_view const name = pool_.get(sid);
         if (name == "_" || (!name.empty() && name[0] == '_')) continue;
 
         diags_.warning("W007",

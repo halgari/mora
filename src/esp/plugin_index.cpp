@@ -13,7 +13,7 @@ void scan_grup(const uint8_t* base, size_t file_size, uint32_t grup_offset, Plug
         throw std::runtime_error("Expected GRUP at offset " + std::to_string(grup_offset));
     }
 
-    uint32_t grup_end = grup_offset + gh->group_size;
+    uint32_t const grup_end = grup_offset + gh->group_size;
     if (grup_end > file_size) {
         throw std::runtime_error("GRUP extends past end of file");
     }
@@ -33,7 +33,7 @@ void scan_grup(const uint8_t* base, size_t file_size, uint32_t grup_offset, Plug
         } else {
             // It's a record
             auto* rh = read_record_header(base + pos);
-            std::string type_str(rh->type.as_sv());
+            std::string const type_str(rh->type.as_sv());
 
             info.by_type[type_str].push_back(RecordLocation{
                 .form_id = rh->form_id,
@@ -56,7 +56,7 @@ PluginInfo build_plugin_index(const MmapFile& file, const std::string& filename)
 
     auto data = file.span();
     const uint8_t* base = data.data();
-    size_t file_size = data.size();
+    size_t const file_size = data.size();
 
     if (file_size < sizeof(RawRecordHeader)) {
         throw std::runtime_error("File too small to contain a record header");
@@ -72,11 +72,11 @@ PluginInfo build_plugin_index(const MmapFile& file, const std::string& filename)
 
     // Walk subrecords within TES4 data region
     uint32_t sub_pos = sizeof(RawRecordHeader);
-    uint32_t tes4_end = sizeof(RawRecordHeader) + tes4->data_size;
+    uint32_t const tes4_end = sizeof(RawRecordHeader) + tes4->data_size;
 
     while (sub_pos < tes4_end) {
         auto* sub = read_subrecord_header(base + sub_pos);
-        uint32_t sub_data_offset = sub_pos + sizeof(RawSubrecordHeader);
+        uint32_t const sub_data_offset = sub_pos + sizeof(RawSubrecordHeader);
 
         if (sub->type == "HEDR" && sub->data_size >= 8) {
             // HEDR: float version (4 bytes), uint32_t num_records (4 bytes), ...
@@ -107,8 +107,8 @@ PluginInfo build_plugin_index(const MmapFile& file, const std::string& filename)
 }
 
 ResolvedFormID resolve_form_id(uint32_t raw_id, const PluginInfo& info) {
-    uint8_t master_index = (raw_id >> 24) & 0xFF;
-    uint32_t object_id = raw_id & 0x00FFFFFF;
+    uint8_t const master_index = (raw_id >> 24) & 0xFF;
+    uint32_t const object_id = raw_id & 0x00FFFFFF;
 
     if (master_index < info.masters.size()) {
         return ResolvedFormID{info.masters[master_index], object_id};

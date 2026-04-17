@@ -69,7 +69,7 @@ class MessageQueue {
 public:
     void push(std::string msg) {
         {
-            std::lock_guard<std::mutex> lock(mu_);
+            std::lock_guard<std::mutex> const lock(mu_);
             messages_.push_back(std::move(msg));
         }
         cv_.notify_one();
@@ -77,7 +77,7 @@ public:
 
     void close(CloseReason reason) {
         {
-            std::lock_guard<std::mutex> lock(mu_);
+            std::lock_guard<std::mutex> const lock(mu_);
             close_reason_ = reason;
         }
         cv_.notify_all();
@@ -97,12 +97,12 @@ public:
     }
 
     CloseReason close_reason() {
-        std::lock_guard<std::mutex> lock(mu_);
+        std::lock_guard<std::mutex> const lock(mu_);
         return close_reason_;
     }
 
     bool drained_and_closed() {
-        std::lock_guard<std::mutex> lock(mu_);
+        std::lock_guard<std::mutex> const lock(mu_);
         return messages_.empty() && close_reason_ != CloseReason::None;
     }
 
@@ -116,7 +116,7 @@ private:
 void reader_thread_main(MessageQueue& queue) {
     while (true) {
         std::string body;
-        ReadResult r = read_message(std::cin, body);
+        ReadResult const r = read_message(std::cin, body);
         if (r == ReadResult::Eof) {
             queue.close(CloseReason::Eof);
             return;
@@ -134,7 +134,7 @@ void reader_thread_main(MessageQueue& queue) {
 int run(int argc, char** argv) {
     std::string log_path;
     for (int i = 0; i < argc; ++i) {
-        std::string_view a = argv[i];
+        std::string_view const a = argv[i];
         if (a == "--version") {
             std::cout << "mora-lsp 0.3.0 (LSP 3.17)\n";
             return 0;
@@ -196,7 +196,7 @@ int run(int argc, char** argv) {
             // Either a timeout (loop back for diagnostic work) or the
             // reader thread has finished draining stdin.
             if (queue.drained_and_closed()) {
-                CloseReason why = queue.close_reason();
+                CloseReason const why = queue.close_reason();
                 if (why == CloseReason::ProtocolError) {
                     log_event(*log, "protocol error in headers — aborting");
                     exit_code = 1;

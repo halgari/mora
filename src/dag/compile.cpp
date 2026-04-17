@@ -26,8 +26,8 @@ CompileResult compile_dynamic_rules(const Module& m, StringPool& pool, DagGraph&
         for (const auto& c : rule.body) {
             if (!std::holds_alternative<FactPattern>(c.data)) continue;
             const auto& fp = std::get<FactPattern>(c.data);
-            std::string ns{pool.get(fp.qualifier)};
-            std::string nm{pool.get(fp.name)};
+            std::string const ns{pool.get(fp.qualifier)};
+            std::string const nm{pool.get(fp.name)};
             auto rel_idx = relation_index(ns, nm);
             if (rel_idx == static_cast<uint32_t>(-1)) continue;
             const auto& rel = mora::model::kRelations[rel_idx];
@@ -52,24 +52,24 @@ CompileResult compile_dynamic_rules(const Module& m, StringPool& pool, DagGraph&
         for (const auto& c : rule.body) {
             if (!std::holds_alternative<FactPattern>(c.data)) continue;
             const auto& fp = std::get<FactPattern>(c.data);
-            std::string ns{pool.get(fp.qualifier)};
+            std::string const ns{pool.get(fp.qualifier)};
             if (ns != "form") continue;
-            std::string nm{pool.get(fp.name)};
+            std::string const nm{pool.get(fp.name)};
             auto rel_idx = relation_index(ns, nm);
             if (rel_idx == static_cast<uint32_t>(-1)) continue;
-            uint32_t probe = g.add_node({.opcode = DagOpcode::StaticProbe,
+            uint32_t const probe = g.add_node({.opcode = DagOpcode::StaticProbe,
                                          .relation_id = static_cast<uint16_t>(rel_idx)});
             g.set_input(probe, 0, prev);
             prev = probe;
         }
 
         // 3. Terminal sinks (one per effect).
-        DagOpcode sink_op = (rule.kind == RuleKind::Maintain)
+        DagOpcode const sink_op = (rule.kind == RuleKind::Maintain)
                             ? DagOpcode::MaintainSink
                             : DagOpcode::OnSink;
         for (const auto& e : rule.effects) {
-            std::string ns{pool.get(e.namespace_)};
-            std::string nm{pool.get(e.name)};
+            std::string const ns{pool.get(e.namespace_)};
+            std::string const nm{pool.get(e.name)};
             auto rel_idx = relation_index(ns, nm);
             mora::model::HandlerId hid = mora::model::HandlerId::None;
             uint16_t rid = 0;
@@ -77,7 +77,7 @@ CompileResult compile_dynamic_rules(const Module& m, StringPool& pool, DagGraph&
                 hid = mora::model::kRelations[rel_idx].apply_handler;
                 rid = static_cast<uint16_t>(rel_idx);
             }
-            uint32_t sink = g.add_node({.opcode = sink_op,
+            uint32_t const sink = g.add_node({.opcode = sink_op,
                                         .relation_id = rid,
                                         .handler_id = hid});
             g.set_input(sink, 0, prev);

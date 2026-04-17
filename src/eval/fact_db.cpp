@@ -54,7 +54,7 @@ std::vector<Tuple> FactDB::query(StringId relation, const Tuple& pattern) const 
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return {};
 
-    std::vector<const Tuple*> ptrs = it->second.query(pattern);
+    std::vector<const Tuple*> const ptrs = it->second.query(pattern);
     std::vector<Tuple> results;
     results.reserve(ptrs.size());
     for (const Tuple* tp : ptrs) {

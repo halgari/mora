@@ -13,15 +13,15 @@ void IndexedRelation::add(Tuple tuple) {
     tuples_.push_back(std::move(tuple));
 
     for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
-        size_t col = indexed_columns_[slot];
-        uint64_t h = tuples_.back()[col].hash();
+        size_t const col = indexed_columns_[slot];
+        uint64_t const h = tuples_.back()[col].hash();
         indexes_[slot][h].push_back(idx);
     }
 }
 
 void IndexedRelation::absorb(std::vector<Tuple>&& incoming) {
     auto local = std::move(incoming);
-    uint32_t base = static_cast<uint32_t>(tuples_.size());
+    uint32_t const base = static_cast<uint32_t>(tuples_.size());
     tuples_.insert(tuples_.end(),
                    std::make_move_iterator(local.begin()),
                    std::make_move_iterator(local.end()));
@@ -29,8 +29,8 @@ void IndexedRelation::absorb(std::vector<Tuple>&& incoming) {
     // Rebuild indexes for the absorbed range only
     for (uint32_t i = base; i < tuples_.size(); ++i) {
         for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
-            size_t col = indexed_columns_[slot];
-            uint64_t h = tuples_[i][col].hash();
+            size_t const col = indexed_columns_[slot];
+            uint64_t const h = tuples_[i][col].hash();
             indexes_[slot][h].push_back(i);
         }
     }
@@ -45,18 +45,18 @@ int IndexedRelation::find_index(size_t column) const {
 }
 
 std::vector<const Tuple*> IndexedRelation::lookup(size_t column, const Value& key) const {
-    int slot = find_index(column);
+    int const slot = find_index(column);
     if (slot < 0)
         return {};
 
-    uint64_t h = key.hash();
+    uint64_t const h = key.hash();
     auto it = indexes_[static_cast<size_t>(slot)].find(h);
     if (it == indexes_[static_cast<size_t>(slot)].end())
         return {};
 
     std::vector<const Tuple*> result;
     result.reserve(it->second.size());
-    for (uint32_t i : it->second) {
+    for (uint32_t const i : it->second) {
         // Guard against hash collisions: verify the value actually matches
         if (tuples_[i][column] == key)
             result.push_back(&tuples_[i]);
@@ -70,7 +70,7 @@ std::vector<const Tuple*> IndexedRelation::query(const Tuple& pattern) const {
     size_t best_col = 0;
     for (size_t col = 0; col < pattern.size(); ++col) {
         if (!pattern[col].is_var()) {
-            int slot = find_index(col);
+            int const slot = find_index(col);
             if (slot >= 0) {
                 best_slot = slot;
                 best_col = col;

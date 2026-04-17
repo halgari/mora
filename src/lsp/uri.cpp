@@ -34,7 +34,7 @@ std::string uri_from_path(std::string_view path) {
     if (path.empty()) return "";
     std::string out = "file://";
     if (path.front() != '/') out.push_back('/'); // Windows drive letter case
-    for (unsigned char c : path) {
+    for (unsigned char const c : path) {
         if (is_unreserved(c)) out.push_back(static_cast<char>(c));
         else                  percent_encode(out, c);
     }
@@ -57,10 +57,10 @@ std::string path_from_uri(std::string_view uri) {
     std::string out;
     out.reserve(body.size());
     for (size_t i = 0; i < body.size(); ++i) {
-        char c = body[i];
+        char const c = body[i];
         if (c == '%' && i + 2 < body.size()) {
-            int hi = hex_val(body[i + 1]);
-            int lo = hex_val(body[i + 2]);
+            int const hi = hex_val(body[i + 1]);
+            int const lo = hex_val(body[i + 2]);
             if (hi >= 0 && lo >= 0) {
                 out.push_back(static_cast<char>((hi << 4) | lo));
                 i += 2;

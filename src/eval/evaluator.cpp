@@ -15,15 +15,15 @@ Evaluator::Evaluator(StringPool& pool, DiagBag& diags, const FactDB& db)
 void Evaluator::set_symbol_formid(StringId symbol_name, uint32_t formid) {
     symbol_formids_[symbol_name.index] = formid;
     // Also store with colon prefix, since the lexer keeps the colon in symbol tokens
-    std::string with_colon = ":" + std::string(pool_.get(symbol_name));
-    StringId colon_id = pool_.intern(with_colon);
+    std::string const with_colon = ":" + std::string(pool_.get(symbol_name));
+    StringId const colon_id = pool_.intern(with_colon);
     symbol_formids_[colon_id.index] = formid;
 }
 
 PatchSet Evaluator::evaluate_static(const Module& mod,
                                      ProgressCallback progress) {
     PatchSet patches;
-    PhaseClassifier classifier(pool_);
+    PhaseClassifier const classifier(pool_);
 
     if (mod.ns) {
         current_mod_name_ = mod.ns->name;
@@ -205,11 +205,11 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
             // Conditional effects in body are handled separately; skip
             match_clauses(rule, order, step + 1, bindings, patches, priority);
         } else if constexpr (std::is_same_v<T, InClause>) {
-            Value var_val = resolve_expr(*c.variable, bindings);
+            Value const var_val = resolve_expr(*c.variable, bindings);
 
             // List-typed RHS from FactDB binding
             if (c.values.size() == 1) {
-                Value rhs = resolve_expr(c.values[0], bindings);
+                Value const rhs = resolve_expr(c.values[0], bindings);
                 if (rhs.kind() == Value::Kind::List) {
                     if (var_val.is_var()) {
                         // Unbound variable: iterate list elements, bind each,
@@ -237,7 +237,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
             }
             // Original path: literal value list
             for (const auto& val_expr : c.values) {
-                Value v = resolve_expr(val_expr, bindings);
+                Value const v = resolve_expr(val_expr, bindings);
                 if (var_val.matches(v)) {
                     match_clauses(rule, order, step + 1, bindings, patches, priority);
                     return;
@@ -315,7 +315,7 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
     std::vector<Bindings> result;
     for (const Tuple& tuple : all_results) {
         Bindings new_bindings = bindings;
-        bool ok = true;
+        bool const ok = true;
         for (size_t i = 0; i < pattern.args.size() && i < tuple.size(); ++i) {
             const Expr& arg = pattern.args[i];
             if (const auto* ve = std::get_if<VariableExpr>(&arg.data)) {
@@ -338,13 +338,13 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
 
 bool Evaluator::evaluate_guard(const Expr& expr, const Bindings& bindings) {
     if (const auto* be = std::get_if<BinaryExpr>(&expr.data)) {
-        Value left = resolve_expr(*be->left, bindings);
-        Value right = resolve_expr(*be->right, bindings);
+        Value const left = resolve_expr(*be->left, bindings);
+        Value const right = resolve_expr(*be->right, bindings);
 
         // Compare based on types
         if (left.kind() == Value::Kind::Int && right.kind() == Value::Kind::Int) {
-            int64_t l = left.as_int();
-            int64_t r = right.as_int();
+            int64_t const l = left.as_int();
+            int64_t const r = right.as_int();
             switch (be->op) {
                 case BinaryExpr::Op::Eq:   return l == r;
                 case BinaryExpr::Op::Neq:  return l != r;
@@ -355,8 +355,8 @@ bool Evaluator::evaluate_guard(const Expr& expr, const Bindings& bindings) {
                 default: break;
             }
         } else if (left.kind() == Value::Kind::Float && right.kind() == Value::Kind::Float) {
-            double l = left.as_float();
-            double r = right.as_float();
+            double const l = left.as_float();
+            double const r = right.as_float();
             switch (be->op) {
                 case BinaryExpr::Op::Eq:   return l == r;
                 case BinaryExpr::Op::Neq:  return l != r;
@@ -367,8 +367,8 @@ bool Evaluator::evaluate_guard(const Expr& expr, const Bindings& bindings) {
                 default: break;
             }
         } else if (left.kind() == Value::Kind::Int && right.kind() == Value::Kind::Float) {
-            double l = static_cast<double>(left.as_int());
-            double r = right.as_float();
+            double const l = static_cast<double>(left.as_int());
+            double const r = right.as_float();
             switch (be->op) {
                 case BinaryExpr::Op::Eq:   return l == r;
                 case BinaryExpr::Op::Neq:  return l != r;
@@ -379,8 +379,8 @@ bool Evaluator::evaluate_guard(const Expr& expr, const Bindings& bindings) {
                 default: break;
             }
         } else if (left.kind() == Value::Kind::Float && right.kind() == Value::Kind::Int) {
-            double l = left.as_float();
-            double r = static_cast<double>(right.as_int());
+            double const l = left.as_float();
+            double const r = static_cast<double>(right.as_int());
             switch (be->op) {
                 case BinaryExpr::Op::Eq:   return l == r;
                 case BinaryExpr::Op::Neq:  return l != r;
@@ -426,15 +426,15 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
         auto [field, op] = action_to_field(pool_.intern(legacy));
         if (effect.args.size() < 2) continue;
 
-        Value target = resolve_expr(effect.args[0], bindings);
-        Value value = resolve_expr(effect.args[1], bindings);
+        Value const target = resolve_expr(effect.args[0], bindings);
+        Value const value = resolve_expr(effect.args[1], bindings);
 
         // Leveled list add: pack formid + level + count into a single int
         if (field == FieldId::LeveledEntries && op == FieldOp::Add &&
             effect.args.size() >= 4 && value.kind() == Value::Kind::FormID) {
-            Value level_v = resolve_expr(effect.args[2], bindings);
-            Value count_v = resolve_expr(effect.args[3], bindings);
-            uint64_t packed = value.as_formid()
+            Value const level_v = resolve_expr(effect.args[2], bindings);
+            Value const count_v = resolve_expr(effect.args[3], bindings);
+            uint64_t const packed = value.as_formid()
                 | (static_cast<uint64_t>(level_v.as_int()) << 32)
                 | (static_cast<uint64_t>(count_v.as_int()) << 48);
             if (target.kind() == Value::Kind::FormID) {
@@ -459,8 +459,8 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
             auto [field, op] = action_to_field(pool_.intern(legacy));
             if (ce.effect.args.size() < 2) continue;
 
-            Value target = resolve_expr(ce.effect.args[0], bindings);
-            Value value = resolve_expr(ce.effect.args[1], bindings);
+            Value const target = resolve_expr(ce.effect.args[0], bindings);
+            Value const value = resolve_expr(ce.effect.args[1], bindings);
 
             if (target.kind() == Value::Kind::FormID) {
                 patches.add_patch(target.as_formid(), field, op, value,
@@ -494,8 +494,8 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
         } else if constexpr (std::is_same_v<T, DiscardExpr>) {
             return Value::make_var();
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
-            Value left = resolve_expr(*e.left, bindings);
-            Value right = resolve_expr(*e.right, bindings);
+            Value const left = resolve_expr(*e.left, bindings);
+            Value const right = resolve_expr(*e.right, bindings);
             // Arithmetic operations
             if (left.kind() == Value::Kind::Int && right.kind() == Value::Kind::Int) {
                 switch (e.op) {
@@ -507,8 +507,8 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                 }
             }
             if (left.kind() == Value::Kind::Float || right.kind() == Value::Kind::Float) {
-                double l = (left.kind() == Value::Kind::Float) ? left.as_float() : static_cast<double>(left.as_int());
-                double r = (right.kind() == Value::Kind::Float) ? right.as_float() : static_cast<double>(right.as_int());
+                double const l = (left.kind() == Value::Kind::Float) ? left.as_float() : static_cast<double>(left.as_int());
+                double const r = (right.kind() == Value::Kind::Float) ? right.as_float() : static_cast<double>(right.as_int());
                 switch (e.op) {
                     case BinaryExpr::Op::Add: return Value::make_float(l + r);
                     case BinaryExpr::Op::Sub: return Value::make_float(l - r);
@@ -554,7 +554,7 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                 return Value::make_int(static_cast<int64_t>(d));
             };
 
-            std::string_view name = pool_.get(e.name);
+            std::string_view const name = pool_.get(e.name);
             if (name == "max" && vs.size() == 2) {
                 double a = numeric(vs[0]), b = numeric(vs[1]);
                 return make_num(a > b ? a : b);
@@ -564,13 +564,13 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
                 return make_num(a < b ? a : b);
             }
             if (name == "abs" && vs.size() == 1) {
-                double a = numeric(vs[0]);
+                double const a = numeric(vs[0]);
                 return make_num(a < 0 ? -a : a);
             }
             if (name == "clamp" && vs.size() == 3) {
-                double x = numeric(vs[0]);
-                double lo = numeric(vs[1]);
-                double hi = numeric(vs[2]);
+                double const x = numeric(vs[0]);
+                double const lo = numeric(vs[1]);
+                double const hi = numeric(vs[2]);
                 return make_num(std::clamp(x, lo, hi));
             }
             // Unknown or arity-wrong built-in: return unbound var.

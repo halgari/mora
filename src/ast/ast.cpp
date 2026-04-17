@@ -16,10 +16,10 @@ std::string Module::get_line(uint32_t line) const {
     if (line == 0 || source.empty()) return "";
     build_line_index();
 
-    uint32_t idx = line - 1; // 1-indexed → 0-indexed
+    uint32_t const idx = line - 1; // 1-indexed → 0-indexed
     if (idx >= line_offsets_.size()) return "";
 
-    size_t start = line_offsets_[idx];
+    size_t const start = line_offsets_[idx];
     size_t end = (idx + 1 < line_offsets_.size())
         ? line_offsets_[idx + 1]
         : source.size();
