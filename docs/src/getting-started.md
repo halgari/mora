@@ -146,8 +146,10 @@ compiler needed to extract, and the total fact count.
 : The Datalog engine found 200 weapons that matched all clauses. Each one
 gets a 16-byte patch entry in the binary output.
 
-The output file is `MoraCache/mora_patches.bin` by default (override with
-`--output DIR`).
+When Mora detects your Skyrim install, `mora_patches.bin` is written
+directly to `<Data>/SKSE/Plugins/` — no copy step needed. Otherwise it
+falls back to `MoraCache/mora_patches.bin` relative to your sources.
+Override either path with `--output DIR`.
 
 If you'd like to see exactly what patches would be produced without touching
 the filesystem, use [`mora inspect`](cli-reference.md#mora-inspect).
@@ -161,11 +163,13 @@ the filesystem, use [`mora inspect`](cli-reference.md#mora-inspect).
 
 ## Deploying
 
-Copy both the patch file **and** the runtime DLL into SKSE's plugin folder:
+With auto-detection (the default when you run `mora compile` with no
+flags), `mora_patches.bin` already lands in `<Data>/SKSE/Plugins/`. You
+only need to deploy the runtime DLL:
 
 ```
 Data/SKSE/Plugins/
-  mora_patches.bin     <-- from MoraCache/
+  mora_patches.bin     <-- written by `mora compile` directly
   MoraRuntime.dll      <-- from the xmake build
 ```
 

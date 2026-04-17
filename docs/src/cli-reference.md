@@ -55,9 +55,16 @@ phase-classify, evaluate static rules against your ESP data, lower
 dynamic rules to operator-DAG bytecode, and write `mora_patches.bin`.
 
 ```bash
+mora compile my_rules.mora
 mora compile my_rules.mora --data-dir "/path/to/Skyrim/Data"
-mora compile my_rules.mora --data-dir "/path/to/Skyrim/Data" --output out/
+mora compile my_rules.mora --output out/
 ```
+
+With a detected Skyrim install (Steam on Linux/Windows, Proton prefix, or
+portable GOG), `mora compile` runs with zero flags: data-dir, plugins.txt,
+and the output directory all resolve automatically, and `mora_patches.bin`
+lands directly in the game's `Data/SKSE/Plugins/` where the runtime DLL
+picks it up on next launch.
 
 ### Options
 
@@ -67,8 +74,13 @@ files from this location to resolve `@EditorID` references and evaluate
 static rules. If omitted, Mora tries to auto-detect a Steam install.
 
 `--output DIR`
-: Directory for `mora_patches.bin`. Defaults to `MoraCache/` relative to
-the source file.
+: Directory for `mora_patches.bin`. Defaults to `<Data>/SKSE/Plugins/`
+when a Skyrim install is detected (same install as `--data-dir`), otherwise
+falls back to `MoraCache/` relative to the source file.
+
+`--plugins-txt PATH`
+: Path to `Plugins.txt`, the authoritative load-order file. Auto-detected
+alongside `Data/`, in the Proton/GOG AppData prefix, or at `%LOCALAPPDATA%\Skyrim Special Edition\Plugins.txt` on Windows.
 
 ### Example output
 
