@@ -46,7 +46,8 @@ Checks: >
   misc-*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
-  -misc-include-cleaner
+  -misc-include-cleaner,
+  -misc-use-anonymous-namespace
 
 WarningsAsErrors: ''
 
