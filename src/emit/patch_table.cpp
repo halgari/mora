@@ -3,6 +3,8 @@
 #include "mora/emit/patch_file_v2.h"
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 namespace mora {
@@ -16,9 +18,22 @@ void append_bytes(std::vector<uint8_t>& buf, const T& val) {
     buf.insert(buf.end(), p, p + sizeof(T));
 }
 
-// Build the StringTable section bytes ([u16 len][data]...) while also
-// producing the PatchEntry array, translating string values into offsets.
-std::vector<uint8_t> build_string_table_and_entries(
+const char* value_kind_name(Value::Kind k) {
+    switch (k) {
+        case Value::Kind::Var:    return "Var";
+        case Value::Kind::FormID: return "FormID";
+        case Value::Kind::Int:    return "Int";
+        case Value::Kind::Float:  return "Float";
+        case Value::Kind::String: return "String";
+        case Value::Kind::Bool:   return "Bool";
+        case Value::Kind::List:   return "List";
+    }
+    return "?";
+}
+
+} // anonymous namespace
+
+std::vector<uint8_t> build_patch_entries_and_string_table(
     const ResolvedPatchSet& patches,
     StringPool& pool,
     std::vector<PatchEntry>& out_entries) {
@@ -73,7 +88,9 @@ std::vector<uint8_t> build_string_table_and_entries(
                     break;
                 }
                 default:
-                    continue;
+                    throw std::runtime_error(
+                        std::string("unsupported Value::Kind in patch conversion: ") +
+                        value_kind_name(fp.value.kind()));
             }
 
             out_entries.push_back(e);
@@ -82,8 +99,6 @@ std::vector<uint8_t> build_string_table_and_entries(
 
     return string_table;
 }
-
-} // anonymous namespace
 
 std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool) {
@@ -95,7 +110,7 @@ std::vector<uint8_t> serialize_patch_table(const ResolvedPatchSet& patches,
                                             StringPool& pool,
                                             const std::array<uint8_t, 32>& esp_digest) {
     std::vector<PatchEntry> entries;
-    auto string_table = build_string_table_and_entries(patches, pool, entries);
+    auto string_table = build_patch_entries_and_string_table(patches, pool, entries);
 
     emit::FlatFileWriter w;
     w.set_esp_digest(esp_digest);
@@ -144,8 +159,24 @@ std::vector<uint8_t> serialize_patch_table(
     const std::vector<uint8_t>& arrangements_section,
     const std::vector<uint8_t>& dag_bytecode) {
 
+    std::vector<uint8_t> empty;
+    return serialize_patch_table(entries, esp_digest, arrangements_section,
+                                 dag_bytecode, empty);
+}
+
+std::vector<uint8_t> serialize_patch_table(
+    const std::vector<PatchEntry>& entries,
+    const std::array<uint8_t, 32>& esp_digest,
+    const std::vector<uint8_t>& arrangements_section,
+    const std::vector<uint8_t>& dag_bytecode,
+    const std::vector<uint8_t>& string_table_section) {
+
     emit::FlatFileWriter w;
     w.set_esp_digest(esp_digest);
+    if (!string_table_section.empty()) {
+        w.add_section(emit::SectionId::StringTable,
+                      string_table_section.data(), string_table_section.size());
+    }
     w.add_section(emit::SectionId::Patches,
                   entries.data(), entries.size() * sizeof(PatchEntry));
     if (!arrangements_section.empty()) {

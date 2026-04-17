@@ -389,11 +389,15 @@ static void load_esp_data(
         lo.plugins.size(), needed.size(), db.fact_count()));
 }
 
-// Evaluate .mora rules via Datalog and merge results into PatchBuffer
+// Evaluate .mora rules via Datalog and merge results into PatchBuffer.
+// Also produces a StringTable section (for String-valued patches) that the
+// caller must pass to serialize_patch_table.
 static void evaluate_mora_rules(
     CheckResult& cr, mora::Evaluator& evaluator,
-    mora::PatchBuffer& patch_buf, mora::Output& out)
+    mora::PatchBuffer& patch_buf, std::vector<uint8_t>& string_table_out,
+    mora::Output& out)
 {
+    string_table_out.clear();
     if (cr.modules.empty()) return;
 
     out.phase_start("Evaluating (.mora rules)");
@@ -414,35 +418,12 @@ static void evaluate_mora_rules(
     out.progress_clear();
     out.phase_done("done");
 
-    // Convert PatchSet values into PatchBuffer entries
     auto mora_resolved = all_patches.resolve();
-    for (auto& rp : mora_resolved.all_patches_sorted()) {
-        for (auto& fp : rp.fields) {
-            uint8_t vtype = 0;
-            uint64_t val = 0;
-            switch (fp.value.kind()) {
-                case mora::Value::Kind::FormID:
-                    vtype = static_cast<uint8_t>(mora::PatchValueType::FormID);
-                    val = fp.value.as_formid();
-                    break;
-                case mora::Value::Kind::Int:
-                    vtype = static_cast<uint8_t>(mora::PatchValueType::Int);
-                    val = static_cast<uint64_t>(fp.value.as_int());
-                    break;
-                case mora::Value::Kind::Float: {
-                    vtype = static_cast<uint8_t>(mora::PatchValueType::Float);
-                    double d = fp.value.as_float();
-                    std::memcpy(&val, &d, 8);
-                    break;
-                }
-                default:
-                    continue;
-            }
-            patch_buf.emit(rp.target_formid,
-                           static_cast<uint8_t>(fp.field),
-                           static_cast<uint8_t>(fp.op),
-                           vtype, val);
-        }
+    std::vector<mora::PatchEntry> entries;
+    string_table_out = mora::build_patch_entries_and_string_table(
+        mora_resolved, cr.pool, entries);
+    for (const auto& e : entries) {
+        patch_buf.emit(e.formid, e.field_id, e.op, e.value_type, e.value);
     }
     patch_buf.sort_and_dedup();
 }
@@ -507,7 +488,8 @@ static std::vector<uint8_t> build_static_arrangements_section(
 
 // Write serialized patch table to a binary file
 static int write_patch_file(
-    mora::PatchBuffer& patch_buf, const std::string& target_path,
+    mora::PatchBuffer& patch_buf, const std::vector<uint8_t>& string_table,
+    const std::string& target_path,
     const std::string& output_dir, mora::Output& out,
     const mora::PluginSet& loaded_plugins,
     const mora::FactDB& facts, mora::StringPool& pool,
@@ -547,7 +529,7 @@ static int write_patch_file(
 
     out.phase_start("Serializing patches");
     auto patch_data = mora::serialize_patch_table(
-        patch_buf.entries(), digest, arrangements_section, dag_payload);
+        patch_buf.entries(), digest, arrangements_section, dag_payload, string_table);
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
@@ -607,12 +589,13 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     }
 
     mora::PatchBuffer patch_buf;
-    evaluate_mora_rules(cr, evaluator, patch_buf, out);
+    std::vector<uint8_t> string_table;
+    evaluate_mora_rules(cr, evaluator, patch_buf, string_table, out);
 
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int write_rc = write_patch_file(patch_buf, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
+    int write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
     if (write_rc != 0) return write_rc;
 
     // Summary

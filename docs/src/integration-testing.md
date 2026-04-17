@@ -255,10 +255,6 @@ resolution, log capture, and failure diagnostics.
 
 ## Known limitations
 
-- **String-valued patches are dropped at emit** —
-  [#4](https://github.com/halgari/mora/issues/4). `set form/name(X, "…")`
-  compiles but produces zero patches. A `tests/integration/nazeem/` case
-  should be added once that's fixed.
 - **Load-order alignment with `plugins.txt`** —
   [#5](https://github.com/halgari/mora/issues/5). The compiler walks the
   `Data/` dir in filesystem order; runtime uses `plugins.txt`. Today
