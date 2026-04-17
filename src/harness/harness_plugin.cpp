@@ -97,7 +97,10 @@ static std::string handle_dump_weapons(const std::string&) {
         std::ofstream out(dump_file);
         mora::harness::write_weapons_jsonl(weapons, out);
     }
-    return std::string(R"({"ok":true,"file":")") + dump_file.string() +
+    // generic_string() forces forward-slashes so the JSON value is valid
+    // under JSON escape rules (backslashes in a path would otherwise read
+    // as escape sequences — e.g. \n becomes a newline).
+    return std::string(R"({"ok":true,"file":")") + dump_file.generic_string() +
            R"(","count":)" + std::to_string(weapons.size()) + "}";
 }
 
@@ -121,7 +124,7 @@ static std::string handle_dump_npcs(const std::string&) {
         std::ofstream out(dump_file);
         mora::harness::write_npcs_jsonl(npcs, out);
     }
-    return std::string(R"({"ok":true,"file":")") + dump_file.string() +
+    return std::string(R"({"ok":true,"file":")") + dump_file.generic_string() +
            R"(","count":)" + std::to_string(npcs.size()) + "}";
 }
 

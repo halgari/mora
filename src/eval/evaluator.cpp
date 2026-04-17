@@ -401,11 +401,29 @@ bool Evaluator::evaluate_guard(const Expr& expr, const Bindings& bindings) {
     return false;
 }
 
+// Build the legacy action name from verb + bare relation name, e.g.
+// VerbKind::Set + "damage" → "set_damage". action_to_field's lookup
+// tables are keyed on those prefixed strings (kFields[].set_action,
+// kFormArrays[].add_action / .remove_action), so the new namespaced
+// parser output (`set form/damage(...)` → effect.name="damage")
+// needs this reconstruction before the lookup can succeed.
+static const char* verb_prefix(VerbKind v) {
+    switch (v) {
+        case VerbKind::Set:    return "set_";
+        case VerbKind::Add:    return "add_";
+        case VerbKind::Sub:    return "sub_";
+        case VerbKind::Remove: return "remove_";
+    }
+    return "set_";
+}
+
 void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
                                PatchSet& patches, uint32_t priority) {
     // Unconditional effects
     for (const Effect& effect : rule.effects) {
-        auto [field, op] = action_to_field(effect.name);
+        auto legacy = std::string(verb_prefix(effect.verb)) +
+                      std::string(pool_.get(effect.name));
+        auto [field, op] = action_to_field(pool_.intern(legacy));
         if (effect.args.size() < 2) continue;
 
         Value target = resolve_expr(effect.args[0], bindings);
@@ -436,7 +454,9 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
     // Conditional effects
     for (const ConditionalEffect& ce : rule.conditional_effects) {
         if (evaluate_guard(*ce.guard, bindings)) {
-            auto [field, op] = action_to_field(ce.effect.name);
+            auto legacy = std::string(verb_prefix(ce.effect.verb)) +
+                          std::string(pool_.get(ce.effect.name));
+            auto [field, op] = action_to_field(pool_.intern(legacy));
             if (ce.effect.args.size() < 2) continue;
 
             Value target = resolve_expr(ce.effect.args[0], bindings);

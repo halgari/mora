@@ -198,3 +198,136 @@ jobs:
 
             Built by GitHub Actions from commit ${{ github.sha }}
             (cross-compiled on Ubuntu with clang-cl + xwin).
+
+  # ═══════════════════════════════════════════════════════════════
+  # Skyrim-in-the-loop integration tests.
+  #
+  # Runs on the self-hosted skyrim-runner pool (labels self-hosted,
+  # linux, unraid, skyrim — image source at
+  # root@10.20.77.32:/mnt/user/skyrim-runner/). Each matrix entry is a
+  # directory under tests/integration/<case>/ with rules.mora +
+  # check.sh:
+  #
+  #   1. Download the Mora-windows release archive (mora.exe +
+  #      MoraRuntime.dll + MoraTestHarness.dll).
+  #   2. Compile rules.mora under Proton-GE → mora_patches.bin.
+  #   3. Stage a mod-dir with both SKSE plugins + the patches.
+  #   4. /usr/local/bin/run-skyrim-test.sh overlays the mod-dir onto
+  #      /skyrim-base + /skyrim-baseline, launches Skyrim under
+  #      Xorg+Proton, and invokes check.sh as TEST_HOOK.
+  #
+  # Adding a new test case: drop a new tests/integration/<case>/ dir,
+  # append <case> to the matrix below. No workflow changes beyond that.
+  # ═══════════════════════════════════════════════════════════════
+  skyrim-integration:
+    name: Skyrim integration (${{ matrix.case }})
+    needs: windows-xcompile
+    # Fork PRs must never reach the skyrim-runner pool — they can
+    # execute arbitrary code in the runner container. Same guard
+    # pattern as skyrim-runner/examples/pr-test.yml.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, unraid, skyrim]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [weapon_damage]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Mora-windows
+          path: dist/
+
+      # ── mora compiler: native linux build, not Windows-under-wine ──
+      # The runner image bakes gcc-13 + xmake v2.9.9 (same toolchain as the
+      # `linux` CI job). Building + running mora natively avoids the
+      # Proton/wine quagmire — mora.exe is a plain console app and Proton's
+      # child-stdout handling hides its output entirely, with segfaults
+      # under raw wine64 on this container. Native linux mora does the
+      # exact same work (the compiler has no OS-specific patches logic)
+      # and produces an identical mora_patches.bin.
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.xmake
+            build/.packages
+          key: xmake-linux-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-linux-
+
+      - name: Build native linux mora
+        # Flags mirror the linux job (ci.yml:35). -pthread for std::thread
+        # link, -Wno-dangling-reference to quell a gcc-13 false positive.
+        run: |
+          xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
+          xmake build -y mora
+
+      - name: Stage mod-under-test and compile mora rules (native linux)
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          set -euo pipefail
+
+          # Unpack the Windows release zip for the SKSE plugin DLLs.
+          # The zip is built with `(cd "$stage" && zip -r "$zip" .)` in
+          # the windows-xcompile job, so its top-level is tools/ + Data/
+          # with no Mora-<version>/ prefix to strip.
+          unzip -q dist/Mora-*-windows.zip -d artifacts/
+          RELEASE_DIR=artifacts
+
+          # Stage the mod-dir that run-skyrim-test.sh will overlay onto
+          # /skyrim-base + /skyrim-baseline. Preserve the zip's
+          # Data/SKSE/Plugins layout so both DLLs land where
+          # skse64_loader.exe discovers them.
+          # MoraRuntime.dll reads mora_patches.bin from its own directory
+          # (src/rt/plugin_entry.cpp: `dll_dir / "mora_patches.bin"`), so
+          # the patches file must sit next to the DLL in SKSE/Plugins/ —
+          # not in a sibling Data/MoraCache/ directory.
+          STAGE="$GITHUB_WORKSPACE/mod-under-test"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/Data/SKSE/Plugins"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
+
+          # Compile the rule via the native linux mora. `xmake show` prints
+          # the target's output path; we invoke that binary directly.
+          MORA_BIN="$(xmake show -t mora | awk '/targetfile/ {print $2; exit}')"
+          if [[ ! -x "$MORA_BIN" ]]; then
+            MORA_BIN="$(find build/linux -maxdepth 5 -type f -name mora -executable | head -1)"
+          fi
+          echo "Using mora binary: $MORA_BIN"
+
+          "$MORA_BIN" compile \
+            "tests/integration/${CASE}/rules.mora" \
+            --data-dir /skyrim-base/Data \
+            --output "$STAGE/Data/SKSE/Plugins"
+
+          # Sanity: mora_patches.bin must exist AND be bigger than just a
+          # header (88 bytes is empty — 0 patches emitted).
+          BIN="$STAGE/Data/SKSE/Plugins/mora_patches.bin"
+          test -s "$BIN"
+          bin_size=$(stat -c %s "$BIN")
+          echo "mora_patches.bin size: $bin_size bytes"
+          if (( bin_size < 1024 )); then
+            echo "::error::mora_patches.bin is $bin_size bytes — compiler emitted no patches"
+            exit 1
+          fi
+          ls -la "$STAGE/Data/SKSE/Plugins"
+
+      - name: Run Skyrim integration test
+        env:
+          TEST_HOOK:    ${{ github.workspace }}/tests/integration/${{ matrix.case }}/check.sh
+          TEST_TIMEOUT: "600"
+          LOG_DIR:      /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}
+        run: /usr/local/bin/run-skyrim-test.sh "$GITHUB_WORKSPACE/mod-under-test"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyrim-logs-${{ matrix.case }}-${{ github.run_attempt }}
+          path: /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}/
+          if-no-files-found: warn
