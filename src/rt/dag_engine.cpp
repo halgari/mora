@@ -18,8 +18,8 @@ void DagEngine::inject_delta(uint32_t source_node_id, Delta d) {
 }
 
 uint64_t DagEngine::maintain_key(uint32_t node_id, const TupleU32& t) const {
-    uint64_t h = uint64_t(node_id) * 0x9E3779B185EBCA87ull;
-    for (auto v : t) h = h * 0x100000001B3ull + v;
+    uint64_t h = uint64_t(node_id) * 0x9E3779B185EBCA87ULL;
+    for (auto v : t) h = (h * 0x100000001B3ULL) + v;
     return h;
 }
 

@@ -26,7 +26,7 @@ void EspReader::set_override_filter(const OverrideFilter* filter, uint32_t load_
 
 bool EspReader::is_relation_needed(StringId name) const {
     if (!filter_active_) return true;
-    return needed_relations_.count(name.index) > 0;
+    return needed_relations_.contains(name.index);
 }
 
 void EspReader::extract_from(const MmapFile& file, const PluginInfo& info, FactDB& db) {
@@ -241,7 +241,7 @@ void EspReader::extract_record_facts(const MmapFile& file, const PluginInfo& inf
                     }
                     default: break;
                 }
-                if (word & (1u << src.bit)) {
+                if (word & (1U << src.bit)) {
                     Tuple t;
                     t.push_back(Value::make_formid(global_fid));
                     db.add_fact(schema->name, std::move(t));

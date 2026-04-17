@@ -12,7 +12,7 @@ struct WeaponData {
     std::string name;
     uint16_t damage = 0;
     int32_t value = 0;
-    float weight = 0.0f;
+    float weight = 0.0F;
     std::vector<uint32_t> keyword_formids;
 };
 

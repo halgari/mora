@@ -47,8 +47,8 @@ OpenResult MappedPatchFile::open_detailed(const std::string& path) {
     }
 
     std::memcpy(&header_, bytes_.data(), sizeof(header_));
-    if (header_.magic != 0x41524F4Du) { bytes_.clear(); return OpenResult::BadMagic; }
-    if (header_.version != 4u)        { bytes_.clear(); return OpenResult::BadVersion; }
+    if (header_.magic != 0x41524F4DU) { bytes_.clear(); return OpenResult::BadMagic; }
+    if (header_.version != 4U)        { bytes_.clear(); return OpenResult::BadVersion; }
     if (header_.file_size != bytes_.size()) {
         bytes_.clear();
         return OpenResult::SizeMismatch;

@@ -26,8 +26,14 @@ static void transform(Ctx& c, const uint8_t d[64]) {
         uint32_t const s1 = rotr(m[i-2],17)  ^ rotr(m[i-2],19)  ^ (m[i-2] >> 10);
         m[i] = m[i-16] + s0 + m[i-7] + s1;
     }
-    uint32_t a=c.state[0],b=c.state[1],cc=c.state[2],d2=c.state[3];
-    uint32_t e=c.state[4],f=c.state[5],g=c.state[6],h=c.state[7];
+    uint32_t a=c.state[0];
+    uint32_t b=c.state[1];
+    uint32_t cc=c.state[2];
+    uint32_t d2=c.state[3];
+    uint32_t e=c.state[4];
+    uint32_t f=c.state[5];
+    uint32_t g=c.state[6];
+    uint32_t h=c.state[7];
     for (int i = 0; i < 64; ++i) {
         uint32_t const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
         uint32_t const ch = (e & f) ^ (~e & g);
@@ -78,7 +84,7 @@ void finish(Ctx& c, uint8_t out[32]) {
     transform(c, c.data);
     for (int k = 0; k < 4; ++k)
         for (int s = 0; s < 8; ++s)
-            out[k + s*4] = uint8_t(c.state[s] >> (24 - k*8));
+            out[k + (s*4)] = uint8_t(c.state[s] >> (24 - (k*8)));
 }
 
 } // namespace mora::sha256
