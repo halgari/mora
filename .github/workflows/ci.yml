@@ -274,7 +274,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [weapon_damage, nazeem]
+        case:
+          - weapon_damage
+          - nazeem
+          - weapon_setters
+          - armor_setters
+          - npc_setters
+          - leveled_list_setters
     steps:
       - uses: actions/checkout@v4
 

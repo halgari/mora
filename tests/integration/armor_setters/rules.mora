@@ -1,0 +1,17 @@
+namespace test.armor_setters
+
+requires mod("Skyrim.esm")
+
+# Every in-scope armor setter applied to Iron Helmet (EditorID
+# `ArmorIronHelmet`, FormID 0x00012E4D).
+#
+# Out of scope today (no declared ARMO relation → no Mora-surface setter):
+#   • set_enchantment
+modify_iron_helmet(A):
+    form/armor(A)
+    A == @ArmorIronHelmet
+    => set form/gold_value(A, 777)
+    => set form/weight(A, 8.25)
+    => set form/name(A, "Modified Iron Helmet")
+    => set form/armor_rating(A, 2500.0)
+    => add form/keyword(A, @MagicDisallowEnchanting)
