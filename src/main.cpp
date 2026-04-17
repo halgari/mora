@@ -46,6 +46,45 @@ namespace fs = std::filesystem;
 // Forward declaration (defined in cli/doc_generator.cpp)
 namespace mora { void generate_docs(std::ostream& out); }
 
+// Locate a Plugins.txt / plugins.txt alongside or near `data_dir`.
+// Preference order: Data/../Plugins.txt (co-located, matches our
+// self-hosted CI image layout) → conventional Proton AppData prefixes
+// → Windows %LOCALAPPDATA%. Returns "" when no file is found; caller
+// falls back to directory-walk ordering in that case.
+static std::string detect_plugins_txt(const std::string& data_dir) {
+    std::vector<fs::path> candidates;
+
+    if (!data_dir.empty()) {
+        fs::path base(data_dir);
+        // Directly adjacent to Data/ (matches /skyrim-base/Plugins.txt
+        // on the self-hosted runner image and most portable layouts).
+        if (base.has_parent_path()) {
+            candidates.push_back(base.parent_path() / "Plugins.txt");
+            candidates.push_back(base.parent_path() / "plugins.txt");
+        }
+        // Inside Data/ (rare, but some MO2 profiles place it there).
+        candidates.push_back(base / "Plugins.txt");
+        candidates.push_back(base / "plugins.txt");
+    }
+
+    if (const char* home = std::getenv("HOME")) {
+        fs::path h(home);
+        // Steam + Proton prefix for Skyrim SE (app id 489830).
+        candidates.push_back(h / ".local/share/Steam/steamapps/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition/Plugins.txt");
+        // GOG portable prefix layout used by scripts/deploy_runtime.sh.
+        candidates.push_back(h / "Games/gog/the-elder-scrolls-v-skyrim-special-edition/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition GOG/Plugins.txt");
+    }
+    if (const char* localapp = std::getenv("LOCALAPPDATA")) {
+        candidates.push_back(fs::path(localapp) / "Skyrim Special Edition" / "Plugins.txt");
+    }
+
+    for (auto& p : candidates) {
+        std::error_code ec;
+        if (fs::exists(p, ec)) return p.string();
+    }
+    return "";
+}
+
 static std::string detect_skyrim_data_dir() {
     // Check common Steam library locations for Skyrim SE
     std::vector<fs::path> candidates;
@@ -214,6 +253,7 @@ static void print_usage() {
         "  --no-color        Disable colored output\n"
         "  --output DIR      Output directory (compile, default: MoraCache/)\n"
         "  --data-dir DIR    Skyrim Data/ directory for ESP loading (compile, info)\n"
+        "  --plugins-txt F   Path to plugins.txt (load-order source, compile)\n"
         "  --conflicts       Show only conflict info (inspect)\n"
         "  -v                Verbose output\n");
 }
@@ -331,7 +371,8 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
 // Load ESP plugin data into the FactDB via parallel batched reading
 static void load_esp_data(
     CheckResult& cr, mora::FactDB& db, mora::Evaluator& evaluator,
-    const std::string& data_dir, mora::Output& out,
+    const std::string& data_dir, const std::string& plugins_txt,
+    mora::Output& out,
     mora::EditorIdMap& editor_id_map, mora::PluginSet& loaded_plugins)
 {
     out.phase_start("Loading ESPs");
@@ -340,10 +381,24 @@ static void load_esp_data(
     schema.register_defaults();
     schema.configure_fact_db(db);
 
-    mora::LoadOrder lo = mora::LoadOrder::from_directory(data_dir);
+    // A plugins.txt (either CLI-provided or auto-detected) is the
+    // authoritative source for both which plugins to load and their
+    // load-order indices. Without one the compiler falls back to a
+    // directory walk that doesn't match runtime ordering — see issue
+    // #5 for why that's broken for anything beyond Skyrim.esm.
+    mora::LoadOrder lo = !plugins_txt.empty()
+        ? mora::LoadOrder::from_plugins_txt(plugins_txt, data_dir)
+        : mora::LoadOrder::from_directory(data_dir);
     for (auto& p : lo.plugins) {
         loaded_plugins.insert(p.filename().string());
     }
+    if (!plugins_txt.empty()) {
+        mora::log::info("  Load order:    {} ({} plugins)\n", plugins_txt, lo.plugins.size());
+    }
+
+    // Build the runtime-index map once, share it across all reader
+    // threads. Holds no per-reader state so this is safe to alias.
+    auto runtime_index = lo.runtime_index_map();
 
     auto needed = collect_used_relations(cr.modules);
 
@@ -365,6 +420,7 @@ static void load_esp_data(
                 schema.configure_fact_db(result.local_db);
                 mora::EspReader reader(cr.pool, cr.diags, schema);
                 reader.set_needed_relations(needed);
+                reader.set_runtime_index_map(&runtime_index);
                 std::vector<std::filesystem::path> batch(
                     lo.plugins.begin() + i, lo.plugins.begin() + end);
                 reader.read_load_order(batch, result.local_db);
@@ -565,7 +621,7 @@ static int write_patch_file(
 }
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
-                        const std::string& data_dir,
+                        const std::string& data_dir, const std::string& plugins_txt,
                         mora::Output& out, bool use_color) {
     auto start = std::chrono::steady_clock::now();
     out.print_header("0.1.0");
@@ -603,7 +659,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::PluginSet loaded_plugins;
 
     if (!data_dir.empty()) {
-        load_esp_data(cr, db, evaluator, data_dir, out, editor_id_map, loaded_plugins);
+        load_esp_data(cr, db, evaluator, data_dir, plugins_txt, out, editor_id_map, loaded_plugins);
     }
 
     mora::PatchBuffer patch_buf;
@@ -801,6 +857,7 @@ int main(int argc, char* argv[]) {
     std::string target_path = ".";
     std::string output_dir = "MoraCache";
     std::string data_dir;
+    std::string plugins_txt;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -808,11 +865,16 @@ int main(int argc, char* argv[]) {
         else if (arg == "--conflicts") show_conflicts = true;
         else if (arg == "--output" && i + 1 < argc) { output_dir = argv[++i]; }
         else if (arg == "--data-dir" && i + 1 < argc) { data_dir = argv[++i]; }
+        else if (arg == "--plugins-txt" && i + 1 < argc) { plugins_txt = argv[++i]; }
         else target_path = arg;
     }
 
     if (data_dir.empty() && (command == "compile" || command == "info")) {
         data_dir = detect_skyrim_data_dir();
+    }
+
+    if (plugins_txt.empty() && command == "compile" && !data_dir.empty()) {
+        plugins_txt = detect_plugins_txt(data_dir);
     }
 
     bool use_color = !force_no_color && mora::color_enabled();
@@ -824,7 +886,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "compile") {
-        return cmd_compile(target_path, output_dir, data_dir, out, use_color);
+        return cmd_compile(target_path, output_dir, data_dir, plugins_txt, out, use_color);
     }
 
     if (command == "inspect") {

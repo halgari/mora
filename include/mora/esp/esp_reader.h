@@ -1,6 +1,7 @@
 #pragma once
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
+#include "mora/esp/load_order.h"
 #include "mora/esp/mmap_file.h"
 #include "mora/esp/plugin_index.h"
 #include "mora/core/string_pool.h"
@@ -19,6 +20,13 @@ public:
     // If not called, extracts ALL registered relations.
     // Pass the set of relation names that rules actually reference.
     void set_needed_relations(const std::unordered_set<uint32_t>& relation_name_indexes);
+
+    // Attach a RuntimeIndexMap for globalizing local form ids. Without
+    // one, the reader falls back to the legacy directory-walk index —
+    // correct for single-plugin callers (tests, `mora info` against a
+    // fixture) but wrong for a real load order where the compile-time
+    // order diverges from the runtime one.
+    void set_runtime_index_map(const RuntimeIndexMap* map);
 
     // Read a single plugin file, populate facts into db
     void read_plugin(const std::filesystem::path& path, FactDB& db);
@@ -60,6 +68,7 @@ private:
     size_t facts_generated_ = 0;
     size_t relations_skipped_ = 0;
     uint32_t current_load_index_ = 0;
+    const RuntimeIndexMap* runtime_index_ = nullptr;
 };
 
 } // namespace mora

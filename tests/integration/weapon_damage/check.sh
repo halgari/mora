@@ -20,12 +20,11 @@ trap stash_runtime_logs EXIT
 wait_for_harness      || exit $?
 weapons="$(dump_form_type weapons)" || exit $?
 
-# Scope the assertion to Skyrim.esm weapons (load-index byte = 0x00).
-# Cross-plugin load-order alignment between compile-time and runtime
-# isn't reliable yet for CC/DLC weapons, so asserting across all of
-# them would catch an unrelated bug. Skyrim.esm is always loaded at
-# index 0 both times and exercises the full pipeline.
-jq_assert_all '(.formid | startswith("0x00") | not) or .damage == 99' "$weapons" || exit $?
+# Assert damage==99 across every weapon in the load order, including
+# DLC/CC/ESL forms. Cross-plugin load-order alignment now flows from
+# plugins.txt into the compiler (issue #5), so 0x02… / 0x04… / 0xFE…
+# form IDs produced at compile time match their runtime counterparts.
+jq_assert_all '.damage == 99' "$weapons" || exit $?
 
 quit_harness
 echo "[check] weapon_damage: PASS"

@@ -14,6 +14,10 @@ void EspReader::set_needed_relations(const std::unordered_set<uint32_t>& relatio
     filter_active_ = !needed_relations_.empty();
 }
 
+void EspReader::set_runtime_index_map(const RuntimeIndexMap* map) {
+    runtime_index_ = map;
+}
+
 bool EspReader::is_relation_needed(StringId name) const {
     if (!filter_active_) return true;
     return needed_relations_.count(name.index) > 0;
@@ -74,7 +78,13 @@ uint32_t EspReader::resolve_symbol(const std::string& editor_id) const {
 }
 
 uint32_t EspReader::make_global_formid(uint32_t local_id, const PluginInfo& info) {
-    (void)info;
+    if (runtime_index_) {
+        return runtime_index_->globalize(local_id, info);
+    }
+    // Legacy path: no runtime map attached. Used by single-plugin
+    // readers (unit tests, `mora info`) where a global load order
+    // isn't available — producing something non-zero is more useful
+    // than failing. Real `mora compile` always attaches a map.
     return (current_load_index_ << 24) | (local_id & 0x00FFFFFF);
 }
 
