@@ -46,8 +46,7 @@
 
 namespace fs = std::filesystem;
 
-// Forward declaration (defined in cli/doc_generator.cpp)
-namespace mora { void generate_docs(std::ostream& out); }
+#include "mora/cli/doc_generator.h"
 
 // Locate a Plugins.txt / plugins.txt alongside or near `data_dir`.
 // Preference order: Data/../Plugins.txt (co-located, matches our
