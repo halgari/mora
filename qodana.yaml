@@ -3,7 +3,11 @@
 ####################################################################################################################
 
 version: "1.0"
-linter: jetbrains/qodana-clang:2025.3
+# Qodana's C/C++ linter ships under the -eap tag; the stable `2025.3`
+# tag doesn't exist on Docker Hub yet. Use `image:` (not `linter:`)
+# because this is a full image reference, not one of Qodana's short
+# well-known linter IDs.
+image: jetbrains/qodana-clang:2025.3-eap
 profile:
   name: qodana.recommended
 include:
