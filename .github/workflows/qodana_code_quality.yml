@@ -3,9 +3,8 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: # Specify your branches here
-      - main # The 'main' branch
-      - 'releases/*' # The release branches
+    branches:
+      - master
 
 jobs:
   qodana:
@@ -15,10 +14,34 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}  # to check out the actual pull request commit, not the merge commit
-          fetch-depth: 0  # a full history is required for pull request analysis
+          # Check out the PR head, not the merge commit — qodana's PR
+          # mode expects the same sha the author pushed.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          submodules: recursive
+
+      # qodana-clang needs a compile_commands.json so it knows which TUs
+      # exist and how they're compiled. This project builds with xmake,
+      # which emits that database via its `project -k compile_commands`
+      # generator. Run it under the same configure flags the main Linux
+      # CI job uses (ci.yml's `linux` job) so the TU list matches.
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Generate compile_commands.json
+        run: |
+          xmake f -y -m releasedbg \
+            --cxflags="-pthread -Wno-dangling-reference" \
+            --ldflags=-pthread
+          # Output path is ./build/compile_commands.json (qodana.yaml's
+          # default `--compile-commands` location).
+          xmake project -k compile_commands -x "build"
+          test -s build/compile_commands.json
+          echo "compile_commands.json: $(wc -l < build/compile_commands.json) lines"
+
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2025.3
         with:
