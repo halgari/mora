@@ -19,6 +19,11 @@ jobs:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # CLI11 + zlib + CommonLibSSE-NG live under extern/ — the
+          # Linux build only needs CLI11, but pulling them all keeps
+          # the checkout behavior uniform with windows-xcompile.
+          submodules: recursive
 
       # Cache xmake's package dir + the per-platform object and dep
       # trees so incremental rebuilds can reuse unchanged objects.

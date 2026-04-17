@@ -209,6 +209,16 @@ target("mora")
     set_kind("binary")
     add_files("src/main.cpp")
     add_deps("mora_lib")
+    -- CLI11 is header-only; bring in its multi-file include tree.
+    -- Submodule pinned at v2.6.2 under extern/CLI11.
+    add_includedirs("extern/CLI11/include")
+    -- Keep the compile-time banner in sync with xmake's version —
+    -- the previous hardcoded "0.1.0" string drifted over four
+    -- bumps. Projected into main.cpp via MORA_VERSION.
+    on_load(function (target)
+        import("core.project.project")
+        target:add("defines", "MORA_VERSION=\"" .. project.version() .. "\"")
+    end)
 target_end()
 
 -- ══════════════════════════════════════════════════════════════
