@@ -36,9 +36,10 @@ jobs:
           xmake f -y -m releasedbg \
             --cxflags="-pthread -Wno-dangling-reference" \
             --ldflags=-pthread
-          # Output path is ./build/compile_commands.json (qodana.yaml's
-          # default `--compile-commands` location).
-          xmake project -k compile_commands -x "build"
+          # xmake takes the output directory as a positional arg (not
+          # a -x flag). End result is ./build/compile_commands.json —
+          # the default path qodana-clang's --compile-commands looks at.
+          xmake project -k compile_commands build
           test -s build/compile_commands.json
           echo "compile_commands.json: $(wc -l < build/compile_commands.json) lines"
 
