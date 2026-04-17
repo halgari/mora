@@ -56,14 +56,14 @@ The Windows release archive (`Mora-<version>-windows.zip` from the
 includes the packaged extension at:
 
 ```
-tools/Mora/mora-vscode-<version>.vsix
+Data/tools/Mora/mora-vscode-<version>.vsix
 ```
 
 Install it via:
 
 - **VS Code UI:** Extensions panel → `⋯` menu → **Install from VSIX…** →
   pick the `.vsix` file.
-- **Command line:** `code --install-extension tools/Mora/mora-vscode-<version>.vsix`.
+- **Command line:** `code --install-extension Data/tools/Mora/mora-vscode-<version>.vsix`.
 
 This is the offline path — no marketplace account, no internet required
 once you have the archive.
@@ -77,8 +77,8 @@ Marketplace publishing is on the roadmap; until it lands, use Option A.
 
 The extension needs to spawn `mora lsp` (a subcommand of the same binary
 that compiles patches). Put `mora.exe` (Windows) or `mora` (Linux) on your
-PATH — the easiest way is to add `tools/Mora/` from the release archive to
-your PATH environment variable.
+PATH — the easiest way is to add `Data/tools/Mora/` from the release archive
+to your PATH environment variable.
 
 If you can't (or don't want to) modify PATH, set the **`mora.path`** VS
 Code setting to the absolute path of the binary. See

@@ -20,14 +20,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache xmake packages
+      # Cache xmake's package dir + the per-platform object and dep
+      # trees so incremental rebuilds can reuse unchanged objects.
+      # - key is sha-suffixed so every run uploads a fresh cache;
+      # - restore-keys falls back to the most recent cache sharing the
+      #   same xmake.lua hash (and finally any linux cache).
+      # xmake tracks source-hash invalidation in build/.deps/, so stale
+      # objects are correctly rebuilt when a source file changes.
+      - name: Cache xmake packages + objects
         uses: actions/cache@v4
         with:
           path: |
             ~/.xmake
             build/.packages
-          key: xmake-linux-${{ hashFiles('xmake.lua') }}
-          restore-keys: xmake-linux-
+            build/.objs
+            build/.deps
+          key: xmake-linux-${{ hashFiles('xmake.lua') }}-${{ github.sha }}
+          restore-keys: |
+            xmake-linux-${{ hashFiles('xmake.lua') }}-
+            xmake-linux-
 
       - name: Configure
         # -pthread: std::thread link on gcc's libstdc++
@@ -39,6 +50,15 @@ jobs:
 
       - name: Run tests
         run: xmake test -v
+
+      # Reused by the skyrim-integration job (see ci.yml `needs:` below)
+      # so it doesn't have to rebuild the same binary on the Skyrim pool.
+      - name: Upload native linux mora
+        uses: actions/upload-artifact@v4
+        with:
+          name: mora-linux
+          path: build/linux/x86_64/releasedbg/mora
+          if-no-files-found: error
 
   extension:
     name: VS Code extension (.vsix)
@@ -102,14 +122,22 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache xmake packages
+      # See ci.yml's `linux` job for the cache-key rationale. Hitting
+      # the warm object cache is especially valuable here: the
+      # CommonLibSSE-NG submodule contributes ~1700 .cpp files that
+      # otherwise recompile from scratch every run.
+      - name: Cache xmake packages + objects
         uses: actions/cache@v4
         with:
           path: |
             ~/.xmake
             build/.packages
-          key: xmake-xcompile-${{ hashFiles('xmake.lua') }}
-          restore-keys: xmake-xcompile-
+            build/.objs
+            build/.deps
+          key: xmake-xcompile-${{ hashFiles('xmake.lua') }}-${{ github.sha }}
+          restore-keys: |
+            xmake-xcompile-${{ hashFiles('xmake.lua') }}-
+            xmake-xcompile-
 
       - name: Configure (windows / clang-cl + xwin)
         # No --toolchain flag — project sets it via set_toolchains inside
@@ -119,6 +147,8 @@ jobs:
         run: xmake f -p windows -a x64 -m release -y
 
       - name: Build mora.exe + MoraRuntime.dll + MoraTestHarness.dll
+        # xmake 2.9.9 on the runner only accepts one positional target
+        # per invocation (3.x+ supports a list). Keep three lines.
         run: |
           xmake build -y mora
           xmake build -y mora_runtime
@@ -145,16 +175,21 @@ jobs:
           fi
           echo "Release version: $version"
           stage="$proj/dist/Mora-$version-windows"
-          mkdir -p "$stage/tools/Mora" "$stage/Data/SKSE/Plugins"
-          cp "$proj/build/windows/x64/release/mora.exe"              "$stage/tools/Mora/mora.exe"
+          # Single Data/-rooted layout so MO2 / Vortex auto-detect the
+          # archive as a Skyrim mod. Only the SKSE runtime plugin lives
+          # under SKSE/Plugins/ (auto-loaded on game launch);
+          # MoraTestHarness.dll is a CI/dev plugin and is bundled under
+          # tools/Mora/ so ordinary installs don't auto-load it.
+          mkdir -p "$stage/Data/tools/Mora" "$stage/Data/SKSE/Plugins"
+          cp "$proj/build/windows/x64/release/mora.exe"              "$stage/Data/tools/Mora/mora.exe"
           cp "$proj/build/windows/x64/release/MoraRuntime.dll"       "$stage/Data/SKSE/Plugins/MoraRuntime.dll"
-          cp "$proj/build/windows/x64/release/MoraTestHarness.dll"   "$stage/Data/SKSE/Plugins/MoraTestHarness.dll"
+          cp "$proj/build/windows/x64/release/MoraTestHarness.dll"   "$stage/Data/tools/Mora/MoraTestHarness.dll"
           vsix=$(ls "$proj/dist/vsix"/mora-vscode-*.vsix | head -1)
           if [[ -z "$vsix" ]]; then
             echo "::error::VS Code .vsix not found in dist/vsix"
             exit 1
           fi
-          cp "$vsix" "$stage/tools/Mora/$(basename "$vsix")"
+          cp "$vsix" "$stage/Data/tools/Mora/$(basename "$vsix")"
           echo "Bundled $(basename "$vsix") into release archive"
           zip="$proj/dist/Mora-$version-windows.zip"
           (cd "$stage" && zip -r "$zip" .)
@@ -191,10 +226,12 @@ jobs:
           description:   |
             Mora ${{ env.MORA_VERSION }} — Windows x64 build.
 
-            Archive layout (extract into your Skyrim SE install root):
-              • tools/Mora/mora.exe                   — CLI compiler
-              • Data/SKSE/Plugins/MoraRuntime.dll     — SKSE runtime plugin
-              • Data/SKSE/Plugins/MoraTestHarness.dll — Integration test harness
+            Archive layout (extract into your Skyrim SE install root,
+            or install via MO2 / Vortex with data-dir = Data/):
+              • Data/SKSE/Plugins/MoraRuntime.dll  — SKSE runtime plugin (auto-loaded)
+              • Data/tools/Mora/mora.exe           — CLI compiler / LSP
+              • Data/tools/Mora/MoraTestHarness.dll — CI / dev test harness (NOT auto-loaded)
+              • Data/tools/Mora/mora-vscode-*.vsix  — VS Code extension (sideload)
 
             Built by GitHub Actions from commit ${{ github.sha }}
             (cross-compiled on Ubuntu with clang-cl + xwin).
@@ -221,7 +258,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   skyrim-integration:
     name: Skyrim integration (${{ matrix.case }})
-    needs: windows-xcompile
+    needs: [linux, windows-xcompile]
     # Fork PRs must never reach the skyrim-runner pool — they can
     # execute arbitrary code in the runner container. Same guard
     # pattern as skyrim-runner/examples/pr-test.yml.
@@ -240,29 +277,21 @@ jobs:
           name: Mora-windows
           path: dist/
 
-      # ── mora compiler: native linux build, not Windows-under-wine ──
-      # The runner image bakes gcc-13 + xmake v2.9.9 (same toolchain as the
-      # `linux` CI job). Building + running mora natively avoids the
-      # Proton/wine quagmire — mora.exe is a plain console app and Proton's
-      # child-stdout handling hides its output entirely, with segfaults
-      # under raw wine64 on this container. Native linux mora does the
-      # exact same work (the compiler has no OS-specific patches logic)
-      # and produces an identical mora_patches.bin.
-      - name: Cache xmake packages
-        uses: actions/cache@v4
+      # ── mora compiler: reuse the artifact built by the `linux` job ──
+      # Running mora natively (rather than mora.exe under Proton/wine)
+      # avoids the Proton/wine stdout quagmire — mora.exe is a plain
+      # console app whose output Proton hides, with segfaults under
+      # raw wine64 on this container. The compiler has no OS-specific
+      # patches logic, so the native linux binary produces an
+      # identical mora_patches.bin.
+      - name: Download native linux mora
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            ~/.xmake
-            build/.packages
-          key: xmake-linux-${{ hashFiles('xmake.lua') }}
-          restore-keys: xmake-linux-
+          name: mora-linux
+          path: bin
 
-      - name: Build native linux mora
-        # Flags mirror the linux job (ci.yml:35). -pthread for std::thread
-        # link, -Wno-dangling-reference to quell a gcc-13 false positive.
-        run: |
-          xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
-          xmake build -y mora
+      - name: Make mora executable
+        run: chmod +x bin/mora
 
       - name: Stage mod-under-test and compile mora rules (native linux)
         env:
@@ -271,16 +300,19 @@ jobs:
           set -euo pipefail
 
           # Unpack the Windows release zip for the SKSE plugin DLLs.
-          # The zip is built with `(cd "$stage" && zip -r "$zip" .)` in
-          # the windows-xcompile job, so its top-level is tools/ + Data/
-          # with no Mora-<version>/ prefix to strip.
+          # The zip is built with a single Data/ root (see the packaging
+          # step in the windows-xcompile job): MoraRuntime.dll lives at
+          # Data/SKSE/Plugins/ (auto-loaded by SKSE in-game);
+          # MoraTestHarness.dll lives at Data/tools/Mora/ so ordinary
+          # user installs don't auto-load it. The integration test
+          # needs both under SKSE/Plugins/ in the staged mod-dir — the
+          # harness has to run for the test — so we relocate the
+          # harness DLL during staging.
           unzip -q dist/Mora-*-windows.zip -d artifacts/
           RELEASE_DIR=artifacts
 
           # Stage the mod-dir that run-skyrim-test.sh will overlay onto
-          # /skyrim-base + /skyrim-baseline. Preserve the zip's
-          # Data/SKSE/Plugins layout so both DLLs land where
-          # skse64_loader.exe discovers them.
+          # /skyrim-base + /skyrim-baseline.
           # MoraRuntime.dll reads mora_patches.bin from its own directory
           # (src/rt/plugin_entry.cpp: `dll_dir / "mora_patches.bin"`), so
           # the patches file must sit next to the DLL in SKSE/Plugins/ —
@@ -290,15 +322,12 @@ jobs:
           mkdir -p "$STAGE/Data/SKSE/Plugins"
           cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
              "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
-          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
+          cp "$RELEASE_DIR/Data/tools/Mora/MoraTestHarness.dll" \
              "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
 
-          # Compile the rule via the native linux mora. `xmake show` prints
-          # the target's output path; we invoke that binary directly.
-          MORA_BIN="$(xmake show -t mora | awk '/targetfile/ {print $2; exit}')"
-          if [[ ! -x "$MORA_BIN" ]]; then
-            MORA_BIN="$(find build/linux -maxdepth 5 -type f -name mora -executable | head -1)"
-          fi
+          # Compile the rule via the native linux mora (downloaded
+          # artifact built by the `linux` job — see ci.yml `needs:`).
+          MORA_BIN="$GITHUB_WORKSPACE/bin/mora"
           echo "Using mora binary: $MORA_BIN"
 
           # Synthesize a plugins.txt matching a clean GOG AE install's

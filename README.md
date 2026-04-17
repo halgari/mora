@@ -184,7 +184,7 @@ the Proton-based runtime-validation loop, see
 
 Syntax highlighting and a forthcoming language server live in
 [`editors/vscode/`](editors/vscode/). The packaged `.vsix` ships in the
-Windows release archive at `tools/Mora/mora-vscode-<version>.vsix`;
+Windows release archive at `Data/tools/Mora/mora-vscode-<version>.vsix`;
 sideload it into VS Code with **Extensions → ⋯ → Install from VSIX**.
 
 ## CI
