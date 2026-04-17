@@ -1,13 +1,22 @@
 #include "mora/parser/parser.h"
 #include <sstream>
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#define MORA_UNREACHABLE() __assume(0)
-#else
-#define MORA_UNREACHABLE() __builtin_unreachable()
-#endif
-
 namespace mora {
+
+namespace {
+// Marks a branch the compiler must assume is unreachable — e.g. a switch
+// default that only fires if an earlier check() call misbehaves. On
+// reaching here at runtime, behavior is undefined (the compiler will
+// have optimized the path away).
+[[noreturn]] inline void mora_unreachable() {
+#if defined(_MSC_VER) && !defined(__clang__)
+    __assume(0);
+#else
+    __builtin_unreachable();
+#endif
+}
+} // namespace
+
 
 Parser::Parser(Lexer& lexer, StringPool& pool, DiagBag& diags)
     : lexer_(lexer), pool_(pool), diags_(diags), current_() {}
@@ -519,7 +528,7 @@ Expr Parser::parse_comparison() {
             case TokenKind::Gt:   op = BinaryExpr::Op::Gt;   break;
             case TokenKind::LtEq: op = BinaryExpr::Op::LtEq; break;
             case TokenKind::GtEq: op = BinaryExpr::Op::GtEq; break;
-            default: MORA_UNREACHABLE();
+            default: mora_unreachable();
         }
         Expr right = parse_additive();
 
@@ -547,7 +556,7 @@ Expr Parser::parse_additive() {
         switch (op_tok.kind) {
             case TokenKind::Plus:  op = BinaryExpr::Op::Add; break;
             case TokenKind::Minus: op = BinaryExpr::Op::Sub; break;
-            default: MORA_UNREACHABLE();
+            default: mora_unreachable();
         }
         Expr right = parse_multiplicative();
 
@@ -575,7 +584,7 @@ Expr Parser::parse_multiplicative() {
         switch (op_tok.kind) {
             case TokenKind::Star:  op = BinaryExpr::Op::Mul; break;
             case TokenKind::Slash: op = BinaryExpr::Op::Div; break;
-            default: MORA_UNREACHABLE();
+            default: mora_unreachable();
         }
         Expr right = parse_primary();
 
