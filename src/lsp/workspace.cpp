@@ -25,7 +25,7 @@ void Workspace::set_relations_dir(std::filesystem::path dir) {
     // YAML resolution; the registry itself doesn't read from disk.
 }
 
-void Workspace::set_data_dir(std::filesystem::path dir) {
+void Workspace::set_data_dir(const std::filesystem::path& dir) {
     editor_ids_->scan(dir);
 }
 

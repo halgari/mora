@@ -188,7 +188,7 @@ LoadOrder LoadOrder::from_plugins_txt(const std::filesystem::path& plugins_txt,
             lo.missing.push_back("Skyrim.esm");
         }
     } else if (skyrim_it != lo.plugins.begin()) {
-        auto path = *skyrim_it;
+        const auto& path = *skyrim_it;
         lo.plugins.erase(skyrim_it);
         lo.plugins.insert(lo.plugins.begin(), path);
     }

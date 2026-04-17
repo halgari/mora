@@ -13,7 +13,7 @@ namespace mora {
 ColumnarFactStore::ColumnarFactStore(ChunkPool& pool) : pool_(pool) {}
 
 ColumnarRelation& ColumnarFactStore::get_or_create(StringId name,
-                                                    std::vector<ColType> types) {
+                                                    const std::vector<ColType>& types) {
     auto it = relations_.find(name.index);
     if (it != relations_.end()) return it->second;
 

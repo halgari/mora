@@ -13,7 +13,7 @@ class ColumnarFactStore {
 public:
     explicit ColumnarFactStore(ChunkPool& pool);
 
-    ColumnarRelation& get_or_create(StringId name, std::vector<ColType> types);
+    ColumnarRelation& get_or_create(StringId name, const std::vector<ColType>& types);
     ColumnarRelation* get(StringId name);
     const ColumnarRelation* get(StringId name) const;
 

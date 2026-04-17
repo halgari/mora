@@ -69,7 +69,7 @@ PatchSet Evaluator::evaluate_static(const Module& mod,
 // Score a clause for ordering. Lower = more selective = should run first.
 // Clauses with more constants/symbols drive indexed lookups and produce
 // smaller intermediate result sets.
-std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) const {
+std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) {
     struct ClauseScore {
         size_t index;
         int score; // lower is better
