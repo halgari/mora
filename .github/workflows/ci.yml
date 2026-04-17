@@ -301,6 +301,11 @@ jobs:
           fi
           echo "Using mora binary: $MORA_BIN"
 
+          echo "[debug] searching for any Plugins.txt on the runner:"
+          find / -maxdepth 8 -iname "Plugins.txt" -type f 2>/dev/null | head -20 || true
+          echo "[debug] /skyrim-base/Skyrim.ccc head:"
+          head -80 /skyrim-base/Skyrim.ccc 2>/dev/null || echo "(missing)"
+
           # Synthesize a plugins.txt matching a clean GOG AE install's
           # runtime load order, because the runner image doesn't ship
           # a real Plugins.txt in any standard location. Without a
