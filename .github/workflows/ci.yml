@@ -430,13 +430,17 @@ jobs:
             "${PLUGINS_ARG[@]}" \
             --output "$STAGE/Data/SKSE/Plugins"
 
-          # Sanity: mora_patches.bin must exist AND be bigger than just a
-          # header (88 bytes is empty — 0 patches emitted).
+          # Sanity: mora_patches.bin must exist AND contain at least one
+          # patch. The v2 header is 88 bytes when empty, so anything above
+          # that means the compiler emitted at least one patch. Narrow
+          # target-specific rules (e.g. `*_setters` cases that scope to a
+          # single FormID) bottom out around ~100 bytes; broadcast rules
+          # (nazeem, weapon_damage) end up in the tens of KB.
           BIN="$STAGE/Data/SKSE/Plugins/mora_patches.bin"
           test -s "$BIN"
           bin_size=$(stat -c %s "$BIN")
           echo "mora_patches.bin size: $bin_size bytes"
-          if (( bin_size < 1024 )); then
+          if (( bin_size <= 88 )); then
             echo "::error::mora_patches.bin is $bin_size bytes — compiler emitted no patches"
             exit 1
           fi
