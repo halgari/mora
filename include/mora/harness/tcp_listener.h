@@ -19,10 +19,10 @@ public:
     ~TcpListener();
 
     // Register a handler for a command prefix (e.g. "dump", "status", "quit").
-    void on(const std::string& prefix, const CommandHandler& handler);
+    void on(const std::string& prefix, CommandHandler handler);
 
     // Start listening in a background thread. Non-blocking.
-    static bool start();
+    bool start();
 
     // Stop the listener and close all sockets.
     void stop();
@@ -32,7 +32,7 @@ public:
 private:
     void listen_loop();
     void handle_connection(void* client_socket);
-    static std::string dispatch(const std::string& command);
+    std::string dispatch(const std::string& command);
 
     uint16_t port_;
     bool running_ = false;
