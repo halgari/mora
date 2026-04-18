@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mora/ext/data_source.h"
+#include "mora/ext/relation_schema.h"
 #include "mora/ext/sink.h"
 
 #include <memory>
@@ -37,6 +38,22 @@ public:
 
     // Register a Sink. Takes ownership.
     void register_sink(std::unique_ptr<Sink> sink);
+
+    // Register a RelationSchema. Takes ownership of the copy — caller
+    // may let the argument go out of scope after the call. Names must
+    // be unique; registering a duplicate name overwrites the prior
+    // entry (consistent with how other registry hash-maps in this
+    // codebase behave) and is considered a configuration error for
+    // callers to avoid.
+    void register_relation(RelationSchema schema);
+
+    // Read-only view of all registered relation schemas in registration
+    // order. Safe to call after all extensions have registered.
+    std::span<const RelationSchema> schemas() const;
+
+    // Look up a schema by name. Returns nullptr if no relation by that
+    // name is registered.
+    const RelationSchema* find_schema(std::string_view name) const;
 
     // Read-only view of all registered data sources, in registration order.
     std::span<const std::unique_ptr<DataSource>> data_sources() const;

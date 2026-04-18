@@ -177,4 +177,64 @@ TEST(ExtensionContext, LoadRequiredToleratesPreexistingErrorsInDiagBag) {
     EXPECT_EQ(counter_a, 1U);
 }
 
+TEST(ExtensionContext, RegisterRelationPreservesInsertionOrder) {
+    mora::ext::ExtensionContext ec;
+
+    mora::ext::RelationSchema a{.name = "a", .columns = {{"col0", false}}};
+    mora::ext::RelationSchema b{.name = "b", .columns = {{"col0", true}}};
+    ec.register_relation(a);
+    ec.register_relation(b);
+
+    auto schemas = ec.schemas();
+    ASSERT_EQ(schemas.size(), 2U);
+    EXPECT_EQ(schemas[0].name, "a");
+    EXPECT_EQ(schemas[1].name, "b");
+    EXPECT_FALSE(schemas[0].columns[0].indexed);
+    EXPECT_TRUE(schemas[1].columns[0].indexed);
+}
+
+TEST(ExtensionContext, FindSchemaByName) {
+    mora::ext::ExtensionContext ec;
+    ec.register_relation(mora::ext::RelationSchema{
+        .name = "form/npc",
+        .columns = {{"form_id", true}, {"race", false}},
+        .is_output = false,
+    });
+    ec.register_relation(mora::ext::RelationSchema{
+        .name = "skyrim/set",
+        .columns = {{"entity", true}, {"field", false}, {"value", false}},
+        .is_output = true,
+    });
+
+    const auto* npc = ec.find_schema("form/npc");
+    ASSERT_NE(npc, nullptr);
+    EXPECT_EQ(npc->name, "form/npc");
+    EXPECT_FALSE(npc->is_output);
+
+    const auto* setr = ec.find_schema("skyrim/set");
+    ASSERT_NE(setr, nullptr);
+    EXPECT_TRUE(setr->is_output);
+
+    EXPECT_EQ(ec.find_schema("does/not/exist"), nullptr);
+}
+
+TEST(ExtensionContext, RegisterRelationOverwritesDuplicateName) {
+    mora::ext::ExtensionContext ec;
+
+    ec.register_relation(mora::ext::RelationSchema{
+        .name = "form/npc",
+        .columns = {{"col0", false}},
+    });
+    ec.register_relation(mora::ext::RelationSchema{
+        .name = "form/npc",
+        .columns = {{"col0", true}, {"col1", false}},
+    });
+
+    EXPECT_EQ(ec.schemas().size(), 1U);
+    const auto* s = ec.find_schema("form/npc");
+    ASSERT_NE(s, nullptr);
+    EXPECT_EQ(s->columns.size(), 2U);
+    EXPECT_TRUE(s->columns[0].indexed);
+}
+
 } // namespace

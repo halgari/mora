@@ -8,6 +8,8 @@ namespace mora::ext {
 struct ExtensionContext::Impl {
     std::vector<std::unique_ptr<DataSource>> sources;
     std::vector<std::unique_ptr<Sink>>       sinks;
+    std::vector<RelationSchema>              schemas;
+    std::unordered_map<std::string, std::size_t> schema_by_name;
 };
 
 ExtensionContext::ExtensionContext()  : impl_(std::make_unique<Impl>()) {}
@@ -29,6 +31,30 @@ void ExtensionContext::register_sink(std::unique_ptr<Sink> sink) {
 std::span<const std::unique_ptr<Sink>>
 ExtensionContext::sinks() const {
     return impl_->sinks;
+}
+
+void ExtensionContext::register_relation(RelationSchema schema) {
+    auto name = schema.name;
+    auto& byn = impl_->schema_by_name;
+    auto it = byn.find(name);
+    if (it != byn.end()) {
+        impl_->schemas[it->second] = std::move(schema);
+    } else {
+        byn[name] = impl_->schemas.size();
+        impl_->schemas.push_back(std::move(schema));
+    }
+}
+
+std::span<const RelationSchema>
+ExtensionContext::schemas() const {
+    return impl_->schemas;
+}
+
+const RelationSchema*
+ExtensionContext::find_schema(std::string_view name) const {
+    auto it = impl_->schema_by_name.find(std::string(name));
+    if (it == impl_->schema_by_name.end()) return nullptr;
+    return &impl_->schemas[it->second];
 }
 
 std::size_t ExtensionContext::load_required(LoadCtx& ctx, FactDB& out) const {
