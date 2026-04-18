@@ -166,10 +166,6 @@ Token Lexer::lex_identifier_or_keyword() {
     if (text == "on") return make_token(TokenKind::KwOn);
     if (text == "as") return make_token(TokenKind::KwAs);
     if (text == "refer") return make_token(TokenKind::KwRefer);
-    if (text == "set") return make_token(TokenKind::KwSet);
-    if (text == "add") return make_token(TokenKind::KwAdd);
-    if (text == "sub") return make_token(TokenKind::KwSub);
-    if (text == "remove") return make_token(TokenKind::KwRemove);
 
     // Variable: starts with uppercase
     if (std::isupper(static_cast<unsigned char>(text[0]))) {
@@ -425,7 +421,6 @@ Token Lexer::next() {
     // Two-character operators
     if (c == '=') {
         advance();
-        if (match('>')) return make_token(TokenKind::Arrow);
         if (match('=')) return make_token(TokenKind::Eq);
         // Bare '=' - error for now
         return error_token("unexpected character '='");

@@ -3,7 +3,6 @@ namespace test.iron_damage
 requires mod("Skyrim.esm")
 
 # All iron weapons get 99 damage
-iron_weapons(Weapon):
+skyrim/set(Weapon, :Damage, 99):
     form/weapon(Weapon)
     form/keyword(Weapon, @WeapMaterialIron)
-    => set form/damage(Weapon, 99)

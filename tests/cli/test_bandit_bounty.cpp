@@ -58,6 +58,8 @@ TEST(BanditBounty, ParsesAndResolves) {
     }
     EXPECT_EQ(diags.error_count(), 0u);
 
+    // bandit_bounty.mora: one `on` derived rule (no effect — :Gold has no
+    // field mapping, domain gap not yet closed).
     ASSERT_EQ(mod.rules.size(), 1u);
     const Rule& rule = mod.rules[0];
     EXPECT_EQ(rule.kind, RuleKind::On);
@@ -67,26 +69,4 @@ TEST(BanditBounty, ParsesAndResolves) {
     // Expected: seven body clauses (killed + is_player + is_npc + base_form
     //           + faction + level(Victim) + level(Player))
     EXPECT_EQ(rule.body.size(), 7u);
-
-    // Effect: add player/gold(Player, 10 * VL + 5 * max(0, VL - PL))
-    ASSERT_EQ(rule.effects.size(), 1u);
-    EXPECT_EQ(rule.effects[0].verb, VerbKind::Add);
-    EXPECT_EQ(pool.get(rule.effects[0].namespace_), "player");
-    EXPECT_EQ(pool.get(rule.effects[0].name), "gold");
-    ASSERT_EQ(rule.effects[0].args.size(), 2u);
-
-    // The value arg must be an Add(Mul(...), Mul(..., CallExpr(max, ...))).
-    const Expr& value = rule.effects[0].args[1];
-    const auto* outer = std::get_if<BinaryExpr>(&value.data);
-    ASSERT_NE(outer, nullptr);
-    EXPECT_EQ(outer->op, BinaryExpr::Op::Add);
-
-    const auto* rhs = std::get_if<BinaryExpr>(&outer->right->data);
-    ASSERT_NE(rhs, nullptr);
-    EXPECT_EQ(rhs->op, BinaryExpr::Op::Mul);
-
-    const auto* call = std::get_if<CallExpr>(&rhs->right->data);
-    ASSERT_NE(call, nullptr);
-    EXPECT_EQ(pool.get(call->name), "max");
-    EXPECT_EQ(call->args.size(), 2u);
 }

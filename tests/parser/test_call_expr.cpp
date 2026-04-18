@@ -14,18 +14,19 @@ Module parse_src(StringPool& pool, DiagBag& diags, const std::string& src) {
 
 } // namespace
 
-TEST(CallExprTest, CallInEffectValue) {
+TEST(CallExprTest, CallInHeadValue) {
     StringPool pool;
     DiagBag diags;
+    // skyrim/set(W, :Damage, abs(N)) — abs(N) is head_args[2]
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(W, N):\n"
-        "    => set form/damage(W, abs(N))\n");
+        "skyrim/set(W, :Damage, abs(N)):\n"
+        "    form/weapon(W)\n");
     ASSERT_FALSE(diags.has_errors());
 
     ASSERT_EQ(mod.rules.size(), 1u);
-    ASSERT_EQ(mod.rules[0].effects.size(), 1u);
-    const Expr& arg = mod.rules[0].effects[0].args[1];
+    ASSERT_EQ(mod.rules[0].head_args.size(), 3u);
+    const Expr& arg = mod.rules[0].head_args[2];
     const auto* call = std::get_if<CallExpr>(&arg.data);
     ASSERT_NE(call, nullptr);
     EXPECT_EQ(pool.get(call->name), "abs");
@@ -37,11 +38,11 @@ TEST(CallExprTest, MaxWithBinaryArg) {
     DiagBag diags;
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(W, N):\n"
-        "    => set form/damage(W, max(0, N - 5))\n");
+        "skyrim/set(W, :Damage, max(0, N - 5)):\n"
+        "    form/weapon(W)\n");
     ASSERT_FALSE(diags.has_errors());
 
-    const Expr& arg = mod.rules[0].effects[0].args[1];
+    const Expr& arg = mod.rules[0].head_args[2];
     const auto* call = std::get_if<CallExpr>(&arg.data);
     ASSERT_NE(call, nullptr);
     EXPECT_EQ(pool.get(call->name), "max");
@@ -64,11 +65,11 @@ TEST(CallExprTest, CallInsideArithmetic) {
     // 10 * VL + 5 * max(0, VL - PL)
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(W, VL, PL):\n"
-        "    => set form/damage(W, 10 * VL + 5 * max(0, VL - PL))\n");
+        "skyrim/set(W, :Damage, 10 * VL + 5 * max(0, VL - PL)):\n"
+        "    form/weapon(W)\n");
     ASSERT_FALSE(diags.has_errors());
 
-    const Expr& arg = mod.rules[0].effects[0].args[1];
+    const Expr& arg = mod.rules[0].head_args[2];
     const auto* outer = std::get_if<BinaryExpr>(&arg.data);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, BinaryExpr::Op::Add);

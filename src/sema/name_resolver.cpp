@@ -63,33 +63,12 @@ void apply_imports_to_fact(FactPattern& fp, const ImportMap& im,
     }
 }
 
-void apply_imports_to_effect(Effect& eff, const ImportMap& im,
-                                     StringPool& pool) {
-    if (eff.namespace_.index == 0) {
-        std::string const name{pool.get(eff.name)};
-        auto it = im.refer_to_ns.find(name);
-        if (it != im.refer_to_ns.end()) {
-            eff.namespace_ = pool.intern(it->second);
-        }
-    } else {
-        std::string const q{pool.get(eff.namespace_)};
-        auto it = im.alias_to_ns.find(q);
-        if (it != im.alias_to_ns.end()) {
-            eff.namespace_ = pool.intern(it->second);
-        }
-    }
-}
-
 void apply_imports_to_clause(Clause& clause, const ImportMap& im,
                                      StringPool& pool) {
     std::visit([&](auto& node) {
         using NodeT = std::decay_t<decltype(node)>;
         if constexpr (std::is_same_v<NodeT, FactPattern>) {
             apply_imports_to_fact(node, im, pool);
-        } else if constexpr (std::is_same_v<NodeT, Effect>) {
-            apply_imports_to_effect(node, im, pool);
-        } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
-            apply_imports_to_effect(node.effect, im, pool);
         } else if constexpr (std::is_same_v<NodeT, OrClause>) {
             for (auto& branch : node.branches) {
                 for (auto& fp : branch) apply_imports_to_fact(fp, im, pool);
@@ -255,23 +234,20 @@ void NameResolver::resolve(Module& mod) {
     current_mod_ = &mod;
 
     // Pass 0: build the import map from `use` declarations and rewrite
-    // qualifiers on FactPatterns / Effects accordingly.
+    // qualifiers on FactPatterns accordingly.
     ImportMap const imports = build_imports(mod, pool_, diags_, current_mod_);
     for (Rule& rule : mod.rules) {
         for (Clause& clause : rule.body) {
             apply_imports_to_clause(clause, imports, pool_);
         }
-        for (Effect& eff : rule.effects) {
-            apply_imports_to_effect(eff, imports, pool_);
-        }
-        for (ConditionalEffect& ce : rule.conditional_effects) {
-            apply_imports_to_effect(ce.effect, imports, pool_);
-        }
     }
 
-    // Pass 1: register every rule head as a derived fact, detect duplicates.
+    // Pass 1: register every unqualified rule head as a derived fact, detect duplicates.
+    // Qualified rules (e.g. skyrim/add) emit to external relations; they are not
+    // user-defined derived facts and must not be registered in the facts_ table.
     for (const Rule& rule : mod.rules) {
         if (diags_.at_error_limit()) break;
+        if (rule.qualifier.index != 0) continue;
         register_rule_as_fact(rule);
     }
 
@@ -348,43 +324,10 @@ void NameResolver::check_fact_exists(const FactPattern& pattern) {
     }
 }
 
-// Overload that takes name + span directly (avoids copying Expr args).
-static void check_action_name(StringId action, const SourceSpan& span,
-                               const NameResolver& resolver, DiagBag& diags,
-                               StringPool& pool, const std::string& src_line) {
-    if (resolver.lookup_fact(action) == nullptr) {
-        diags.error("E011",
-                    std::string("unknown fact or rule: '") +
-                        std::string(pool.get(action)) + "'",
-                    span, src_line);
-    }
-}
-
-// Overload that accepts an Effect's namespace + name — if the namespaced
-// relation exists in kRelations, skip the check (type-checker validates).
-static void check_effect_name(StringId ns, StringId action, const SourceSpan& span,
-                               const NameResolver& resolver, DiagBag& diags,
-                               StringPool& pool, const std::string& src_line) {
-    std::string_view const ns_sv = pool.get(ns);
-    std::string_view const nm_sv = pool.get(action);
-    if (!ns_sv.empty()) {
-        if (model::find_relation(ns_sv, nm_sv, model::kRelations, model::kRelationCount)) {
-            return;
-        }
-    }
-    check_action_name(action, span, resolver, diags, pool, src_line);
-}
 
 void NameResolver::resolve_rule(Rule& rule) {
     for (Clause& clause : rule.body) {
         resolve_clause(clause);
-    }
-    // Also check any top-level effects listed separately on the rule.
-    for (const Effect& eff : rule.effects) {
-        check_effect_name(eff.namespace_, eff.name, eff.span, *this, diags_, pool_, source_line(eff.span));
-    }
-    for (const ConditionalEffect& ce : rule.conditional_effects) {
-        check_effect_name(ce.effect.namespace_, ce.effect.name, ce.effect.span, *this, diags_, pool_, source_line(ce.effect.span));
     }
 }
 
@@ -393,18 +336,12 @@ void NameResolver::resolve_clause(Clause& clause) {
         using NodeT = std::decay_t<decltype(node)>;
         if constexpr (std::is_same_v<NodeT, FactPattern>) {
             check_fact_exists(node);
-        } else if constexpr (std::is_same_v<NodeT, Effect>) {
-            check_effect_name(node.namespace_, node.name, node.span, *this, diags_, pool_, source_line(node.span));
-        } else if constexpr (std::is_same_v<NodeT, ConditionalEffect>) {
-            check_effect_name(node.effect.namespace_, node.effect.name, node.effect.span,
-                              *this, diags_, pool_, source_line(node.effect.span));
         } else if constexpr (std::is_same_v<NodeT, OrClause>) {
             for (auto& branch : node.branches) {
                 for (auto& fp : branch) check_fact_exists(fp);
             }
         }
         // InClause and GuardClause don't reference facts by name
-        // GuardClause — no fact reference to validate here
     }, clause.data);
 }
 

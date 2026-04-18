@@ -1,15 +1,12 @@
 #include "mora/eval/rule_planner.h"
 
-#include "mora/data/action_names.h"
 #include "mora/eval/expr_eval.h"
-#include "mora/eval/field_types.h"
 #include "mora/eval/op_antijoin.h"
 #include "mora/eval/op_filter.h"
 #include "mora/eval/op_in_clause.h"
 #include "mora/eval/op_join.h"
 #include "mora/eval/op_scan.h"
 #include "mora/eval/op_union.h"
-#include "mora/model/field_names.h"
 
 #include <algorithm>
 #include <string>
@@ -195,29 +192,6 @@ std::unique_ptr<Operator> build_source(
                          fp, pool, symbol_formids);
 }
 
-// Map VerbKind → action-name prefix (matches Evaluator::verb_prefix).
-static const char* verb_prefix(VerbKind v) {
-    switch (v) {
-        case VerbKind::Set:    return "set_";
-        case VerbKind::Add:    return "add_";
-        case VerbKind::Sub:    return "sub_";
-        case VerbKind::Remove: return "remove_";
-    }
-    return "set_";
-}
-
-// Map FieldOp → the skyrim/{op} effect relation name.
-// Returns empty StringId{} if no relation is registered for this op.
-static StringId field_op_to_rel(FieldOp op, StringPool& pool) {
-    switch (op) {
-        case FieldOp::Set:      return pool.intern("skyrim/set");
-        case FieldOp::Add:      return pool.intern("skyrim/add");
-        case FieldOp::Remove:   return pool.intern("skyrim/remove");
-        case FieldOp::Multiply: return pool.intern("skyrim/multiply");
-        default:                return StringId{};
-    }
-}
-
 // Build the body operator tree from a rule's body clauses.
 // Positive FactPatterns are sorted by selectivity and joined left-deep.
 // Negated FactPatterns (M3) are appended as AntiJoinOps after positive joins.
@@ -380,108 +354,43 @@ std::optional<RulePlan> plan_rule(
     StringPool&                                  pool,
     const std::unordered_map<uint32_t, uint32_t>& symbol_formids)
 {
-    // M2: positive FactPattern + optional GuardClause body clauses (at least
-    // one FactPattern). Negation, InClause → fallback.
     if (!body_is_supported_for_vectorized(rule)) return std::nullopt;
 
-    // ── Effects branch ───────────────────────────────────────────────
-    // Enter if there are any unconditional or conditional effects.
-    if (!rule.effects.empty() || !rule.conditional_effects.empty()) {
-        std::vector<std::unique_ptr<EffectAppendOp>> effect_ops;
-        effect_ops.reserve(rule.effects.size());
+    auto body = plan_body(rule, input_db, derived_facts, pool, symbol_formids);
+    if (!body) return std::nullopt;
 
-        for (const Effect& eff : rule.effects) {
-            // Effect must have exactly 2 args: (target, value).
-            // (Leveled-list add uses 4 args — not yet vectorized; fall back.)
-            if (eff.args.size() != 2) return std::nullopt;
-
-            // Reconstruct the legacy action name: "<verb>_<eff.name>".
-            std::string const legacy =
-                std::string(verb_prefix(eff.verb)) + std::string(pool.get(eff.name));
-            StringId const action_id = pool.intern(legacy);
-
-            // Map action name → (FieldId, FieldOp).
-            auto [field, op] = mora::action_to_field(action_id, pool);
-            if (field == FieldId::Invalid) return std::nullopt;  // unknown action
-
-            // Map FieldOp → output relation name.
-            StringId const out_rel = field_op_to_rel(op, pool);
-            if (out_rel.index == 0) return std::nullopt;  // unsupported op
-
-            // Re-plan the body for this effect (re-scan strategy).
-            auto body = plan_body(rule, input_db, derived_facts, pool, symbol_formids);
-            if (!body) return std::nullopt;
-
-            StringId const field_kw = pool.intern(field_id_name(field));
-
-            EffectArgSpec target_spec =
-                spec_from_expr(eff.args[0], pool, symbol_formids);
-            EffectArgSpec value_spec  =
-                spec_from_expr(eff.args[1], pool, symbol_formids);
-
-            effect_ops.push_back(std::make_unique<EffectAppendOp>(
-                std::move(*body), out_rel, field_kw,
-                std::move(target_spec), std::move(value_spec),
-                pool, symbol_formids));
-        }
-
-        // ConditionalEffect: same as unconditional, but body is wrapped in
-        // a FilterOp keyed on the conditional's guard expression.
-        for (const ConditionalEffect& ce : rule.conditional_effects) {
-            if (ce.effect.args.size() != 2) return std::nullopt;
-
-            std::string const ce_legacy =
-                std::string(verb_prefix(ce.effect.verb)) + std::string(pool.get(ce.effect.name));
-            StringId const ce_action_id = pool.intern(ce_legacy);
-
-            auto [ce_field, ce_op] = mora::action_to_field(ce_action_id, pool);
-            if (ce_field == FieldId::Invalid) return std::nullopt;
-
-            StringId const ce_out_rel = field_op_to_rel(ce_op, pool);
-            if (ce_out_rel.index == 0) return std::nullopt;
-
-            auto ce_body = plan_body(rule, input_db, derived_facts, pool, symbol_formids);
-            if (!ce_body) return std::nullopt;
-
-            // Wrap the body in a FilterOp for this conditional's guard.
-            auto filtered = std::make_unique<FilterOp>(
-                std::move(*ce_body), ce.guard.get(), pool, symbol_formids);
-
-            StringId const ce_field_kw = pool.intern(field_id_name(ce_field));
-
-            effect_ops.push_back(std::make_unique<EffectAppendOp>(
-                std::move(filtered), ce_out_rel, ce_field_kw,
-                spec_from_expr(ce.effect.args[0], pool, symbol_formids),
-                spec_from_expr(ce.effect.args[1], pool, symbol_formids),
-                pool, symbol_formids));
-        }
-
-        RulePlan plan;
-        plan.effect_ops = std::move(effect_ops);
-        return plan;
-    }
-
-    // ── Derived rule branch ───────────────────────────────────────────
-    // No effects and no conditional effects: derived fact rule.
-    {
-        auto body = plan_body(rule, input_db, derived_facts, pool, symbol_formids);
-        if (!body) return std::nullopt;
-
-        // All head args must be VariableExprs.
-        std::vector<EffectArgSpec> head_specs;
-        head_specs.reserve(rule.head_args.size());
-        for (auto const& ha : rule.head_args) {
+    // Build head arg specs. For skyrim/* qualified rules (effect relations), the
+    // head may include keyword literals (:Keyword, :Name, etc.) as well as
+    // variables and other expressions. For user-defined rules, all head args
+    // must be simple variable expressions.
+    std::vector<EffectArgSpec> head_specs;
+    head_specs.reserve(rule.head_args.size());
+    for (const Expr& ha : rule.head_args) {
+        if (rule.qualifier.index == 0) {
+            // User-defined rule: head args must be variables.
             if (!std::holds_alternative<VariableExpr>(ha.data))
                 return std::nullopt;
-            head_specs.push_back(spec_from_expr(ha, pool, symbol_formids));
         }
-
-        RulePlan plan;
-        plan.derived_op = std::make_unique<DerivedAppendOp>(
-            std::move(*body), rule.name, std::move(head_specs),
-            pool, symbol_formids);
-        return plan;
+        head_specs.push_back(spec_from_expr(ha, pool, symbol_formids));
     }
+
+    // Determine the target relation name. Qualified → "ns/name"; else just "name".
+    StringId head_rel;
+    if (rule.qualifier.index != 0) {
+        std::string qn;
+        qn += pool.get(rule.qualifier);
+        qn += '/';
+        qn += pool.get(rule.name);
+        head_rel = pool.intern(qn);
+    } else {
+        head_rel = rule.name;
+    }
+
+    RulePlan plan;
+    plan.append_op = std::make_unique<DerivedAppendOp>(
+        std::move(*body), head_rel, std::move(head_specs),
+        pool, symbol_formids);
+    return plan;
 }
 
 } // namespace mora

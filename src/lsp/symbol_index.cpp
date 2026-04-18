@@ -81,14 +81,6 @@ mora::SourceSpan fact_name_span(const mora::FactPattern& fp,
     return s;
 }
 
-void walk_effect(const mora::Effect& eff,
-                 std::unordered_map<uint32_t, mora::SourceSpan>& bindings_seen,
-                 std::vector<SymbolEntry>& out) {
-    for (const auto& arg : eff.args) {
-        walk_expr(arg, bindings_seen, out);
-    }
-}
-
 void walk_clause(const mora::Clause& clause,
                  const mora::NameResolver& resolver,
                  const mora::StringPool& pool,
@@ -146,13 +138,6 @@ void walk_clause(const mora::Clause& clause,
             walk_expr(val, bindings_seen, out);
         }
     }
-    else if (const auto* eff = std::get_if<mora::Effect>(&clause.data)) {
-        walk_effect(*eff, bindings_seen, out);
-    }
-    else if (const auto* cond_eff = std::get_if<mora::ConditionalEffect>(&clause.data)) {
-        if (cond_eff->guard) walk_expr(*cond_eff->guard, bindings_seen, out);
-        walk_effect(cond_eff->effect, bindings_seen, out);
-    }
 }
 
 } // anonymous namespace
@@ -191,17 +176,6 @@ void SymbolIndex::build(const mora::Module& mod,
         // Body clauses.
         for (const auto& cl : rule.body) {
             walk_clause(cl, resolver, pool, bindings_seen, entries_);
-        }
-
-        // Top-level effects.
-        for (const auto& eff : rule.effects) {
-            walk_effect(eff, bindings_seen, entries_);
-        }
-
-        // Conditional effects.
-        for (const auto& cond_eff : rule.conditional_effects) {
-            if (cond_eff.guard) walk_expr(*cond_eff.guard, bindings_seen, entries_);
-            walk_effect(cond_eff.effect, bindings_seen, entries_);
         }
     }
 }

@@ -115,11 +115,9 @@ TEST(VectorizedCoverage, AllTestDataFixturesEvaluate) {
         const std::string stem = entry.path().stem().string();
         // Skip negative fixtures (expected to produce parse/resolve errors).
         if (stem == "errors") continue;
-        // bandit_bounty.mora uses `add player/gold` which maps to FieldId::Invalid
-        // (not in the form model). The vectorized planner declines this effect,
-        // emitting an eval-unsupported diagnostic. The parse/AST test
-        // (test_bandit_bounty.cpp) covers parsing; evaluation is gated here
-        // until the model gap is closed in a future plan.
+        // bandit_bounty.mora uses an `on` rule with instance facts (event/killed,
+        // ref/is_player, etc.) that form a Cartesian join — the vectorized planner
+        // correctly declines it. Skip here so we don't expect it to vectorize.
         if (stem == "bandit_bounty") continue;
 
         SCOPED_TRACE(entry.path().string());

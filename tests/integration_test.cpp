@@ -39,11 +39,10 @@ TEST_F(IntegrationTest, CompleteValidFile) {
         "    bandit(NPC)\n"
         "    high_level(NPC)\n"
         "\n"
-        "vampire_bane(Weapon):\n"
+        "skyrim/add(Weapon, :Keyword, @VampireBane):\n"
         "    form/weapon(Weapon)\n"
         "    form/keyword(Weapon, @WeapMaterialSilver)\n"
         "    not form/keyword(Weapon, @WeapTypeGreatsword)\n"
-        "    => add form/keyword(Weapon, @VampireBane)\n"
     ));
 }
 
@@ -66,9 +65,8 @@ TEST_F(IntegrationTest, RuleCompositionWorks) {
         "b(X):\n"
         "    a(X)\n"
         "\n"
-        "c(X):\n"
+        "skyrim/add(X, :Keyword, @TestKeyword):\n"
         "    b(X)\n"
-        "    => add form/keyword(X, @TestKeyword)\n"
     ));
 }
 

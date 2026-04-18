@@ -57,14 +57,21 @@ TEST(V2Tokens, NamespacedIdentifierLexesAsThreeTokens) {
 }
 
 TEST(V2Tokens, NewKeywordsRecognized) {
-    auto tokens = tokenize("maintain on as refer set add sub remove\n");
-    ASSERT_GE(tokens.size(), 8u);
+    // Verb keywords (set/add/sub/remove) dropped in M1 — they lex as plain identifiers.
+    auto tokens = tokenize("maintain on as refer\n");
+    ASSERT_GE(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].kind, TokenKind::KwMaintain);
     EXPECT_EQ(tokens[1].kind, TokenKind::KwOn);
     EXPECT_EQ(tokens[2].kind, TokenKind::KwAs);
     EXPECT_EQ(tokens[3].kind, TokenKind::KwRefer);
-    EXPECT_EQ(tokens[4].kind, TokenKind::KwSet);
-    EXPECT_EQ(tokens[5].kind, TokenKind::KwAdd);
-    EXPECT_EQ(tokens[6].kind, TokenKind::KwSub);
-    EXPECT_EQ(tokens[7].kind, TokenKind::KwRemove);
+}
+
+TEST(V2Tokens, VerbWordsAreNowIdentifiers) {
+    // set/add/sub/remove are no longer reserved — they lex as plain identifiers.
+    auto tokens = tokenize("set add sub remove\n");
+    ASSERT_GE(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Identifier);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Identifier);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Identifier);
+    EXPECT_EQ(tokens[3].kind, TokenKind::Identifier);
 }

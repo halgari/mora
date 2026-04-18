@@ -34,14 +34,12 @@ TEST(PlannerGuards, GuardInBody_FiltersRows) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Rule: npc(NPC), base_level(NPC, Level), Level >= 10
-    //       => set gold_value(NPC, 500)
+    // Rule: skyrim/set(NPC, :GoldValue, 500) :- npc(NPC), base_level(NPC, Level), Level >= 10
     std::string const source =
-        "elite_gold(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 500):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level >= 10\n"
-        "    => set form/gold_value(NPC, 500)\n";
+        "    Level >= 10\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -86,12 +84,11 @@ TEST(PlannerGuards, MultipleGuards_BothMustPass) {
     // Rule with two guards: Level >= 10 AND Level <= 20.
     // Only NPCs in the 10-20 band get gold.
     std::string const source =
-        "midrange(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 100):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
         "    Level >= 10\n"
-        "    Level <= 20\n"
-        "    => set form/gold_value(NPC, 100)\n";
+        "    Level <= 20\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -124,11 +121,10 @@ TEST(PlannerGuards, GuardFiltersAllRows_EmptyOutput) {
 
     // Guard that nothing can pass: Level > 1000.
     std::string const source =
-        "impossible(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 1):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level > 1000\n"
-        "    => set form/gold_value(NPC, 1)\n";
+        "    Level > 1000\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     ASSERT_FALSE(diags.has_errors());
@@ -145,22 +141,20 @@ TEST(PlannerGuards, GuardFiltersAllRows_EmptyOutput) {
     if (set_rel) { EXPECT_EQ(set_rel->row_count(), 0u); }
 }
 
-// ── ConditionalEffect: guard at effect time ──────────────────────────────
+// ── Guard in body filters rows (replaces old ConditionalEffect) ──────────
 //
-// ConditionalEffect syntax: `<var-expr> => <effect>` in the rule body
-// (expression followed by `=>` becomes a ConditionalEffect, not a GuardClause).
+// The conditional effect pattern moves the guard into the rule body.
 
 TEST(PlannerGuards, ConditionalEffect_VectorizedPath) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Rule: body scans all NPCs + their levels.
-    // ConditionalEffect: Level >= 10 => set gold_value.
+    // Rule: scans all NPCs + their levels; guard Level >= 10 in body.
     std::string const source =
-        "conditional_gold(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 777):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level >= 10 => set form/gold_value(NPC, 777)\n";
+        "    Level >= 10\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -186,20 +180,22 @@ TEST(PlannerGuards, ConditionalEffect_VectorizedPath) {
     EXPECT_EQ(tuples[0][2].as_int(), 777);
 }
 
-// ── ConditionalEffect + unconditional effect in same rule ────────────────
+// ── Two qualified-head rules: one filtered, one unconditional ─────────────
 
 TEST(PlannerGuards, ConditionalAndUnconditional_BothFire) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // One unconditional effect (all NPCs) + one conditional (only high-level).
-    // ConditionalEffect syntax: `<expr> => <effect>` in the rule body.
+    // Rule 1: all NPCs get :GoldValue = 1 (unconditional).
+    // Rule 2: only high-level NPCs get :Damage = 99 (guarded).
     std::string const source =
-        "mixed_effects(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 1):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level >= 15 => set form/damage(NPC, 99)\n"
-        "    => set form/gold_value(NPC, 1)\n";
+        "skyrim/set(NPC, :Damage, 99):\n"
+        "    form/npc(NPC)\n"
+        "    form/base_level(NPC, Level)\n"
+        "    Level >= 15\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())

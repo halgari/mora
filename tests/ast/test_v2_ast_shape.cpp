@@ -10,17 +10,16 @@ TEST(V2Ast, RuleHasKindField) {
     EXPECT_EQ(r.kind, RuleKind::Maintain);
 }
 
+TEST(V2Ast, RuleHasQualifierField) {
+    Rule r{};
+    EXPECT_EQ(r.qualifier.index, 0u);  // empty by default
+    EXPECT_EQ(r.name.index, 0u);
+}
+
 TEST(V2Ast, UseDeclHasAliasAndRefer) {
     UseDecl u{};
     EXPECT_EQ(u.alias.index, 0u);
     EXPECT_TRUE(u.refer.empty());
-}
-
-TEST(V2Ast, EffectHasVerbAndNamespace) {
-    Effect e{};
-    EXPECT_EQ(e.verb, VerbKind::Set);
-    EXPECT_EQ(e.namespace_.index, 0u);
-    EXPECT_EQ(e.name.index, 0u);
 }
 
 TEST(V2Ast, EditorIdExprVariantMember) {

@@ -39,7 +39,7 @@ TEST(PlannerM1, MergedLookup_DerivedOnlyRelation) {
     mora::DiagBag diags;
 
     // Rule 1: npc(NPC) → derived my_npcs(NPC)  (derived rule, no effect)
-    // Rule 2: my_npcs(NPC) => set gold_value(NPC, 42)  (effect rule)
+    // Rule 2: skyrim/set(NPC, :GoldValue, 42) :- my_npcs(NPC)
     //
     // After rule 1 runs vectorized, derived_facts gains "my_npcs".
     // Rule 2 scans "my_npcs" which only exists in derived_facts → UnionOp
@@ -48,9 +48,8 @@ TEST(PlannerM1, MergedLookup_DerivedOnlyRelation) {
         "my_npcs(NPC):\n"
         "    form/npc(NPC)\n"
         "\n"
-        "give_gold(NPC):\n"
-        "    my_npcs(NPC)\n"
-        "    => set form/gold_value(NPC, 42)\n";
+        "skyrim/set(NPC, :GoldValue, 42):\n"
+        "    my_npcs(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -90,17 +89,16 @@ TEST(PlannerM1, MergedLookup_DerivedOnlyRelation) {
 // itself (if written) would cover the union more directly.
 // For integration we rely on Test A.
 
-// ── Task 1.3: Add verb routes to skyrim/add ─────────────────────────────
+// ── Task 1.3: Qualified skyrim/add head ──────────────────────────────────
 
 TEST(PlannerM1, AddVerb_RoutesToSkyrimAdd) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // "add form/keyword(NPC, :SomeKW)" → skyrim/add with Keyword field
+    // skyrim/add(NPC, :Keyword, 100) :- form/npc(NPC)
     std::string const source =
-        "tag_it(NPC):\n"
-        "    form/npc(NPC)\n"
-        "    => add form/keyword(NPC, 100)\n";
+        "skyrim/add(NPC, :Keyword, 100):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -117,23 +115,22 @@ TEST(PlannerM1, AddVerb_RoutesToSkyrimAdd) {
     auto const& add_tuples = db.get_relation(pool.intern("skyrim/add"));
     ASSERT_EQ(add_tuples.size(), 1u);
     EXPECT_EQ(add_tuples[0][0].as_formid(), 0x100u);
-    EXPECT_EQ(pool.get(add_tuples[0][1].as_keyword()), "Keywords");
+    EXPECT_EQ(pool.get(add_tuples[0][1].as_keyword()), "Keyword");
 
     // skyrim/set should be empty.
     auto const* set_rel = db.get_relation_columnar(pool.intern("skyrim/set"));
     if (set_rel) { EXPECT_EQ(set_rel->row_count(), 0u); }
 }
 
-// ── Task 1.3: Remove verb routes to skyrim/remove ───────────────────────
+// ── Task 1.3: Qualified skyrim/remove head ───────────────────────────────
 
 TEST(PlannerM1, RemoveVerb_RoutesToSkyrimRemove) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
     std::string const source =
-        "untag_it(NPC):\n"
-        "    form/npc(NPC)\n"
-        "    => remove form/keyword(NPC, 200)\n";
+        "skyrim/remove(NPC, :Keyword, 200):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -149,20 +146,20 @@ TEST(PlannerM1, RemoveVerb_RoutesToSkyrimRemove) {
     auto const& rem_tuples = db.get_relation(pool.intern("skyrim/remove"));
     ASSERT_EQ(rem_tuples.size(), 1u);
     EXPECT_EQ(rem_tuples[0][0].as_formid(), 0x200u);
-    EXPECT_EQ(pool.get(rem_tuples[0][1].as_keyword()), "Keywords");
+    EXPECT_EQ(pool.get(rem_tuples[0][1].as_keyword()), "Keyword");
 }
 
-// ── Task 1.4: Multi-effect rule — both effects emitted vectorized ─────────
+// ── Task 1.4: Two qualified-head rules → both effects emitted ─────────────
 
 TEST(PlannerM1, MultiEffect_BothEffectsEmitted) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
     std::string const source =
-        "dual_set(NPC):\n"
+        "skyrim/set(NPC, :GoldValue, 10):\n"
         "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 10)\n"
-        "    => set form/damage(NPC, 20)\n";
+        "skyrim/set(NPC, :Damage, 20):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -193,17 +190,17 @@ TEST(PlannerM1, MultiEffect_BothEffectsEmitted) {
     EXPECT_EQ(got[1].second, 10);
 }
 
-// ── Task 1.4: Multi-effect rule — mixed verbs (set + add) ───────────────
+// ── Task 1.4: Two qualified-head rules — mixed set/add ───────────────────
 
 TEST(PlannerM1, MultiEffect_MixedVerbs) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
     std::string const source =
-        "mixed_verbs(NPC):\n"
+        "skyrim/set(NPC, :GoldValue, 50):\n"
         "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 50)\n"
-        "    => add form/keyword(NPC, 999)\n";
+        "skyrim/add(NPC, :Keyword, 999):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -227,7 +224,7 @@ TEST(PlannerM1, MultiEffect_MixedVerbs) {
     auto const& add_tuples = db.get_relation(pool.intern("skyrim/add"));
     ASSERT_EQ(add_tuples.size(), 1u);
     EXPECT_EQ(add_tuples[0][0].as_formid(), 0x400u);
-    EXPECT_EQ(pool.get(add_tuples[0][1].as_keyword()), "Keywords");
+    EXPECT_EQ(pool.get(add_tuples[0][1].as_keyword()), "Keyword");
 }
 
 // ── Task 1.2: KeywordLiteral resolved to FormID via symbol_formids ────────
@@ -248,9 +245,8 @@ TEST(PlannerM1, KeywordLiteral_ResolvesViaSymbolFormids) {
     // Realistic scenario: set gold_value(:FixedNPC, Val) where :FixedNPC
     // is the target (a keyword constant that resolves to a FormID).
     std::string const source =
-        "fix_npc(Val):\n"
-        "    form/base_level(:FixedNPC, Val)\n"
-        "    => set form/gold_value(:FixedNPC, Val)\n";
+        "skyrim/set(:FixedNPC, :GoldValue, Val):\n"
+        "    form/base_level(:FixedNPC, Val)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())

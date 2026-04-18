@@ -18,10 +18,9 @@ protected:
 
 TEST_F(PhaseClassifierTest, StaticRule) {
     auto mod = parse(
-        "bandit(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :TestKeyword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
-        "    => add_keyword(NPC, :TestKeyword)\n"
     );
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);
@@ -34,7 +33,6 @@ TEST_F(PhaseClassifierTest, DynamicRuleFromInstanceFact) {
         "merchant_goods(NPC):\n"
         "    npc(NPC)\n"
         "    current_location(NPC, Loc)\n"
-        "    => add_item(NPC, :TradeGoods)\n"
     );
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);
@@ -56,16 +54,14 @@ TEST_F(PhaseClassifierTest, DerivedRuleNoEffectIsStatic) {
 
 TEST_F(PhaseClassifierTest, ClassifyModule) {
     auto mod = parse(
-        "bandit(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :TestKeyword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
-        "    => add_keyword(NPC, :TestKeyword)\n"
         "\n"
         "dynamic_rule(NPC):\n"
         "    npc(NPC)\n"
         "    current_level(NPC, Level)\n"
         "    Level >= 30\n"
-        "    => add_perk(NPC, :TestPerk)\n"
     );
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);

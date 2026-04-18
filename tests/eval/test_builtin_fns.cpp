@@ -33,9 +33,8 @@ struct Fixture {
 int64_t eval_damage(Fixture& f, const std::string& body) {
     std::string src =
         "namespace t\n"
-        "r(Anchor):\n"
-        "    form/npc(Anchor)\n"
-        "    => set form/damage(:MyWeap, " + body + ")\n";
+        "skyrim/set(:MyWeap, :Damage, " + body + "):\n"
+        "    form/npc(Anchor)\n";
     auto mod = f.parse_and_resolve(src);
     FactDB db(f.pool);
     // Seed one npc fact so the rule fires once.

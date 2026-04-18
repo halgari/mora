@@ -28,13 +28,11 @@ TEST(EvaluatorEffectFacts, SetProducesSkyrimSetTuple) {
     mora::DiagBag diags;
 
     // Minimal program: seed a form/npc fact (registered relation), fire a
-    // single set rule to produce a skyrim/set tuple.
+    // single qualified-head rule to produce a skyrim/set tuple.
     // form/npc is in the schema registry so the name resolver accepts it.
-    // set form/gold_value is a registered namespaced effect verb.
     std::string const source =
-        "give_gold(NPC):\n"
-        "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 100)\n";
+        "skyrim/set(NPC, :GoldValue, 100):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (const auto& d : diags.all()) {

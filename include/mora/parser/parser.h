@@ -27,7 +27,6 @@ private:
 
     Rule parse_rule();
     FactPattern parse_fact_pattern(bool negated = false);
-    Effect parse_effect();
 
     Expr parse_expr();
     Expr parse_comparison();

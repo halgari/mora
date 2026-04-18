@@ -23,16 +23,15 @@ mora::Module parse_and_resolve(mora::StringPool& pool,
     return mod;
 }
 
-// ── Effect-rule: set gold_value(?npc, 100) :- npc(?npc) ─────────────────
+// ── Qualified-head rule: skyrim/set(NPC, :GoldValue, 100) :- npc(NPC) ──────
 
 TEST(RulePlannerSingle, SetEffectRule_VectorizedPath) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
     std::string const source =
-        "give_gold(NPC):\n"
-        "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 100)\n";
+        "skyrim/set(NPC, :GoldValue, 100):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     ASSERT_FALSE(diags.has_errors());
@@ -59,9 +58,8 @@ TEST(RulePlannerSingle, SetEffectRule_MultipleInputRows) {
     mora::DiagBag diags;
 
     std::string const source =
-        "give_gold(NPC):\n"
-        "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 50)\n";
+        "skyrim/set(NPC, :GoldValue, 50):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     ASSERT_FALSE(diags.has_errors());
@@ -111,9 +109,7 @@ TEST(RulePlannerSingle, DerivedRule_VectorizedPath) {
 
 // ── Rule with a guard → vectorized via FilterOp (M2) ─────────────────────
 //
-// M2 introduced FilterOp so GuardClause now routes through the vectorized
-// path. This test was updated from "expect fallback" to "expect vectorized"
-// and also verifies the guard actually filters rows correctly.
+// GuardClause in rule body routes through the vectorized path via FilterOp.
 
 TEST(RulePlannerSingle, GuardClause_VectorizedWithFilter) {
     mora::StringPool pool;
@@ -121,11 +117,10 @@ TEST(RulePlannerSingle, GuardClause_VectorizedWithFilter) {
 
     // Rule with a guard: only NPCs with Level >= 10 get gold.
     std::string const source =
-        "high_value(NPC, Level):\n"
+        "skyrim/set(NPC, :GoldValue, 999):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level >= 10\n"  // GuardClause — now handled via FilterOp
-        "    => set form/gold_value(NPC, 999)\n";
+        "    Level >= 10\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -150,18 +145,18 @@ TEST(RulePlannerSingle, GuardClause_VectorizedWithFilter) {
     EXPECT_EQ(tuples[0][2].as_int(), 999);
 }
 
-// ── Rule with multiple effects → vectorized (M1 re-scan strategy) ──────────
+// ── Two qualified-head rules → each emits one row ──────────────────────────
 
 TEST(RulePlannerSingle, MultipleEffects_Vectorized) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Two effects in one rule → M1 planner now handles via re-scan strategy.
+    // Two rules, each with a different field — both write to skyrim/set.
     std::string const source =
-        "dual_effect(NPC):\n"
+        "skyrim/set(NPC, :GoldValue, 100):\n"
         "    form/npc(NPC)\n"
-        "    => set form/gold_value(NPC, 100)\n"
-        "    => set form/damage(NPC, 5)\n";
+        "skyrim/set(NPC, :Damage, 5):\n"
+        "    form/npc(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     ASSERT_FALSE(diags.has_errors());
@@ -172,7 +167,7 @@ TEST(RulePlannerSingle, MultipleEffects_Vectorized) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Vectorized path emits both effects.
+    // Both rules emit one row each into skyrim/set.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     EXPECT_EQ(tuples.size(), 2u);
 }
@@ -186,10 +181,9 @@ TEST(RulePlannerSingle, NegatedPattern_Vectorized) {
     // M3: negated pattern is now handled by AntiJoinOp.
     // Rule: NPCs that have no weapon entry.
     std::string const source =
-        "no_weapon_npc(NPC):\n"
+        "skyrim/set(NPC, :GoldValue, 1):\n"
         "    form/npc(NPC)\n"
-        "    not form/weapon(NPC)\n"
-        "    => set form/gold_value(NPC, 1)\n";
+        "    not form/weapon(NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())

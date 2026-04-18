@@ -67,10 +67,9 @@ protected:
 
 TEST_F(EvaluatorTest, SimpleEffectRule) {
     auto mod = parse(
-        "add_kw(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :TestKeyword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :TestFaction)\n"
-        "    => add form/keyword(NPC, :TestKeyword)\n"
     );
     for (auto const& d : diags.all())
         if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
@@ -100,9 +99,8 @@ TEST_F(EvaluatorTest, DerivedRuleComposition) {
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
         "\n"
-        "tag_bandit(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :IsBandit):\n"
         "    bandit(NPC)\n"
-        "    => add form/keyword(NPC, :IsBandit)\n"
     );
     for (auto const& d : diags.all())
         if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
@@ -124,12 +122,16 @@ TEST_F(EvaluatorTest, DerivedRuleComposition) {
 
 TEST_F(EvaluatorTest, ConditionalEffect) {
     auto mod = parse(
-        "bandit_gear(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :SilverSword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
         "    base_level(NPC, Level)\n"
-        "    Level >= 20 => add form/keyword(NPC, :SilverSword)\n"
-        "    Level < 20 => add form/keyword(NPC, :IronSword)\n"
+        "    Level >= 20\n"
+        "skyrim/add(NPC, :Keyword, :IronSword):\n"
+        "    npc(NPC)\n"
+        "    has_faction(NPC, :BanditFaction)\n"
+        "    base_level(NPC, Level)\n"
+        "    Level < 20\n"
     );
     for (auto const& d : diags.all())
         if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
@@ -156,10 +158,9 @@ TEST_F(EvaluatorTest, ConditionalEffect) {
 
 TEST_F(EvaluatorTest, NegationInBody) {
     auto mod = parse(
-        "non_silver(W):\n"
+        "skyrim/add(W, :Keyword, :NonSilver):\n"
         "    weapon(W)\n"
         "    not has_keyword(W, :Silver)\n"
-        "    => add form/keyword(W, :NonSilver)\n"
     );
     for (auto const& d : diags.all())
         if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
@@ -179,9 +180,8 @@ TEST_F(EvaluatorTest, NegationInBody) {
 
 TEST_F(EvaluatorTest, RuleMatchCount) {
     auto mod = parse(
-        "tag_all(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :Tagged):\n"
         "    npc(NPC)\n"
-        "    => add form/keyword(NPC, :Tagged)\n"
     );
     for (auto const& d : diags.all())
         if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
@@ -251,10 +251,13 @@ TEST_F(EvaluatorTest, ElementInListVar) {
         return mora::Expr{mora::VariableExpr{name, {}}, {}};
     };
 
+    // Qualified head: skyrim/add(NPC, :Keyword, :Result)
     mora::Rule rule;
-    rule.name = pool.intern("test_rule");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("add");
     rule.head_args.push_back(var_expr(v_npc));
-    rule.head_args.push_back(var_expr(v_kw));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("Keyword"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}}, {}});
 
     // Clause 1: kw_source(NPC, KWList)
     {
@@ -280,17 +283,6 @@ TEST_F(EvaluatorTest, ElementInListVar) {
         ic.variable = std::make_unique<mora::Expr>(var_expr(v_kw));
         ic.values.push_back(var_expr(v_kwlist));
         rule.body.push_back(mora::Clause{std::move(ic), {}});
-    }
-
-    // Effect: => add form/keyword(NPC, :Result)
-    {
-        mora::Effect eff;
-        eff.verb       = mora::VerbKind::Add;
-        eff.namespace_ = pool.intern("form");
-        eff.name       = pool.intern("keyword");
-        eff.args.push_back(var_expr(v_npc));
-        eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;

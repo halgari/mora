@@ -24,19 +24,12 @@ public:
 
 private:
     void evaluate_rule(const Rule& rule, FactDB& db);
-    void ensure_effect_relations_configured(FactDB& db);
 
     StringPool& pool_;
     DiagBag& diags_;
     const FactDB& db_;
     FactDB derived_facts_;
     std::unordered_map<uint32_t, uint32_t> symbol_formids_;
-
-    StringId effect_rel_set_;
-    StringId effect_rel_add_;
-    StringId effect_rel_remove_;
-    StringId effect_rel_multiply_;
-    bool     effect_rels_configured_ = false;
 
     // Only populated during evaluate_module; read by evaluate_rule when
     // emitting diagnostics so the renderer has a source line to show.

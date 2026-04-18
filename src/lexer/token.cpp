@@ -53,15 +53,6 @@ const char* token_kind_name(TokenKind kind) {
         return "as";
     case TokenKind::KwRefer:
         return "refer";
-    case TokenKind::KwSet:
-        return "set";
-    case TokenKind::KwAdd:
-        return "add";
-    case TokenKind::KwSub:
-        return "sub";
-    case TokenKind::KwRemove:
-        return "remove";
-
     // Punctuation
     case TokenKind::Colon:
         return ":";
@@ -79,8 +70,6 @@ const char* token_kind_name(TokenKind kind) {
         return "[";
     case TokenKind::RBracket:
         return "]";
-    case TokenKind::Arrow:
-        return "=>";
     case TokenKind::Pipe:
         return "|";
     case TokenKind::Hash:

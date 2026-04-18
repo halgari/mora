@@ -13,7 +13,6 @@ namespace mora {
 struct Expr;
 
 enum class RuleKind : uint8_t { Static, Maintain, On };
-enum class VerbKind : uint8_t { Set, Add, Sub, Remove };
 
 // ── Expressions ──
 struct VariableExpr { StringId name; SourceSpan span; };
@@ -73,33 +72,18 @@ struct InClause {
     SourceSpan span;
 };
 
-struct Effect {
-    VerbKind  verb = VerbKind::Set;
-    StringId  namespace_;   // e.g. "form"
-    StringId  name;         // e.g. "keyword"
-    std::vector<Expr> args;
-    SourceSpan span;
-};
-
-struct ConditionalEffect {
-    std::unique_ptr<Expr> guard;
-    Effect effect;
-    SourceSpan span;
-};
-
 struct Clause {
-    std::variant<FactPattern, GuardClause, OrClause, InClause, Effect, ConditionalEffect> data;
+    std::variant<FactPattern, GuardClause, OrClause, InClause> data;
     SourceSpan span;
 };
 
 // ── Top-level declarations ──
 struct Rule {
     RuleKind kind = RuleKind::Static;
-    StringId name;
+    StringId qualifier;   // "skyrim", "form", or empty for user rules
+    StringId name;        // "set", "add", "bandit", "tag_bandits", ...
     std::vector<Expr> head_args;
     std::vector<Clause> body;
-    std::vector<Effect> effects;
-    std::vector<ConditionalEffect> conditional_effects;
     SourceSpan span;
     std::optional<std::string> doc_comment; // leading # comments above the rule head
 };

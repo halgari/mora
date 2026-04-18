@@ -1,9 +1,5 @@
 #include "mora/eval/evaluator.h"
-#include "mora/core/type.h"
 #include "mora/eval/rule_planner.h"
-#include <algorithm>
-#include <cassert>
-#include <chrono>
 #include <vector>
 
 namespace mora {
@@ -19,35 +15,8 @@ void Evaluator::set_symbol_formid(StringId symbol_name, uint32_t formid) {
     symbol_formids_[colon_id.index] = formid;
 }
 
-void Evaluator::ensure_effect_relations_configured(FactDB& db) {
-    if (effect_rels_configured_) return;
-    effect_rel_set_      = pool_.intern("skyrim/set");
-    effect_rel_add_      = pool_.intern("skyrim/add");
-    effect_rel_remove_   = pool_.intern("skyrim/remove");
-    effect_rel_multiply_ = pool_.intern("skyrim/multiply");
-
-    auto const* formid_t = TypeRegistry::instance().find("FormID");
-    // FormID must have been registered by Skyrim at this point. If not,
-    // fall back to Any — preserves the FormID Value kind through materialize().
-    // (Int32 fallback loses the kind on Column::at round-trip.)
-    if (formid_t == nullptr) formid_t = types::any();
-
-    std::vector<const Type*> effect_cols = {
-        formid_t,         // col 0: target FormID
-        types::keyword(), // col 1: field keyword
-        types::any(),     // col 2: polymorphic value
-    };
-
-    for (StringId rel : {effect_rel_set_, effect_rel_add_,
-                         effect_rel_remove_, effect_rel_multiply_}) {
-        db.configure_relation(rel, effect_cols, /*indexed*/ {0});
-    }
-    effect_rels_configured_ = true;
-}
-
 void Evaluator::evaluate_module(const Module& mod, FactDB& out_facts,
                                   ProgressCallback progress) {
-    ensure_effect_relations_configured(out_facts);
     current_module_ = &mod;
     for (size_t i = 0; i < mod.rules.size(); ++i) {
         const Rule& rule = mod.rules[i];
@@ -69,8 +38,13 @@ void Evaluator::evaluate_rule(const Rule& rule, FactDB& db) {
                       rule.span, src_line);
         return;
     }
-    for (auto& op : plan->effect_ops) op->run(db);
-    if (plan->derived_op) plan->derived_op->run(derived_facts_);
+    // Skyrim output relations (qualifier == "skyrim") write directly to db.
+    // User-defined rules (unqualified or other qualifier) write to derived_facts_.
+    FactDB& target = (rule.qualifier.index != 0 &&
+                      pool_.get(rule.qualifier) == "skyrim")
+                     ? db
+                     : derived_facts_;
+    plan->append_op->run(target);
 }
 
 } // namespace mora

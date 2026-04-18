@@ -41,10 +41,9 @@ TEST(RulePlannerMulti, TwoClauseJoin_SharedVar) {
     mora::DiagBag diags;
 
     std::string const source =
-        "level_to_gold(NPC, Lv):\n"
+        "skyrim/set(NPC, :GoldValue, Lv):\n"
         "    form/npc(NPC)\n"
-        "    form/base_level(NPC, Lv)\n"
-        "    => set form/gold_value(NPC, Lv)\n";
+        "    form/base_level(NPC, Lv)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -96,11 +95,10 @@ TEST(RulePlannerMulti, ThreeClauseChain) {
     mora::DiagBag diags;
 
     std::string const source =
-        "three_way(NPC, Lv, Mn):\n"
+        "skyrim/set(NPC, :GoldValue, Mn):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Lv)\n"
-        "    form/calc_level_min(NPC, Mn)\n"
-        "    => set form/gold_value(NPC, Mn)\n";
+        "    form/calc_level_min(NPC, Mn)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -146,10 +144,9 @@ TEST(RulePlannerMulti, CartesianJoin_Rejected_EmitsDiagnostic) {
 
     // Two unrelated positive patterns — no shared variable.
     std::string const source =
-        "cross(NPC, W):\n"
+        "skyrim/set(NPC, :GoldValue, 1):\n"
         "    form/npc(NPC)\n"
-        "    form/weapon(W)\n"
-        "    => set form/gold_value(NPC, 1)\n";
+        "    form/weapon(W)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -181,10 +178,9 @@ TEST(RulePlannerMulti, EmptyRightSide_NoResults) {
     mora::DiagBag diags;
 
     std::string const source =
-        "no_match(NPC, Lv):\n"
+        "skyrim/set(NPC, :GoldValue, Lv):\n"
         "    form/npc(NPC)\n"
-        "    form/base_level(NPC, Lv)\n"
-        "    => set form/gold_value(NPC, Lv)\n";
+        "    form/base_level(NPC, Lv)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -218,10 +214,9 @@ TEST(RulePlannerMulti, SharedVarAcrossTwoClauses_TwoSharedVars) {
     mora::DiagBag diags;
 
     std::string const source =
-        "eq_level(NPC, Lv):\n"
+        "skyrim/set(NPC, :GoldValue, Lv):\n"
         "    form/base_level(NPC, Lv)\n"
-        "    form/calc_level_min(NPC, Lv)\n"
-        "    => set form/gold_value(NPC, Lv)\n";
+        "    form/calc_level_min(NPC, Lv)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -274,10 +269,9 @@ TEST(RulePlannerMulti, DuplicateVarWithinClause_EqFilter) {
     // base_level(?npc, ?npc): eq-filter between col0 and col1.
     // Types differ so no row will match — that's fine, we're testing stability.
     std::string const source =
-        "weird_eq(NPC):\n"
+        "skyrim/set(NPC, :GoldValue, 0):\n"
         "    form/npc(NPC)\n"
-        "    form/base_level(NPC, NPC)\n"
-        "    => set form/gold_value(NPC, 0)\n";
+        "    form/base_level(NPC, NPC)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     for (auto const& d : diags.all())
@@ -308,10 +302,9 @@ TEST(RulePlannerMulti, TwoClause_VectorizedPathFires) {
     mora::DiagBag diags;
 
     std::string const source =
-        "check_path(NPC, Lv):\n"
+        "skyrim/set(NPC, :GoldValue, Lv):\n"
         "    form/npc(NPC)\n"
-        "    form/base_level(NPC, Lv)\n"
-        "    => set form/gold_value(NPC, Lv)\n";
+        "    form/base_level(NPC, Lv)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
     ASSERT_FALSE(diags.has_errors());
@@ -357,9 +350,13 @@ TEST(RulePlannerMulti, NegatedPattern_AntiJoin) {
         return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
     };
 
+    // Qualified head: skyrim/set(W, :GoldValue, 1) :- weapon(W), not dangerous(W).
     mora::Rule rule;
-    rule.name = pool.intern("safe_weapons");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("set");
     rule.head_args.push_back(var("W"));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("GoldValue"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
 
     // Clause 1: weapon(W)
     {
@@ -376,16 +373,6 @@ TEST(RulePlannerMulti, NegatedPattern_AntiJoin) {
         fp.negated = true;
         fp.args.push_back(var("W"));
         rule.body.push_back(mora::Clause{std::move(fp), {}});
-    }
-    // Effect
-    {
-        mora::Effect eff;
-        eff.verb       = mora::VerbKind::Set;
-        eff.namespace_ = pool.intern("form");
-        eff.name       = pool.intern("gold_value");
-        eff.args.push_back(var("W"));
-        eff.args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;
@@ -420,9 +407,13 @@ TEST(RulePlannerMulti, NegatedPattern_EmptyNegated_AllPass) {
         return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
     };
 
+    // skyrim/set(W, :GoldValue, 99) :- weapon(W), not banned(W).
     mora::Rule rule;
-    rule.name = pool.intern("no_banned");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("set");
     rule.head_args.push_back(var("W"));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("GoldValue"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::IntLiteral{99, {}}, {}});
 
     {
         mora::FactPattern fp;
@@ -437,15 +428,6 @@ TEST(RulePlannerMulti, NegatedPattern_EmptyNegated_AllPass) {
         fp.negated = true;
         fp.args.push_back(var("W"));
         rule.body.push_back(mora::Clause{std::move(fp), {}});
-    }
-    {
-        mora::Effect eff;
-        eff.verb       = mora::VerbKind::Set;
-        eff.namespace_ = pool.intern("form");
-        eff.name       = pool.intern("gold_value");
-        eff.args.push_back(var("W"));
-        eff.args.push_back(mora::Expr{mora::IntLiteral{99, {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;
@@ -483,18 +465,20 @@ TEST(RulePlannerMulti, InClause_Generator_Vectorized) {
     });
 
     // Rule (built programmatically):
-    //   has_keyword(W, KW):
+    //   skyrim/set(W, :GoldValue, 1):
     //       kw_source(W, KwList)
     //       KW in KwList
-    //       => set form/gold_value(W, 1)
     auto var = [&](const char* name) -> mora::Expr {
         return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
     };
 
+    // Qualified head: skyrim/set(W, :GoldValue, 1)
     mora::Rule rule;
-    rule.name = pool.intern("has_keyword");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("set");
     rule.head_args.push_back(var("W"));
-    rule.head_args.push_back(var("KW"));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("GoldValue"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
 
     // Clause 1: kw_source(W, KwList)
     {
@@ -512,17 +496,6 @@ TEST(RulePlannerMulti, InClause_Generator_Vectorized) {
         ic.variable = std::make_unique<mora::Expr>(var("KW"));
         ic.values.push_back(var("KwList"));
         rule.body.push_back(mora::Clause{std::move(ic), {}});
-    }
-
-    // Effect: => set form/gold_value(W, 1) — goes into rule.effects, not rule.body
-    {
-        mora::Effect eff;
-        eff.verb       = mora::VerbKind::Set;
-        eff.namespace_ = pool.intern("form");
-        eff.name       = pool.intern("gold_value");
-        eff.args.push_back(var("W"));
-        eff.args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;
@@ -572,9 +545,13 @@ TEST(RulePlannerMulti, InClause_Membership_Vectorized) {
         return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
     };
 
+    // skyrim/set(W, :GoldValue, 42) :- kw_data(KwId, KwList, W), KwId in KwList.
     mora::Rule rule;
-    rule.name = pool.intern("kw_check");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("set");
     rule.head_args.push_back(var("W"));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("GoldValue"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::IntLiteral{42, {}}, {}});
 
     // Clause 1: kw_data(KwId, KwList, W)
     {
@@ -592,16 +569,6 @@ TEST(RulePlannerMulti, InClause_Membership_Vectorized) {
         ic.variable = std::make_unique<mora::Expr>(var("KwId"));
         ic.values.push_back(var("KwList"));
         rule.body.push_back(mora::Clause{std::move(ic), {}});
-    }
-    // Effect
-    {
-        mora::Effect eff;
-        eff.verb       = mora::VerbKind::Set;
-        eff.namespace_ = pool.intern("form");
-        eff.name       = pool.intern("gold_value");
-        eff.args.push_back(var("W"));
-        eff.args.push_back(mora::Expr{mora::IntLiteral{42, {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;

@@ -13,11 +13,10 @@
 namespace mora {
 
 // Outcome of attempting to build a vectorized plan for a rule.
-// Either `effect_ops` (non-empty) or `derived_op` is populated (never both).
-// Each effect gets its own fresh operator tree (re-scan strategy).
+// Every rule (including skyrim/* qualified heads) is a derived-fact rule that
+// appends tuples to its head relation via DerivedAppendOp.
 struct RulePlan {
-    std::vector<std::unique_ptr<EffectAppendOp>> effect_ops;
-    std::unique_ptr<DerivedAppendOp>             derived_op;
+    std::unique_ptr<DerivedAppendOp> append_op;
 };
 
 // Returns RulePlan if the rule is supported in MVP; otherwise nullopt

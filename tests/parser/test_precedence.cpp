@@ -13,16 +13,12 @@ Module parse_src(StringPool& pool, DiagBag& diags, const std::string& src) {
     return parser.parse_module();
 }
 
-// Helper: extract the single effect value-arg expression from a module.
-// The rule body is expected to be:
-//   namespace t
-//   r(X):
-//       => set form/damage(X, <expr>)
-const Expr& effect_value_expr(const Module& mod) {
+// Helper: extract the third head arg expression (the value slot) from a
+// skyrim/set(X, :Field, <expr>) qualified-head rule.
+const Expr& head_value_expr(const Module& mod) {
     EXPECT_EQ(mod.rules.size(), 1u);
-    EXPECT_EQ(mod.rules[0].effects.size(), 1u);
-    EXPECT_GE(mod.rules[0].effects[0].args.size(), 2u);
-    return mod.rules[0].effects[0].args[1];
+    EXPECT_GE(mod.rules[0].head_args.size(), 3u);
+    return mod.rules[0].head_args[2];
 }
 
 } // namespace
@@ -33,11 +29,11 @@ TEST(PrecedenceTest, AdditiveLower_Than_Multiplicative_Right) {
     // 1 + 2 * 3 should parse as Add(1, Mul(2, 3))
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(X):\n"
-        "    => set form/damage(X, 1 + 2 * 3)\n");
+        "skyrim/set(X, :Damage, 1 + 2 * 3):\n"
+        "    form/weapon(X)\n");
     ASSERT_FALSE(diags.has_errors());
 
-    const Expr& e = effect_value_expr(mod);
+    const Expr& e = head_value_expr(mod);
     const auto* outer = std::get_if<BinaryExpr>(&e.data);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, BinaryExpr::Op::Add);
@@ -64,11 +60,11 @@ TEST(PrecedenceTest, AdditiveLower_Than_Multiplicative_Left) {
     // 1 * 2 + 3 should parse as Add(Mul(1, 2), 3)
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(X):\n"
-        "    => set form/damage(X, 1 * 2 + 3)\n");
+        "skyrim/set(X, :Damage, 1 * 2 + 3):\n"
+        "    form/weapon(X)\n");
     ASSERT_FALSE(diags.has_errors());
 
-    const Expr& e = effect_value_expr(mod);
+    const Expr& e = head_value_expr(mod);
     const auto* outer = std::get_if<BinaryExpr>(&e.data);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, BinaryExpr::Op::Add);
@@ -95,11 +91,11 @@ TEST(PrecedenceTest, ComplexBountyExpression) {
     // 10 * VL + 5 * (VL - PL) — outer Add, both sides Mul
     auto mod = parse_src(pool, diags,
         "namespace t\n"
-        "r(X, VL, PL):\n"
-        "    => set form/damage(X, 10 * VL + 5 * (VL - PL))\n");
+        "skyrim/set(X, :Damage, 10 * VL + 5 * (VL - PL)):\n"
+        "    form/weapon(X)\n");
     ASSERT_FALSE(diags.has_errors());
 
-    const Expr& e = effect_value_expr(mod);
+    const Expr& e = head_value_expr(mod);
     const auto* outer = std::get_if<BinaryExpr>(&e.data);
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, BinaryExpr::Op::Add);

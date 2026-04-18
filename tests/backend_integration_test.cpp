@@ -16,9 +16,8 @@ protected:
 TEST_F(BackendIntegrationTest, FullPipeline) {
     // Parse
     std::string source =
-        "tag_all_npcs(NPC):\n"
-        "    npc(NPC)\n"
-        "    => add form/keyword(NPC, :Tagged)\n";
+        "skyrim/add(NPC, :Keyword, @Tagged):\n"
+        "    npc(NPC)\n";
 
     mora::Lexer lexer(source, "test.mora", pool, diags);
     mora::Parser parser(lexer, pool, diags);
@@ -55,14 +54,12 @@ TEST_F(BackendIntegrationTest, FullPipeline) {
 
 TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
     std::string source =
-        "static_rule(NPC):\n"
+        "skyrim/add(NPC, :Keyword, @Static):\n"
         "    npc(NPC)\n"
-        "    => add form/keyword(NPC, :Static)\n"
         "\n"
         "dynamic_rule(NPC):\n"
         "    npc(NPC)\n"
-        "    current_location(NPC, Loc)\n"
-        "    => add form/keyword(NPC, :Dynamic)\n";
+        "    current_location(NPC, Loc)\n";
 
     mora::Lexer lexer(source, "test.mora", pool, diags);
     mora::Parser parser(lexer, pool, diags);
