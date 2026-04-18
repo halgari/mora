@@ -16,12 +16,10 @@ std::unique_ptr<ScanOp> ScanOp::build(
     auto op = std::unique_ptr<ScanOp>(new ScanOp);
     op->relation_ = relation;
 
-    if (relation == nullptr) {
-        op->no_match_ = true;
-        return op;
-    }
-
-    // Walk the pattern's args. Vars → VarPos; literals/symbols → ConstPos.
+    // Walk the pattern's args regardless of whether relation is null.
+    // Parsing args even when relation==null ensures out_var_names_ is
+    // always populated — the planner needs variable names from null-
+    // relation scans to compute shared vars for JoinOp construction.
     std::unordered_map<uint32_t, size_t> first_occurrence;  // var StringId → first VarPos index
     for (size_t i = 0; i < pattern.args.size(); ++i) {
         const Expr& arg = pattern.args[i];
@@ -31,7 +29,13 @@ std::unique_ptr<ScanOp> ScanOp::build(
                 first_occurrence.emplace(ve->name.index, op->var_pos_.size());
                 op->var_pos_.push_back({ve->name, i});
                 op->out_var_names_.push_back(ve->name);
-                op->out_col_types_.push_back(relation->column(i).type());
+                if (relation != nullptr) {
+                    op->out_col_types_.push_back(relation->column(i).type());
+                }
+                // When relation==null, out_col_types_ stays short of
+                // out_var_names_ — that's fine because next_chunk() returns
+                // nullopt immediately (no_match_==true) and never constructs
+                // a BindingChunk.
             } else {
                 // Duplicate variable — equality filter between positions.
                 op->eq_pos_.push_back({op->var_pos_[it->second].pattern_col, i});
@@ -53,7 +57,16 @@ std::unique_ptr<ScanOp> ScanOp::build(
             op->const_pos_.push_back(
                 {Value::make_string(sl->value), i});
         } else if (auto const* kl = std::get_if<KeywordLiteral>(&arg.data)) {
-            op->const_pos_.push_back({Value::make_keyword(kl->value), i});
+            // Mirror the tuple evaluator's match_fact_pattern logic: a
+            // keyword literal may be a symbol alias (e.g. :BanditFaction
+            // stored via set_symbol_formid). If found in symbol_formids,
+            // treat it as a FormID constant; otherwise as an opaque keyword.
+            auto sk = symbol_formids.find(kl->value.index);
+            if (sk != symbol_formids.end()) {
+                op->const_pos_.push_back({Value::make_formid(sk->second), i});
+            } else {
+                op->const_pos_.push_back({Value::make_keyword(kl->value), i});
+            }
         } else {
             // EditorIdExpr, BinaryExpr, CallExpr, FieldAccessExpr — not
             // supported in MVP. The planner should have rejected this
@@ -62,6 +75,12 @@ std::unique_ptr<ScanOp> ScanOp::build(
             op->no_match_ = true;
             return op;
         }
+    }
+
+    // If relation is null, mark as no-match AFTER parsing args so that
+    // out_var_names_ is populated for the planner's shared-var computation.
+    if (relation == nullptr) {
+        op->no_match_ = true;
     }
 
     return op;

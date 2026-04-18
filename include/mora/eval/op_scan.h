@@ -37,7 +37,7 @@ public:
     // Exposed for planner sanity: the output variable names, in column
     // order. Returns empty if build() produced a no-match plan (e.g.
     // a symbol pattern with an unknown EditorID — scan yields nothing).
-    const std::vector<StringId>& output_var_names() const { return out_var_names_; }
+    const std::vector<StringId>& output_var_names() const override { return out_var_names_; }
 
 private:
     struct VarPos   { StringId name; size_t pattern_col; };

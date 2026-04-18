@@ -2,9 +2,11 @@
 
 #include "mora/data/action_names.h"
 #include "mora/eval/field_types.h"
+#include "mora/eval/op_join.h"
 #include "mora/eval/op_scan.h"
 #include "mora/model/field_names.h"
 
+#include <algorithm>
 #include <string>
 
 namespace mora {
@@ -21,15 +23,70 @@ bool is_simple_arg_expr(const Expr& e) {
         || std::holds_alternative<SymbolExpr>(e.data);
 }
 
-bool body_is_single_positive_fact_pattern(const Rule& rule) {
-    if (rule.body.size() != 1) return false;
-    return std::visit([](auto const& c) -> bool {
-        using T = std::decay_t<decltype(c)>;
-        if constexpr (std::is_same_v<T, FactPattern>) {
-            return !c.negated;
+// Returns true iff every body clause is a positive (non-negated) FactPattern
+// with only simple args. Guards, InClause, negated patterns → false.
+bool body_is_positive_conjunction(const Rule& rule) {
+    if (rule.body.empty()) return false;
+    for (auto const& clause : rule.body) {
+        bool ok = std::visit([](auto const& c) -> bool {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, FactPattern>) {
+                return !c.negated;
+            }
+            return false;  // GuardClause, InClause → reject
+        }, clause.data);
+        if (!ok) return false;
+
+        // Also verify all args are simple.
+        if (auto const* fp = std::get_if<FactPattern>(&clause.data)) {
+            for (auto const& a : fp->args) {
+                if (!is_simple_arg_expr(a)) return false;
+            }
         }
-        return false;
-    }, rule.body[0].data);
+    }
+    return true;
+}
+
+// Selectivity score for a FactPattern: count non-variable args.
+// More constants → lower score → run first.
+int selectivity_score(const FactPattern& fp) {
+    int constants = 0;
+    for (auto const& arg : fp.args) {
+        if (!std::holds_alternative<VariableExpr>(arg.data)) ++constants;
+    }
+    // Negate so that "more constants" = lower (better) score for sort ascending.
+    return -constants;
+}
+
+// Compute the intersection of two var-name vectors, preserving order of `a`.
+std::vector<StringId> var_intersection(const std::vector<StringId>& a,
+                                        const std::vector<StringId>& b)
+{
+    std::vector<StringId> result;
+    for (auto const& x : a) {
+        for (auto const& y : b) {
+            if (x.index == y.index) {
+                result.push_back(x);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+// Union of two var-name vectors, preserving order and deduplicating.
+std::vector<StringId> var_union(const std::vector<StringId>& a,
+                                 const std::vector<StringId>& b)
+{
+    std::vector<StringId> result = a;
+    for (auto const& y : b) {
+        bool found = false;
+        for (auto const& x : a) {
+            if (x.index == y.index) { found = true; break; }
+        }
+        if (!found) result.push_back(y);
+    }
+    return result;
 }
 
 // Build an EffectArgSpec from an Expr.
@@ -69,39 +126,81 @@ std::optional<RulePlan> plan_rule(
     StringPool&                                  pool,
     const std::unordered_map<uint32_t, uint32_t>& symbol_formids)
 {
-    // M1 restriction: exactly one body clause, which must be a positive
-    // FactPattern. Guards, negation, InClause, multiple clauses → fallback.
-    if (!body_is_single_positive_fact_pattern(rule)) return std::nullopt;
-
-    auto const& fp = std::get<FactPattern>(rule.body[0].data);
-
-    // All pattern args must be "simple" (var/literal/symbol).
-    for (auto const& a : fp.args) {
-        if (!is_simple_arg_expr(a)) return std::nullopt;
-    }
+    // M2: any number of positive FactPattern body clauses (at least one).
+    // Guards, negation, InClause, zero clauses → fallback.
+    if (!body_is_positive_conjunction(rule)) return std::nullopt;
 
     // Conditional effects force fallback.
     if (!rule.conditional_effects.empty()) return std::nullopt;
 
-    // Find the source relation — check input_db first, then derived_facts.
-    StringId const rel_name = fp.name;
-    const ColumnarRelation* rel = input_db.get_relation_columnar(rel_name);
-    if (rel == nullptr) {
-        rel = derived_facts.get_relation_columnar(rel_name);
+    // ── Collect and sort FactPatterns by selectivity ──────────────────
+    // body_is_positive_conjunction already verified all clauses are
+    // non-negated FactPatterns with simple args.
+    struct ScoredFP {
+        size_t     idx;   // original index in rule.body
+        int        score;
+    };
+    std::vector<ScoredFP> scored;
+    scored.reserve(rule.body.size());
+    for (size_t i = 0; i < rule.body.size(); ++i) {
+        auto const& fp = std::get<FactPattern>(rule.body[i].data);
+        scored.push_back({i, selectivity_score(fp)});
+    }
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const ScoredFP& a, const ScoredFP& b) {
+                         return a.score < b.score;
+                     });
+
+    // ── Build ScanOps in selectivity order ───────────────────────────
+    // `cumulative` is the current left-deep tree; `cumulative_vars` tracks
+    // all variable names output by `cumulative` so far.
+
+    auto lookup_rel = [&](StringId rel_name) -> const ColumnarRelation* {
+        const ColumnarRelation* rel = input_db.get_relation_columnar(rel_name);
+        if (rel == nullptr) rel = derived_facts.get_relation_columnar(rel_name);
+        return rel;  // may be null — ScanOp handles that as no_match
+    };
+
+    // Build the first (most selective) scan as the initial cumulative op.
+    auto const& first_fp = std::get<FactPattern>(rule.body[scored[0].idx].data);
+    std::unique_ptr<Operator> cumulative =
+        ScanOp::build(lookup_rel(first_fp.name), first_fp, pool, symbol_formids);
+    std::vector<StringId> cumulative_vars = cumulative->output_var_names();
+
+    // Chain subsequent scans via JoinOp.
+    for (size_t k = 1; k < scored.size(); ++k) {
+        auto const& fp = std::get<FactPattern>(rule.body[scored[k].idx].data);
+
+        auto scan = ScanOp::build(lookup_rel(fp.name), fp, pool, symbol_formids);
+        std::vector<StringId> scan_vars = scan->output_var_names();
+
+        // Compute shared vars: intersection of cumulative's output vars and
+        // this scan's output vars, preserving cumulative's order.
+        std::vector<StringId> shared = var_intersection(cumulative_vars, scan_vars);
+
+        if (shared.empty()) {
+            // Cartesian join — reject. Fall back to tuple evaluator.
+            // (A Cartesian join produces O(N*M) rows and is usually a bug
+            // in the rule; Plan 14 can handle this specially if needed.)
+            return std::nullopt;
+        }
+
+        // Update cumulative vars = union(cumulative_vars, scan_vars).
+        cumulative_vars = var_union(cumulative_vars, scan_vars);
+
+        // Wrap in a JoinOp.
+        cumulative = std::make_unique<JoinOp>(
+            std::move(cumulative), std::move(scan), std::move(shared));
     }
 
-    // Build the ScanOp (rel may be null — ScanOp handles it as no_match).
-    auto scan = ScanOp::build(rel, fp, pool, symbol_formids);
-
-    // ── Effects branch ──────────────────────────────────────────────────
+    // ── Effects branch ───────────────────────────────────────────────
     if (!rule.effects.empty()) {
         // MVP: exactly one effect. Multiple effects → fallback.
         if (rule.effects.size() > 1) return std::nullopt;
 
         const Effect& eff = rule.effects[0];
 
-        // Only Set verbs in M1 (Add/Sub/Remove/Mul require separate output
-        // relation routing — Plan 14 expands this).
+        // Only Set verbs for now (Add/Sub/Remove/Mul → Plan 14).
         if (eff.verb != VerbKind::Set) return std::nullopt;
 
         // Effect must have exactly 2 args: (target, value).
@@ -115,26 +214,26 @@ std::optional<RulePlan> plan_rule(
 
         // Map action name → (FieldId, FieldOp).
         auto [field, op] = mora::action_to_field(action_id, pool);
-        if (field == FieldId::Invalid) return std::nullopt;   // unknown action
+        if (field == FieldId::Invalid) return std::nullopt;  // unknown action
 
-        // Only FieldOp::Set for M1 (action_to_field may return Add/Multiply
-        // for "set_" prefixed names in edge cases — guard explicitly).
+        // Only FieldOp::Set (action_to_field may return Add/Multiply for
+        // unusual "set_"-prefixed names in edge cases — guard explicitly).
         if (op != FieldOp::Set) return std::nullopt;
 
-        StringId const out_rel    = pool.intern("skyrim/set");
-        StringId const field_kw   = pool.intern(field_id_name(field));
+        StringId const out_rel  = pool.intern("skyrim/set");
+        StringId const field_kw = pool.intern(field_id_name(field));
 
         EffectArgSpec target_spec = spec_from_expr(eff.args[0], symbol_formids);
         EffectArgSpec value_spec  = spec_from_expr(eff.args[1], symbol_formids);
 
         RulePlan plan;
         plan.effect_op = std::make_unique<EffectAppendOp>(
-            std::move(scan), out_rel, field_kw,
+            std::move(cumulative), out_rel, field_kw,
             std::move(target_spec), std::move(value_spec));
         return plan;
     }
 
-    // ── Derived rule branch ────────────────────────────────────────────
+    // ── Derived rule branch ───────────────────────────────────────────
     // No effects and no conditional effects: derived fact rule.
     // All head args must be VariableExprs.
     {
@@ -147,7 +246,7 @@ std::optional<RulePlan> plan_rule(
         }
         RulePlan plan;
         plan.derived_op = std::make_unique<DerivedAppendOp>(
-            std::move(scan), rule.name, std::move(head_specs));
+            std::move(cumulative), rule.name, std::move(head_specs));
         return plan;
     }
 }

@@ -14,6 +14,10 @@ class Operator {
 public:
     virtual ~Operator()                              = default;
     virtual std::optional<BindingChunk> next_chunk() = 0;
+
+    // The set of variable names this operator binds in its output.
+    // Used by the planner to compute shared vars for JoinOp construction.
+    virtual const std::vector<StringId>& output_var_names() const = 0;
 };
 
 } // namespace mora
