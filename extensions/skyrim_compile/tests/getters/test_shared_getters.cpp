@@ -100,17 +100,17 @@ TEST_F(SharedGettersTest, HasKeywordOnNpc) {
     // with at least one has_keyword fact to prove NPC keyword extraction
     // works end-to-end.
     auto rel = pool().intern("has_keyword");
-    auto& all = db().get_relation(rel);
+    const auto all = db().get_relation(rel);
     size_t npc_kw_count = 0;
     auto npc_rel = pool().intern("npc");
-    auto& npcs = db().get_relation(npc_rel);
+    const auto npcs = db().get_relation(npc_rel);
     std::unordered_set<uint32_t> npc_fids;
-    for (auto& t : npcs) {
+    for (const auto& t : npcs) {
         if (!t.empty() && t[0].kind() == mora::Value::Kind::FormID) {
             npc_fids.insert(t[0].as_formid());
         }
     }
-    for (auto& t : all) {
+    for (const auto& t : all) {
         if (t.size() >= 2 && t[0].kind() == mora::Value::Kind::FormID &&
             npc_fids.count(t[0].as_formid())) {
             ++npc_kw_count;

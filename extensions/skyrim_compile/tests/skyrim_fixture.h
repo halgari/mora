@@ -74,9 +74,9 @@ public:
     std::vector<Tuple> rows_for(const std::string& rel_name, uint32_t form_id) {
         load();
         auto rel = pool_.intern(rel_name);
-        auto& all = db_.get_relation(rel);
+        const auto all = db_.get_relation(rel);
         std::vector<Tuple> out;
-        for (auto& t : all) {
+        for (const auto& t : all) {
             if (t.empty()) continue;
             if (t[0].kind() == Value::Kind::FormID && t[0].as_formid() == form_id) {
                 out.push_back(t);

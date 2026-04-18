@@ -1,4 +1,5 @@
 #include "mora/eval/evaluator.h"
+#include "mora/core/type.h"
 #include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
 #include "mora/model/builtin_fns.h"
@@ -27,9 +28,22 @@ void Evaluator::ensure_effect_relations_configured(FactDB& db) {
     effect_rel_add_      = pool_.intern("skyrim/add");
     effect_rel_remove_   = pool_.intern("skyrim/remove");
     effect_rel_multiply_ = pool_.intern("skyrim/multiply");
+
+    auto const* formid_t = TypeRegistry::instance().find("FormID");
+    // FormID must have been registered by Skyrim at this point. If not,
+    // fall back to Any — preserves the FormID Value kind through materialize().
+    // (Int32 fallback loses the kind on Column::at round-trip.)
+    if (formid_t == nullptr) formid_t = types::any();
+
+    std::vector<const Type*> effect_cols = {
+        formid_t,         // col 0: target FormID
+        types::keyword(), // col 1: field keyword
+        types::any(),     // col 2: polymorphic value
+    };
+
     for (StringId rel : {effect_rel_set_, effect_rel_add_,
                          effect_rel_remove_, effect_rel_multiply_}) {
-        db.configure_relation(rel, /*arity*/ 3, /*indexed*/ {0});
+        db.configure_relation(rel, effect_cols, /*indexed*/ {0});
     }
     effect_rels_configured_ = true;
 }

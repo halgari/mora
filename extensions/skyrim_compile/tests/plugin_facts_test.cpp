@@ -22,8 +22,8 @@ static mora::PluginInfo make_info(const std::string& filename,
 static bool has_fact(mora::FactDB& db, mora::StringPool& pool,
                      const std::string& rel_name,
                      const mora::Tuple& expected) {
-    auto& tuples = db.get_relation(pool.intern(rel_name));
-    for (auto& t : tuples) {
+    const auto tuples = db.get_relation(pool.intern(rel_name));
+    for (const auto& t : tuples) {
         if (t.size() != expected.size()) continue;
         bool eq = true;
         for (size_t i = 0; i < t.size(); i++) {
@@ -178,6 +178,6 @@ TEST_F(PluginFactsTest, VersionAndExtensionRecorded) {
     // Version is stored as a Float value. We don't round-trip the
     // exact binary representation — the test just checks the facts
     // exist, one per loaded plugin.
-    auto& tuples = db.get_relation(pool.intern("plugin_version"));
+    const auto tuples = db.get_relation(pool.intern("plugin_version"));
     EXPECT_GE(tuples.size(), 3u);
 }
