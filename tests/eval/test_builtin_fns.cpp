@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_set.h"
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
@@ -27,7 +26,7 @@ struct Fixture {
 };
 
 // Apply a single static rule that sets form/damage on a symbol weapon,
-// then return the resulting int patch value or -1 if no patch landed.
+// then return the resulting int value from skyrim/set or -1 if no tuple landed.
 int64_t eval_damage(Fixture& f, const std::string& body) {
     std::string src =
         "namespace t\n"
@@ -37,11 +36,17 @@ int64_t eval_damage(Fixture& f, const std::string& body) {
     FactDB db(f.pool);
     Evaluator ev(f.pool, f.diags, db);
     ev.set_symbol_formid(f.pool.intern("MyWeap"), 0x500);
-    auto ps = ev.evaluate_static(mod);
-    auto resolved = ps.resolve();
-    auto patches = resolved.get_patches_for(0x500);
-    if (patches.empty()) return -1;
-    return patches[0].value.as_int();
+    ev.evaluate_module(mod, db);
+    auto rel_set = f.pool.intern("skyrim/set");
+    const auto& tuples = db.get_relation(rel_set);
+    // Find the tuple for formid 0x500
+    for (const auto& t : tuples) {
+        if (t.size() >= 3 && t[0].kind() == Value::Kind::FormID &&
+            t[0].as_formid() == 0x500u) {
+            if (t[2].kind() == Value::Kind::Int) return t[2].as_int();
+        }
+    }
+    return -1;
 }
 
 } // namespace

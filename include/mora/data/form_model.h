@@ -12,7 +12,7 @@
 // all offsets against CommonLibSSE-NG in form_model_verify.cpp.
 // ═══════════════════════════════════════════════════════════════════════════
 
-#include "mora/eval/patch_set.h"   // FieldId, FieldOp
+#include "mora/eval/field_types.h"  // FieldId, FieldOp
 #include "mora/ast/types.h"        // TypeKind
 #include <cstdint>
 #include <cstring>

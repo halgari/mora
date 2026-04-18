@@ -4,7 +4,7 @@
 // Single source of truth — used by evaluator, parser, schema, pipeline.
 // ═══════════════════════════════════════════════════════════════════════════
 
-#include "mora/eval/patch_set.h"
+#include "mora/eval/field_types.h"
 #include <cstdint>
 
 namespace mora {

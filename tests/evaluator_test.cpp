@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_set.h"
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
@@ -32,6 +31,34 @@ protected:
         db.add_fact(pool.intern("has_keyword"), {mora::Value::make_formid(0x300), mora::Value::make_formid(0xBBB)});
         return db;
     }
+
+    // Count tuples in a skyrim/* relation where the first arg matches formid.
+    size_t count_for_formid(mora::FactDB& db, const char* rel_name, uint32_t formid) {
+        auto rel_id = pool.intern(rel_name);
+        const auto& tuples = db.get_relation(rel_id);
+        size_t count = 0;
+        for (const auto& t : tuples) {
+            if (!t.empty() && t[0].kind() == mora::Value::Kind::FormID &&
+                t[0].as_formid() == formid) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    // Find tuples in a relation for a given formid; returns value at col 2.
+    std::vector<mora::Value> values_for_formid(mora::FactDB& db, const char* rel_name, uint32_t formid) {
+        auto rel_id = pool.intern(rel_name);
+        const auto& tuples = db.get_relation(rel_id);
+        std::vector<mora::Value> result;
+        for (const auto& t : tuples) {
+            if (t.size() >= 3 && t[0].kind() == mora::Value::Kind::FormID &&
+                t[0].as_formid() == formid) {
+                result.push_back(t[2]);
+            }
+        }
+        return result;
+    }
 };
 
 TEST_F(EvaluatorTest, SimpleEffectRule) {
@@ -46,14 +73,16 @@ TEST_F(EvaluatorTest, SimpleEffectRule) {
     evaluator.set_symbol_formid(pool.intern("TestFaction"), 0xAAA);
     evaluator.set_symbol_formid(pool.intern("TestKeyword"), 0xCCC);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].field, mora::FieldId::Keywords);
-    EXPECT_EQ(patches[0].op, mora::FieldOp::Add);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xCCCu);
-    EXPECT_TRUE(resolved.get_patches_for(0x200).empty());
+    evaluator.evaluate_module(mod, db);
+
+    // add_keyword -> skyrim/add relation, field "Keywords", value 0xCCC
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xCCCu);
+
+    // NPC 0x200 has no matching faction, nothing emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x200), 0u);
 }
 
 TEST_F(EvaluatorTest, DerivedRuleComposition) {
@@ -71,11 +100,12 @@ TEST_F(EvaluatorTest, DerivedRuleComposition) {
     evaluator.set_symbol_formid(pool.intern("BanditFaction"), 0xAAA);
     evaluator.set_symbol_formid(pool.intern("IsBandit"), 0xDDD);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xDDDu);
+    evaluator.evaluate_module(mod, db);
+
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xDDDu);
 }
 
 TEST_F(EvaluatorTest, ConditionalEffect) {
@@ -93,12 +123,16 @@ TEST_F(EvaluatorTest, ConditionalEffect) {
     evaluator.set_symbol_formid(pool.intern("SilverSword"), 0xE01);
     evaluator.set_symbol_formid(pool.intern("IronSword"), 0xE02);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xE01u);
-    EXPECT_TRUE(resolved.get_patches_for(0x200).empty());
+    evaluator.evaluate_module(mod, db);
+
+    // NPC 0x100 has level 25 >= 20 and is in BanditFaction -> SilverSword
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xE01u);
+
+    // NPC 0x200 is not in BanditFaction, nothing emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x200), 0u);
 }
 
 TEST_F(EvaluatorTest, NegationInBody) {
@@ -113,10 +147,10 @@ TEST_F(EvaluatorTest, NegationInBody) {
     evaluator.set_symbol_formid(pool.intern("Silver"), 0xBBB);
     evaluator.set_symbol_formid(pool.intern("NonSilver"), 0xFFF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    // Weapon 0x300 HAS keyword 0xBBB, so negation fails, no patch
-    EXPECT_TRUE(resolved.get_patches_for(0x300).empty());
+    evaluator.evaluate_module(mod, db);
+
+    // Weapon 0x300 HAS keyword 0xBBB, so negation fails, no effect emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x300), 0u);
 }
 
 TEST_F(EvaluatorTest, RuleMatchCount) {
@@ -129,9 +163,12 @@ TEST_F(EvaluatorTest, RuleMatchCount) {
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Tagged"), 0xFFF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    EXPECT_EQ(resolved.patch_count(), 2u); // 2 NPCs
+    evaluator.evaluate_module(mod, db);
+
+    // 2 NPCs each get one tuple in skyrim/add
+    auto rel_id = pool.intern("skyrim/add");
+    const auto& tuples = db.get_relation(rel_id);
+    EXPECT_EQ(tuples.size(), 2u);
 }
 
 // Test: KW in KWList where KWList is a list-typed Value from FactDB.
@@ -243,15 +280,15 @@ TEST_F(EvaluatorTest, ElementInListVar) {
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Result"), 0xBEEF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
+    evaluator.evaluate_module(mod, db);
 
-    // Both NPCs should receive :Result
-    EXPECT_EQ(resolved.patch_count(), 2u);
-    auto p1 = resolved.get_patches_for(0x100);
-    auto p2 = resolved.get_patches_for(0x200);
-    ASSERT_EQ(p1.size(), 1u);
-    ASSERT_EQ(p2.size(), 1u);
-    EXPECT_EQ(p1[0].value.as_formid(), 0xBEEFu);
-    EXPECT_EQ(p2[0].value.as_formid(), 0xBEEFu);
+    // Both NPCs should receive :Result in skyrim/add
+    auto v1 = values_for_formid(db, "skyrim/add", 0x100);
+    auto v2 = values_for_formid(db, "skyrim/add", 0x200);
+    ASSERT_EQ(v1.size(), 1u);
+    ASSERT_EQ(v2.size(), 1u);
+    EXPECT_EQ(v1[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(v1[0].as_formid(), 0xBEEFu);
+    EXPECT_EQ(v2[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(v2[0].as_formid(), 0xBEEFu);
 }

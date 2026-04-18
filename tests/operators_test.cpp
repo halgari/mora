@@ -1,8 +1,5 @@
 #include <gtest/gtest.h>
 #include "mora/eval/operators.h"
-#include "mora/eval/patch_buffer.h"
-#include "mora/eval/pipeline_evaluator.h"
-#include "mora/emit/patch_table.h"
 
 using namespace mora;
 
@@ -89,102 +86,6 @@ TEST(OperatorsTest, SemiJoinBasic) {
     });
 
     EXPECT_EQ(surviving, 3u);
-}
-
-// ---------------------------------------------------------------------------
-// 3. PatchBufferSortDedup — add 100 entries with duplicates, sort_and_dedup,
-//    verify correct count and ordering.
-// ---------------------------------------------------------------------------
-TEST(OperatorsTest, PatchBufferSortDedup) {
-    PatchBuffer buf;
-    uint8_t add_op = static_cast<uint8_t>(FieldOp::Add);
-
-    // Add 100 entries: 50 unique, 50 duplicates
-    for (uint32_t i = 0; i < 50; i++) {
-        buf.emit(i, 6, add_op, 0, i * 10);
-        buf.emit(i, 6, add_op, 0, i * 10);  // duplicate
-    }
-
-    ASSERT_EQ(buf.size(), 100u);
-    buf.sort_and_dedup();
-    ASSERT_EQ(buf.size(), 50u);
-
-    // Verify sorted
-    for (size_t i = 1; i < buf.size(); i++) {
-        EXPECT_LE(buf.entries()[i-1].formid, buf.entries()[i].formid);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 4. PatchBufferEmpty — sort_and_dedup on empty buffer, no crash.
-// ---------------------------------------------------------------------------
-TEST(OperatorsTest, PatchBufferEmpty) {
-    PatchBuffer buf;
-    buf.sort_and_dedup();
-    EXPECT_EQ(buf.size(), 0u);
-}
-
-// ---------------------------------------------------------------------------
-// 5. FullPipelineIntegration — set up SPID distribution with columnar store,
-//    run through operator pipeline, verify correct patches in PatchBuffer.
-// ---------------------------------------------------------------------------
-TEST(OperatorsTest, FullPipelineIntegration) {
-    ChunkPool chunk_pool;
-    StringPool string_pool;
-    ColumnarFactStore store(chunk_pool);
-
-    constexpr uint32_t NPC_A = 0x100;
-    constexpr uint32_t NPC_B = 0x200;
-    constexpr uint32_t NPC_C = 0x300;
-    constexpr uint32_t KW_MAGIC = 0xA01;
-    constexpr uint32_t TARGET_KW = 0xBEEF;
-
-    // Set up NPC relation
-    auto& npcs = store.get_or_create(string_pool.intern("npc"), {ColType::U32});
-    npcs.append_row({NPC_A});
-    npcs.append_row({NPC_B});
-    npcs.append_row({NPC_C});
-
-    // Set up has_keyword relation
-    auto& hk = store.get_or_create(string_pool.intern("has_keyword"),
-                                    {ColType::U32, ColType::U32});
-    hk.append_row({NPC_A, KW_MAGIC});
-    hk.append_row({NPC_B, KW_MAGIC});
-
-    auto kw_sid = string_pool.intern("keyword");
-
-    // Set up spid_dist: rule 1 distributes keyword TARGET_KW
-    auto& dists = store.get_or_create(string_pool.intern("spid_dist"),
-                                       {ColType::U32, ColType::U32, ColType::U32});
-    dists.append_row({1, kw_sid.index, TARGET_KW});
-
-    // Set up spid_kw_filter: rule 1 filters by KW_MAGIC
-    auto& kwf = store.get_or_create(string_pool.intern("spid_kw_filter"),
-                                     {ColType::U32, ColType::U32});
-    kwf.append_row({1, KW_MAGIC});
-
-    store.build_all_indexes();
-
-    // Evaluate using PatchBuffer path
-    PatchBuffer patch_buf;
-    evaluate_distributions_columnar(store, string_pool, patch_buf);
-    patch_buf.sort_and_dedup();
-
-    // NPC_A and NPC_B both have KW_MAGIC -> both get TARGET_KW
-    // NPC_C has no keywords -> no patches
-    EXPECT_EQ(patch_buf.size(), 2u);
-
-    // Verify entries
-    bool found_a = false, found_b = false;
-    for (const auto& e : patch_buf.entries()) {
-        EXPECT_EQ(e.field_id, static_cast<uint8_t>(FieldId::Keywords));
-        EXPECT_EQ(e.op, static_cast<uint8_t>(FieldOp::Add));
-        EXPECT_EQ(e.value, TARGET_KW);
-        if (e.formid == NPC_A) found_a = true;
-        if (e.formid == NPC_B) found_b = true;
-    }
-    EXPECT_TRUE(found_a);
-    EXPECT_TRUE(found_b);
 }
 
 // ---------------------------------------------------------------------------

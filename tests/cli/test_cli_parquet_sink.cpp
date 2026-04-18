@@ -1,11 +1,11 @@
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
 #include "mora/diag/diagnostic.h"
-#include "mora/eval/effect_facts.h"      // populate_effect_facts
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_set.h"         // PatchSet, FieldOp
+#include "mora/eval/field_types.h"       // FieldId, FieldOp
 #include "mora/ext/extension.h"
-#include "mora/model/relations.h"        // FieldId
+#include "mora/model/field_names.h"      // field_id_name
+#include "mora/model/relations.h"
 #include "mora_parquet/register.h"
 #include "mora_skyrim_compile/register.h"
 
@@ -143,12 +143,10 @@ TEST(CliParquetSink, OutputOnlyFilterEmitsOnlyFlaggedRelations) {
 }
 
 TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
-    // Builds a synthetic PatchBuffer with three different value types
-    // (Int, Float, FormID), runs the Plan 5 bridge to populate the
-    // skyrim/set FactDB relation, dispatches the parquet sink with
-    // output-only, then reads skyrim/set.parquet back and verifies the
-    // tagged-column layout carries the three rows with correct kinds +
-    // values.
+    // Directly populates the skyrim/set FactDB relation with three different
+    // value types (Int, Float, FormID, String), dispatches the parquet sink
+    // with output-only, then reads skyrim/set.parquet back and verifies the
+    // tagged-column layout carries the four rows with correct kinds + values.
     mora::StringPool pool;
     mora::DiagBag diags;
     mora::FactDB db(pool);
@@ -157,31 +155,22 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
     mora_skyrim_compile::register_skyrim(ctx);
     mora_parquet::register_parquet(ctx);
 
-    mora::PatchSet ps;
-    auto const form = uint32_t{0x000ABCDE};
+    auto rel_set = pool.intern("skyrim/set");
+    db.configure_relation(rel_set, /*arity*/ 3, /*indexed*/ {0});
 
-    ps.add_patch(form, mora::FieldId::GoldValue, mora::FieldOp::Set,
-                 mora::Value::make_int(750),
-                 mora::StringId{}, /*priority*/ 0);
+    uint32_t const form = 0x000ABCDE;
 
-    double const weight = 2.5;
-    ps.add_patch(form, mora::FieldId::Weight, mora::FieldOp::Set,
-                 mora::Value::make_float(weight),
-                 mora::StringId{}, /*priority*/ 0);
+    auto add_set = [&](mora::FieldId field, mora::Value v) {
+        auto kw = mora::Value::make_keyword(
+            pool.intern(mora::field_id_name(field)));
+        db.add_fact(rel_set, mora::Tuple{
+            mora::Value::make_formid(form), kw, v});
+    };
 
-    ps.add_patch(form, mora::FieldId::Race, mora::FieldOp::Set,
-                 mora::Value::make_formid(0x01337F),
-                 mora::StringId{}, /*priority*/ 0);
-
-    // String case — previously broken under the PatchBuffer path
-    // because PatchValueType::StringIndex encoded a byte offset, not
-    // a StringPool index. Plan 7's typed ResolvedPatchSet path carries
-    // the StringId directly, so the string round-trips.
-    ps.add_patch(form, mora::FieldId::Name, mora::FieldOp::Set,
-                 mora::Value::make_string(pool.intern("Skeever")),
-                 mora::StringId{}, /*priority*/ 0);
-
-    mora::populate_effect_facts(ps.resolve(), db, pool);
+    add_set(mora::FieldId::GoldValue, mora::Value::make_int(750));
+    add_set(mora::FieldId::Weight,    mora::Value::make_float(2.5));
+    add_set(mora::FieldId::Race,      mora::Value::make_formid(0x01337F));
+    add_set(mora::FieldId::Name,      mora::Value::make_string(pool.intern("Skeever")));
 
     // Dispatch the parquet sink.
     auto out_dir = fs::temp_directory_path() /

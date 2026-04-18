@@ -47,9 +47,12 @@ TEST_F(BackendIntegrationTest, FullPipeline) {
     // Evaluate
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Tagged"), 0xFFF);
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    EXPECT_EQ(resolved.patch_count(), 2u);
+    evaluator.evaluate_module(mod, db);
+
+    // add form/keyword -> skyrim/add, 2 NPCs each get one tuple
+    auto rel_id = pool.intern("skyrim/add");
+    const auto& tuples = db.get_relation(rel_id);
+    EXPECT_EQ(tuples.size(), 2u);
 }
 
 TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
@@ -86,11 +89,16 @@ TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
     evaluator.set_symbol_formid(pool.intern("Static"), 0xAA);
     evaluator.set_symbol_formid(pool.intern("Dynamic"), 0xBB);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
+    evaluator.evaluate_module(mod, db);
 
-    // Only the static rule's effect should appear
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xAAu);
+    // Only the static rule fires (dynamic rule has no current_location data).
+    // skyrim/add should have exactly one tuple for formid 0x100 (the Static keyword).
+    auto rel_id = pool.intern("skyrim/add");
+    const auto& tuples = db.get_relation(rel_id);
+    ASSERT_EQ(tuples.size(), 1u);
+    ASSERT_GE(tuples[0].size(), 3u);
+    EXPECT_EQ(tuples[0][0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(tuples[0][0].as_formid(), 0x100u);
+    EXPECT_EQ(tuples[0][2].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(tuples[0][2].as_formid(), 0xAAu);
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mora/eval/patch_set.h"  // for FieldId
+#include "mora/eval/field_types.h"  // for FieldId
 #include <string>
 
 namespace mora {

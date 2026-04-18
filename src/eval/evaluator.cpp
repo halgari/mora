@@ -2,6 +2,7 @@
 #include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
 #include "mora/model/builtin_fns.h"
+#include "mora/model/field_names.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -20,50 +21,27 @@ void Evaluator::set_symbol_formid(StringId symbol_name, uint32_t formid) {
     symbol_formids_[colon_id.index] = formid;
 }
 
-PatchSet Evaluator::evaluate_static(const Module& mod,
-                                     ProgressCallback progress) {
-    PatchSet patches;
-    PhaseClassifier const classifier(pool_);
-
-    if (mod.ns) {
-        current_mod_name_ = mod.ns->name;
-    } else {
-        current_mod_name_ = pool_.intern("anonymous");
+void Evaluator::ensure_effect_relations_configured(FactDB& db) {
+    if (effect_rels_configured_) return;
+    effect_rel_set_      = pool_.intern("skyrim/set");
+    effect_rel_add_      = pool_.intern("skyrim/add");
+    effect_rel_remove_   = pool_.intern("skyrim/remove");
+    effect_rel_multiply_ = pool_.intern("skyrim/multiply");
+    for (StringId rel : {effect_rel_set_, effect_rel_add_,
+                         effect_rel_remove_, effect_rel_multiply_}) {
+        db.configure_relation(rel, /*arity*/ 3, /*indexed*/ {0});
     }
+    effect_rels_configured_ = true;
+}
 
-    // Count static rules for progress reporting
-    size_t total_static = 0;
-    for (const Rule& rule : mod.rules) {
-        if (classifier.classify(rule) == Phase::Static) total_static++;
-    }
-
-    size_t done = 0;
-    auto report = [&](const Rule& rule) {
-        ++done;
-        if (progress) progress(done, total_static, pool_.get(rule.name));
-    };
-
-    // First pass: evaluate derived rules (no effects) to populate derived_facts_
+void Evaluator::evaluate_module(const Module& mod, FactDB& out_facts,
+                                  ProgressCallback progress) {
+    ensure_effect_relations_configured(out_facts);
     for (size_t i = 0; i < mod.rules.size(); ++i) {
         const Rule& rule = mod.rules[i];
-        if (classifier.classify(rule) != Phase::Static) continue;
-        if (rule.effects.empty() && rule.conditional_effects.empty()) {
-            evaluate_rule(rule, patches, static_cast<uint32_t>(i));
-            report(rule);
-        }
+        evaluate_rule(rule, out_facts);
+        if (progress) progress(i + 1, mod.rules.size(), pool_.get(rule.name));
     }
-
-    // Second pass: evaluate rules with effects to produce patches
-    for (size_t i = 0; i < mod.rules.size(); ++i) {
-        const Rule& rule = mod.rules[i];
-        if (classifier.classify(rule) != Phase::Static) continue;
-        if (!rule.effects.empty() || !rule.conditional_effects.empty()) {
-            evaluate_rule(rule, patches, static_cast<uint32_t>(i));
-            report(rule);
-        }
-    }
-
-    return patches;
 }
 
 // Score a clause for ordering. Lower = more selective = should run first.
@@ -131,15 +109,14 @@ std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) {
     return order;
 }
 
-void Evaluator::evaluate_rule(const Rule& rule, PatchSet& patches, uint32_t priority) {
+void Evaluator::evaluate_rule(const Rule& rule, FactDB& db) {
     Bindings bindings;
     auto order = compute_clause_order(rule);
-    match_clauses(rule, order, 0, bindings, patches, priority);
+    match_clauses(rule, order, 0, bindings, db);
 }
 
 void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order,
-                               size_t step, Bindings& bindings, PatchSet& patches,
-                               uint32_t priority) {
+                               size_t step, Bindings& bindings, FactDB& db) {
     if (step >= order.size()) {
         // All clauses matched
         if (rule.effects.empty() && rule.conditional_effects.empty()) {
@@ -150,7 +127,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
             }
             derived_facts_.add_fact(rule.name, std::move(tuple));
         } else {
-            apply_effects(rule, bindings, patches, priority);
+            apply_effects(rule, bindings, db);
         }
         return;
     }
@@ -186,25 +163,25 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
                 auto neg_results = merged_query(c.name, query_tuple);
                 if (neg_results.empty()) {
                     // No match found, negation succeeds
-                    match_clauses(rule, order, step + 1, bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, bindings, db);
                 }
             } else {
                 // Positive pattern: find all matches and recurse for each
                 auto all_bindings = match_fact_pattern(c, bindings);
                 for (auto& new_bindings : all_bindings) {
-                    match_clauses(rule, order, step + 1, new_bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, new_bindings, db);
                 }
             }
         } else if constexpr (std::is_same_v<T, GuardClause>) {
             if (evaluate_guard(*c.expr, bindings)) {
-                match_clauses(rule, order, step + 1, bindings, patches, priority);
+                match_clauses(rule, order, step + 1, bindings, db);
             }
         } else if constexpr (std::is_same_v<T, Effect>) {
             // Effects in body are handled separately; skip
-            match_clauses(rule, order, step + 1, bindings, patches, priority);
+            match_clauses(rule, order, step + 1, bindings, db);
         } else if constexpr (std::is_same_v<T, ConditionalEffect>) {
             // Conditional effects in body are handled separately; skip
-            match_clauses(rule, order, step + 1, bindings, patches, priority);
+            match_clauses(rule, order, step + 1, bindings, db);
         } else if constexpr (std::is_same_v<T, InClause>) {
             Value const var_val = resolve_expr(*c.variable, bindings);
 
@@ -223,14 +200,13 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
                                 Bindings new_bindings = bindings;
                                 new_bindings[ve->name.index] = elem;
                                 match_clauses(rule, order, step + 1,
-                                              new_bindings, patches, priority);
+                                              new_bindings, db);
                             }
                         }
                     } else {
                         // Bound variable: membership check
                         if (rhs.list_contains(var_val)) {
-                            match_clauses(rule, order, step + 1, bindings,
-                                          patches, priority);
+                            match_clauses(rule, order, step + 1, bindings, db);
                         }
                     }
                     return;
@@ -240,7 +216,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
             for (const auto& val_expr : c.values) {
                 Value const v = resolve_expr(val_expr, bindings);
                 if (var_val.matches(v)) {
-                    match_clauses(rule, order, step + 1, bindings, patches, priority);
+                    match_clauses(rule, order, step + 1, bindings, db);
                     return;
                 }
             }
@@ -252,7 +228,7 @@ void Evaluator::match_clauses(const Rule& rule, const std::vector<size_t>& order
                 if (branch.size() == 1) {
                     auto matches = match_fact_pattern(branch[0], bindings);
                     for (auto& new_bindings : matches) {
-                        match_clauses(rule, order, step + 1, new_bindings, patches, priority);
+                        match_clauses(rule, order, step + 1, new_bindings, db);
                     }
                 }
             }
@@ -444,7 +420,20 @@ static const char* verb_prefix(VerbKind v) {
 }
 
 void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
-                               PatchSet& patches, uint32_t priority) {
+                               FactDB& db) {
+    auto emit_effect = [&](uint32_t formid, FieldId field, FieldOp op,
+                           const Value& v) {
+        StringId rel;
+        switch (op) {
+            case FieldOp::Set:      rel = effect_rel_set_;      break;
+            case FieldOp::Add:      rel = effect_rel_add_;      break;
+            case FieldOp::Remove:   rel = effect_rel_remove_;   break;
+            case FieldOp::Multiply: rel = effect_rel_multiply_; break;
+        }
+        auto kw = Value::make_keyword(pool_.intern(field_id_name(field)));
+        db.add_fact(rel, Tuple{Value::make_formid(formid), kw, v});
+    };
+
     // Unconditional effects
     for (const Effect& effect : rule.effects) {
         auto legacy = std::string(verb_prefix(effect.verb)) +
@@ -464,16 +453,14 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
                 | (static_cast<uint64_t>(level_v.as_int()) << 32)
                 | (static_cast<uint64_t>(count_v.as_int()) << 48);
             if (target.kind() == Value::Kind::FormID) {
-                patches.add_patch(target.as_formid(), field, op,
-                    Value::make_int(static_cast<int64_t>(packed)),
-                    current_mod_name_, priority);
+                emit_effect(target.as_formid(), field, op,
+                    Value::make_int(static_cast<int64_t>(packed)));
             }
             continue;
         }
 
         if (target.kind() == Value::Kind::FormID) {
-            patches.add_patch(target.as_formid(), field, op, value,
-                              current_mod_name_, priority);
+            emit_effect(target.as_formid(), field, op, value);
         }
     }
 
@@ -489,8 +476,7 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
             Value const value = resolve_expr(ce.effect.args[1], bindings);
 
             if (target.kind() == Value::Kind::FormID) {
-                patches.add_patch(target.as_formid(), field, op, value,
-                                  current_mod_name_, priority);
+                emit_effect(target.as_formid(), field, op, value);
             }
         }
     }
