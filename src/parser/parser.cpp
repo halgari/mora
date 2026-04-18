@@ -610,7 +610,7 @@ Expr Parser::parse_primary() {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = VariableExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = VariableExpr{tok.string_id, tok.span};
         return e;
     }
 
@@ -626,7 +626,7 @@ Expr Parser::parse_primary() {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = EditorIdExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = EditorIdExpr{tok.string_id, tok.span};
         return e;
     }
 
@@ -697,7 +697,7 @@ Expr Parser::parse_primary() {
         }
         Expr e;
         e.span = tok.span;
-        e.data = VariableExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = VariableExpr{tok.string_id, tok.span};
         return e;
     }
 

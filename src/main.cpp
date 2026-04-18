@@ -2,7 +2,6 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-// type_checker.h excluded in M2; deleted in M3
 #include "mora/diag/diagnostic.h"
 #include "mora/diag/renderer.h"
 #include "mora/cli/terminal.h"
@@ -250,10 +249,6 @@ static bool run_check_pipeline(
         result.rule_count += mod.rules.size();
     }
     out.phase_done(fmt::format("Resolving {} rules", result.rule_count));
-
-    // Type checking removed in M2 (type_checker.cpp excluded from build).
-    // Scalar type diagnostics will return in a later plan via the vectorized
-    // evaluator's nominal-tag checks at chunk boundaries.
 
     // Render diagnostics if any
     if (!result.diags.all().empty()) {
@@ -508,8 +503,6 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
 
     mora::NameResolver resolver(pool, diags);
     for (auto& mod : modules) resolver.resolve(mod);
-
-    // TypeChecker excluded in M2; deleted in M3
 
     if (diags.has_errors()) {
         mora::DiagRenderer const renderer(use_color);

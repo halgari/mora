@@ -219,7 +219,7 @@ TEST_F(EvaluatorTest, ElementInListVar) {
     mora::StringId v_kw     = pool.intern("KW");
 
     auto var_expr = [](mora::StringId name) -> mora::Expr {
-        return mora::Expr{mora::VariableExpr{name, {}, {}}, {}};
+        return mora::Expr{mora::VariableExpr{name, {}}, {}};
     };
     auto str_expr = [&](const std::string& s) -> mora::Expr {
         return mora::Expr{mora::StringLiteral{pool.intern(s), {}}, {}};
@@ -270,7 +270,7 @@ TEST_F(EvaluatorTest, ElementInListVar) {
         eff.name = pool.intern("add_keyword");
         eff.args.push_back(var_expr(v_npc));
         // :Result as a symbol expr — evaluator resolves it via set_symbol_formid
-        eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}, {}}, {}});
+        eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}}, {}});
         rule.effects.push_back(std::move(eff));
     }
 

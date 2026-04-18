@@ -1,5 +1,4 @@
 #pragma once
-#include "mora/ast/types.h"
 #include "mora/core/source_location.h"
 #include "mora/core/string_pool.h"
 #include <memory>
@@ -17,9 +16,9 @@ enum class RuleKind : uint8_t { Static, Maintain, On };
 enum class VerbKind : uint8_t { Set, Add, Sub, Remove };
 
 // ── Expressions ──
-struct VariableExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
-struct SymbolExpr   { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
-struct EditorIdExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
+struct VariableExpr { StringId name; SourceSpan span; };
+struct SymbolExpr   { StringId name; SourceSpan span; };
+struct EditorIdExpr { StringId name; SourceSpan span; };
 struct IntLiteral   { int64_t value; SourceSpan span; };
 struct FloatLiteral { double value;  SourceSpan span; };
 struct StringLiteral { StringId value; SourceSpan span; };
@@ -38,7 +37,6 @@ struct BinaryExpr {
 struct CallExpr {
     StringId name;
     std::vector<Expr> args;
-    MoraType resolved_type = MoraType::make(TypeKind::Unknown);
     SourceSpan span;
 };
 
@@ -115,7 +113,7 @@ struct UseDecl        {
     SourceSpan span;
 };
 struct ImportIniDecl  { enum class Kind { Spid, Kid }; Kind kind; StringId path; SourceSpan span; };
-struct FactDecl       { StringId name; std::vector<MoraType> param_types; SourceSpan span; };
+struct FactDecl       { StringId name; SourceSpan span; };
 
 // ── Module (one .mora file) ──
 struct Module {
