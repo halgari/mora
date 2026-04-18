@@ -44,7 +44,14 @@ public:
     // type. Returns a stable singleton pointer. Idempotent: registering
     // the same name twice returns the same pointer.
     const Type* register_nominal_type(std::string_view name,
-                                       const Type* physical);
+                                       const Type* physical,
+                                       Value::Kind kind_hint);
+
+    // Back-compat overload: defaults the kind hint to physical->kind_hint().
+    const Type* register_nominal_type(std::string_view name,
+                                       const Type* physical) {
+        return register_nominal_type(name, physical, physical->kind_hint());
+    }
 
     // Register a RelationSchema. Takes ownership of the copy — caller
     // may let the argument go out of scope after the call. Names must

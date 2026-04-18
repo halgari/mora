@@ -41,7 +41,7 @@ TEST(Column, RollsToNextChunkAtBoundary) {
 
 TEST(Column, FormIDNominalDecodesBack) {
     auto const* formid = mora::TypeRegistry::instance().register_nominal(
-        "FormID", mora::types::int32());
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
     mora::Column c(formid);
     c.append(mora::Value::make_formid(0x000A0B0C));
     EXPECT_EQ(c.row_count(), 1u);
@@ -79,6 +79,24 @@ TEST(Column, KeywordColumnTypedAccess) {
     // Downcast to typed chunk for direct access
     auto const& kw = static_cast<const mora::KeywordVector&>(c.chunk(0));
     EXPECT_EQ(kw.size(), 2u);
+}
+
+TEST(Column, AppendRejectsKindMismatchOnTypedColumn) {
+    mora::Column c(mora::types::string());
+    EXPECT_THROW(c.append(mora::Value::make_int(42)),
+                 std::runtime_error);
+    // Append of the right kind still works
+    mora::StringPool pool;
+    c.append(mora::Value::make_string(pool.intern("ok")));
+    EXPECT_EQ(c.row_count(), 1u);
+}
+
+TEST(Column, AnyColumnAcceptsAnyKind) {
+    mora::Column c(mora::types::any());
+    EXPECT_NO_THROW(c.append(mora::Value::make_int(1)));
+    EXPECT_NO_THROW(c.append(mora::Value::make_bool(true)));
+    EXPECT_NO_THROW(c.append(mora::Value::make_float(3.14)));
+    EXPECT_EQ(c.row_count(), 3u);
 }
 
 } // namespace

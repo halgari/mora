@@ -16,8 +16,9 @@ ExtensionContext::ExtensionContext()  : impl_(std::make_unique<Impl>()) {}
 ExtensionContext::~ExtensionContext() = default;
 
 const Type* ExtensionContext::register_nominal_type(std::string_view name,
-                                                    const Type* physical) {
-    return TypeRegistry::instance().register_nominal(name, physical);
+                                                    const Type* physical,
+                                                    Value::Kind kind_hint) {
+    return TypeRegistry::instance().register_nominal(name, physical, kind_hint);
 }
 
 void ExtensionContext::register_data_source(std::unique_ptr<DataSource> src) {

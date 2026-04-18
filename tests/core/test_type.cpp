@@ -1,4 +1,5 @@
 #include "mora/core/type.h"
+#include "mora/data/value.h"
 
 #include <gtest/gtest.h>
 
@@ -35,6 +36,26 @@ TEST(CoreType, RegisterNominalIsIdempotent) {
     EXPECT_EQ(a->physical(), mora::types::int32());
     EXPECT_EQ(a->name(), "PlanNineTestTag");
     EXPECT_EQ(mora::types::get("PlanNineTestTag"), a);
+}
+
+TEST(CoreType, PhysicalsHaveNaturalKindHints) {
+    EXPECT_EQ(mora::types::int32()->kind_hint(),   mora::Value::Kind::Int);
+    EXPECT_EQ(mora::types::int64()->kind_hint(),   mora::Value::Kind::Int);
+    EXPECT_EQ(mora::types::float64()->kind_hint(), mora::Value::Kind::Float);
+    EXPECT_EQ(mora::types::boolean()->kind_hint(), mora::Value::Kind::Bool);
+    EXPECT_EQ(mora::types::string()->kind_hint(),  mora::Value::Kind::String);
+    EXPECT_EQ(mora::types::keyword()->kind_hint(), mora::Value::Kind::Keyword);
+    EXPECT_EQ(mora::types::any()->kind_hint(),     mora::Value::Kind::Var);
+    EXPECT_EQ(mora::types::bytes()->kind_hint(),   mora::Value::Kind::Var);
+}
+
+TEST(CoreType, NominalCanOverrideKindHint) {
+    auto const* tag = mora::TypeRegistry::instance().register_nominal(
+        "Plan12NominalTag", mora::types::int32(), mora::Value::Kind::FormID);
+    ASSERT_NE(tag, nullptr);
+    EXPECT_TRUE(tag->is_nominal());
+    EXPECT_EQ(tag->physical(), mora::types::int32());
+    EXPECT_EQ(tag->kind_hint(), mora::Value::Kind::FormID);
 }
 
 } // namespace

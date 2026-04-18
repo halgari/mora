@@ -9,7 +9,7 @@ namespace {
 
 TEST(ColumnarRelation, AppendsAndRetrievesRows) {
     auto const* formid  = mora::TypeRegistry::instance().register_nominal(
-        "FormID", mora::types::int32());
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
     mora::ColumnarRelation rel({formid, mora::types::int64()}, /*indexed*/ {0});
 
     rel.append(mora::Tuple{mora::Value::make_formid(0x100), mora::Value::make_int(42)});
@@ -30,7 +30,7 @@ TEST(ColumnarRelation, AppendsAndRetrievesRows) {
 
 TEST(ColumnarRelation, QueryByIndexedColumnUsesHashIndex) {
     auto const* formid = mora::TypeRegistry::instance().register_nominal(
-        "FormID", mora::types::int32());
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
     mora::ColumnarRelation rel({formid, mora::types::int64()}, /*indexed*/ {0});
 
     for (uint32_t f = 0; f < 100; ++f) {
@@ -62,7 +62,7 @@ TEST(ColumnarRelation, QueryFullScanWhenNoIndexMatches) {
 
 TEST(ColumnarRelation, ContainsExactMatch) {
     auto const* formid = mora::TypeRegistry::instance().register_nominal(
-        "FormID", mora::types::int32());
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
     mora::ColumnarRelation rel({formid, mora::types::int64()}, /*indexed*/ {0});
 
     rel.append(mora::Tuple{mora::Value::make_formid(0x100), mora::Value::make_int(42)});
@@ -87,7 +87,7 @@ TEST(ColumnarRelation, MaterializeReturnsAllRows) {
 TEST(ColumnarRelation, KeywordAndAnyColumnsRoundTrip) {
     mora::StringPool pool;
     auto const* formid = mora::TypeRegistry::instance().register_nominal(
-        "FormID", mora::types::int32());
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
     mora::ColumnarRelation rel(
         {formid, mora::types::keyword(), mora::types::any()},
         /*indexed*/ {0});

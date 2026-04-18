@@ -8,12 +8,13 @@
 namespace mora {
 namespace {
 
-template <const char* Name, size_t ElemBytes>
+template <const char* Name, size_t ElemBytes, Value::Kind K>
 class PhysicalType : public Type {
 public:
     std::string_view name() const override { return Name; }
     const Type*      physical() const override { return this; }
     size_t           element_bytes() const override { return ElemBytes; }
+    Value::Kind      kind_hint() const override { return K; }
 };
 
 constexpr char kInt32Name[]   = "Int32";
@@ -25,27 +26,29 @@ constexpr char kKeywordName[] = "Keyword";
 constexpr char kBytesName[]   = "Bytes";
 constexpr char kAnyName[]     = "Any";
 
-using Int32Type_   = PhysicalType<kInt32Name,   sizeof(int32_t)>;
-using Int64Type_   = PhysicalType<kInt64Name,   sizeof(int64_t)>;
-using Float64Type_ = PhysicalType<kFloat64Name, sizeof(double)>;
-using BoolType_    = PhysicalType<kBoolName,    sizeof(bool)>;
-using StringType_  = PhysicalType<kStringName,  sizeof(uint32_t)>;
-using KeywordType_ = PhysicalType<kKeywordName, sizeof(uint32_t)>;
-using BytesType_   = PhysicalType<kBytesName,   0>;   // variable-size
-using AnyType_     = PhysicalType<kAnyName,     0>;   // polymorphic
+using Int32Type_   = PhysicalType<kInt32Name,   sizeof(int32_t),  Value::Kind::Int>;
+using Int64Type_   = PhysicalType<kInt64Name,   sizeof(int64_t),  Value::Kind::Int>;
+using Float64Type_ = PhysicalType<kFloat64Name, sizeof(double),   Value::Kind::Float>;
+using BoolType_    = PhysicalType<kBoolName,    sizeof(bool),     Value::Kind::Bool>;
+using StringType_  = PhysicalType<kStringName,  sizeof(uint32_t), Value::Kind::String>;
+using KeywordType_ = PhysicalType<kKeywordName, sizeof(uint32_t), Value::Kind::Keyword>;
+using BytesType_   = PhysicalType<kBytesName,   0,                Value::Kind::Var>;  // no single kind
+using AnyType_     = PhysicalType<kAnyName,     0,                Value::Kind::Var>;  // polymorphic
 
 class NominalType : public Type {
 public:
-    NominalType(std::string n, const Type* physical)
-        : name_(std::move(n)), physical_(physical) {}
+    NominalType(std::string n, const Type* physical, Value::Kind hint)
+        : name_(std::move(n)), physical_(physical), kind_hint_(hint) {}
     std::string_view name() const override { return name_; }
     const Type*      physical() const override { return physical_; }
     size_t           element_bytes() const override {
         return physical_->element_bytes();
     }
+    Value::Kind      kind_hint() const override { return kind_hint_; }
 private:
     std::string name_;
     const Type* physical_;
+    Value::Kind kind_hint_;
 };
 
 } // namespace
@@ -92,7 +95,8 @@ TypeRegistry& TypeRegistry::instance() {
 }
 
 const Type* TypeRegistry::register_nominal(std::string_view name,
-                                            const Type* physical) {
+                                            const Type* physical,
+                                            Value::Kind kind_hint) {
     std::string const key(name);
     {
         std::shared_lock<std::shared_mutex> r(mu_);
@@ -106,7 +110,7 @@ const Type* TypeRegistry::register_nominal(std::string_view name,
     std::unique_lock<std::shared_mutex> w(mu_);
     auto it = by_name_.find(key);
     if (it != by_name_.end()) return it->second;
-    auto* t = new NominalType(key, physical);
+    auto* t = new NominalType(key, physical, kind_hint);
     by_name_.emplace(key, t);
     return t;
 }

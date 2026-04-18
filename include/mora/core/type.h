@@ -6,6 +6,8 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "mora/data/value.h"   // Value::Kind
+
 namespace mora {
 
 // A Type is a process-lifetime singleton identified by pointer.
@@ -17,6 +19,14 @@ public:
     virtual std::string_view name() const    = 0;
     virtual const Type*      physical() const = 0;  // self for physical; underlying for nominal
     virtual size_t           element_bytes() const = 0;
+
+    // The Value::Kind that naturally round-trips through a Column of
+    // this Type. Physical types return the kind matching their payload
+    // (Int32 → Int; String → String; Keyword → Keyword; Any → Var,
+    // which means "no specific kind — use the cell's stored kind").
+    // Nominal types may override to return a different kind (FormID
+    // returns Kind::FormID even though its physical is Int32).
+    virtual Value::Kind      kind_hint() const = 0;
 
     bool is_nominal() const { return physical() != this; }
 
@@ -50,7 +60,17 @@ class TypeRegistry {
 public:
     static TypeRegistry& instance();
 
-    const Type* register_nominal(std::string_view name, const Type* physical);
+    // Register with an explicit kind hint. Idempotent — same name returns the
+    // existing pointer; the new kind_hint is ignored if an entry already exists.
+    const Type* register_nominal(std::string_view name,
+                                  const Type* physical,
+                                  Value::Kind kind_hint);
+
+    // Back-compat overload: defaults the kind hint to physical->kind_hint().
+    const Type* register_nominal(std::string_view name, const Type* physical) {
+        return register_nominal(name, physical, physical->kind_hint());
+    }
+
     const Type* find(std::string_view name) const;
 
     TypeRegistry(const TypeRegistry&)            = delete;

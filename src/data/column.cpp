@@ -39,30 +39,50 @@ Vector& Column::ensure_writable_chunk() {
 void Column::append(const Value& v) {
     auto& chunk = ensure_writable_chunk();
     auto const* phys = type_->physical();
+    auto const  hint = type_->kind_hint();
 
-    if (phys == types::int32()) {
-        // Int32 column accepts Int (narrowed) or FormID (already 32-bit nominal).
-        auto& c = static_cast<Int32Vector&>(chunk);
-        if (v.kind() == Value::Kind::FormID) c.append(static_cast<int32_t>(v.as_formid()));
-        else                                  c.append(static_cast<int32_t>(v.as_int()));
-    } else if (phys == types::int64()) {
-        auto& c = static_cast<Int64Vector&>(chunk);
-        c.append(v.as_int());
-    } else if (phys == types::float64()) {
-        auto& c = static_cast<Float64Vector&>(chunk);
-        c.append(v.as_float());
-    } else if (phys == types::boolean()) {
-        auto& c = static_cast<BoolVector&>(chunk);
-        c.append(v.as_bool());
-    } else if (phys == types::string()) {
-        auto& c = static_cast<StringVector&>(chunk);
-        c.append(v.as_string());
-    } else if (phys == types::keyword()) {
-        auto& c = static_cast<KeywordVector&>(chunk);
-        c.append(v.as_keyword());
-    } else if (phys == types::any()) {
+    // AnyVector columns accept any kind.
+    if (phys == types::any()) {
         auto& c = static_cast<AnyVector&>(chunk);
         c.append(v);
+        return;
+    }
+
+    // For typed columns, the value's kind must match the column's hint.
+    // Exception: Int32 columns with kind_hint == Int accept FormID (they
+    // share the same 32-bit payload). This preserves the Plan 10
+    // permissive behavior for untagged Int32 columns used by tests.
+    if (hint != Value::Kind::Var && v.kind() != hint) {
+        bool const int32_formid_compat =
+            (phys == types::int32()) &&
+            (hint == Value::Kind::Int) &&
+            (v.kind() == Value::Kind::FormID);
+        if (!int32_formid_compat) {
+            throw std::runtime_error(
+                std::string("Column::append: kind mismatch — column '") +
+                std::string(type_->name()) +
+                "' expects " + std::to_string(static_cast<int>(hint)) +
+                " got " + std::to_string(static_cast<int>(v.kind())));
+        }
+    }
+
+    if (phys == types::int32()) {
+        auto& c = static_cast<Int32Vector&>(chunk);
+        if (v.kind() == Value::Kind::FormID) {
+            c.append(static_cast<int32_t>(v.as_formid()));
+        } else {
+            c.append(static_cast<int32_t>(v.as_int()));
+        }
+    } else if (phys == types::int64()) {
+        static_cast<Int64Vector&>(chunk).append(v.as_int());
+    } else if (phys == types::float64()) {
+        static_cast<Float64Vector&>(chunk).append(v.as_float());
+    } else if (phys == types::boolean()) {
+        static_cast<BoolVector&>(chunk).append(v.as_bool());
+    } else if (phys == types::string()) {
+        static_cast<StringVector&>(chunk).append(v.as_string());
+    } else if (phys == types::keyword()) {
+        static_cast<KeywordVector&>(chunk).append(v.as_keyword());
     } else {
         throw std::runtime_error("Column::append: unsupported physical type");
     }
@@ -73,13 +93,11 @@ Value Column::at(size_t row) const {
     size_t const row_idx   = row % kChunkSize;
     auto const& chunk = *chunks_[chunk_idx];
     auto const* phys  = type_->physical();
+    auto const  hint  = type_->kind_hint();
 
     if (phys == types::int32()) {
         auto const& c = static_cast<const Int32Vector&>(chunk);
-        // Nominal FormID-over-Int32 decodes to FormID; raw Int32 decodes to Int.
-        // For v1 we decode according to the nominal name — "FormID" → FormID kind.
-        // (Refine via a nominal_to_kind hint in a later plan if needed.)
-        if (type_->is_nominal() && type_->name() == "FormID") {
+        if (hint == Value::Kind::FormID) {
             return Value::make_formid(static_cast<uint32_t>(c.get(row_idx)));
         }
         return Value::make_int(c.get(row_idx));
