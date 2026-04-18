@@ -643,7 +643,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         auto it = sink_configs.find(std::string(sink->name()));
         if (it == sink_configs.end()) continue;
         const auto errors_before_sink = cr.diags.error_count();
-        mora::ext::EmitCtx emit_ctx{cr.pool, cr.diags, it->second};
+        mora::ext::EmitCtx emit_ctx{cr.pool, cr.diags, it->second, &ext_ctx};
         sink->emit(emit_ctx, db);
         if (cr.diags.error_count() > errors_before_sink) {
             mora::log::error("  sink '{}' emitted {} error(s); aborting\n",

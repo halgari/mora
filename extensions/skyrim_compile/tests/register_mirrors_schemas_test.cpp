@@ -1,6 +1,8 @@
 #include "mora_skyrim_compile/register.h"
 #include "mora/ext/extension.h"
 
+#include <algorithm>
+#include <vector>
 #include <gtest/gtest.h>
 
 namespace {
@@ -27,16 +29,18 @@ TEST(RegisterSkyrim, MirrorsSchemasIntoExtensionContext) {
     EXPECT_NE(ctx.find_schema("plugin_exists"), nullptr);
 }
 
-TEST(RegisterSkyrim, MirroredSchemasAreNotOutputs) {
+TEST(RegisterSkyrim, RegistersExactlyThreeOutputRelations) {
     mora::ext::ExtensionContext ctx;
     mora_skyrim_compile::register_skyrim(ctx);
 
-    // None of the default Skyrim input relations should be marked
-    // is_output — only the effect relations added in M3 get that flag.
+    std::vector<std::string> outputs;
     for (const auto& s : ctx.schemas()) {
-        EXPECT_FALSE(s.is_output)
-            << "relation '" << s.name << "' unexpectedly marked is_output";
+        if (s.is_output) outputs.push_back(s.name);
     }
+    std::sort(outputs.begin(), outputs.end());
+
+    EXPECT_EQ(outputs,
+              (std::vector<std::string>{"skyrim/add", "skyrim/remove", "skyrim/set"}));
 }
 
 } // namespace

@@ -260,29 +260,44 @@ for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
     target_end()
 end
 
--- Tests under subdirectories (tests/<group>/test_*.cpp)
+-- Tests under subdirectories (tests/<group>/test_*.cpp).
+-- Parquet-dependent tests (tests/cli/test_cli_parquet_*.cpp) are excluded
+-- here and declared below with their own deps because they need arrow +
+-- mora_parquet + mora_skyrim_compile in a specific link order that the
+-- generic per-file loop can't produce via override.
 for _, testfile in ipairs(os.files("tests/**/test_*.cpp")) do
+    local basename = path.basename(testfile)
+    if not basename:startswith("test_cli_parquet_") then
+        local name = basename
+        target(name)
+            set_kind("binary")
+            set_default(false)
+            add_files(testfile)
+            add_includedirs("tests")
+            add_deps("mora_lib")
+            add_packages("gtest")
+            add_syslinks("gtest_main")
+            add_tests(name)
+        target_end()
+    end
+end
+
+-- Dedicated target loop for parquet-dependent tests. Deps are declared
+-- in link-order sensitive sequence: mora_skyrim_compile and mora_parquet
+-- come BEFORE mora_lib so that GNU ld's left-to-right archive resolution
+-- finds their backward references into mora_lib's symbols (SchemaRegistry
+-- et al.).
+for _, testfile in ipairs(os.files("tests/cli/test_cli_parquet_*.cpp")) do
     local name = path.basename(testfile)
     target(name)
         set_kind("binary")
         set_default(false)
         add_files(testfile)
         add_includedirs("tests")
-        add_deps("mora_lib")
-        add_packages("gtest")
+        add_deps("mora_skyrim_compile", "mora_parquet", "mora_lib")
+        add_packages("gtest", "arrow")
         add_syslinks("gtest_main")
         add_tests(name)
-    target_end()
-end
-
--- Override for tests under tests/cli that need the parquet extension
--- (arrow + mora_parquet). Discovered by the preceding glob; this just
--- adds the extra deps.
-for _, testfile in ipairs(os.files("tests/cli/test_cli_parquet_*.cpp")) do
-    local name = path.basename(testfile)
-    target(name)
-        add_deps("mora_parquet")
-        add_packages("arrow")
     target_end()
 end
 

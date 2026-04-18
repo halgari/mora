@@ -3,6 +3,7 @@
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
 #include "mora/eval/fact_db.h"
+#include "mora/ext/extension.h"
 
 #include <arrow/api.h>
 #include <arrow/io/file.h>
@@ -12,7 +13,9 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace mora_parquet {
@@ -97,6 +100,90 @@ fs::path parquet_path_for(std::string_view rel_name, const fs::path& root) {
     return root / (std::string(rel_name) + ".parquet");
 }
 
+// Parsed form of the sink's config string.
+struct ParsedConfig {
+    fs::path root;
+    bool     output_only = false;
+};
+
+// Parse `<path>[?<flags>]` where <flags> is k[=v](&k[=v])*. Only recognizes
+// the boolean-presence flag `output-only` in Plan 4; unknown flags are
+// reported via `unknown_flags` so the caller can diagnose.
+ParsedConfig parse_config(std::string_view raw,
+                           std::vector<std::string>& unknown_flags) {
+    ParsedConfig cfg;
+    auto q = raw.find('?');
+    cfg.root = fs::path(std::string(raw.substr(0, q)));
+    if (q == std::string_view::npos) return cfg;
+
+    std::string_view flags = raw.substr(q + 1);
+    while (!flags.empty()) {
+        auto amp = flags.find('&');
+        std::string_view chunk = flags.substr(0, amp);
+        std::string_view key = chunk;
+        auto eq = chunk.find('=');
+        if (eq != std::string_view::npos) {
+            key = chunk.substr(0, eq);
+        }
+        if (key == "output-only") {
+            cfg.output_only = true;
+        } else {
+            unknown_flags.emplace_back(key);
+        }
+        if (amp == std::string_view::npos) break;
+        flags = flags.substr(amp + 1);
+    }
+    return cfg;
+}
+
+// Emit a shape-only, zero-row parquet file for a relation that has no
+// tuples — used when output-only mode is active and we want a stable
+// downstream file set. Columns are all utf8 placeholders; real types
+// arrive in Plan 5+ once ColumnSpec carries type info.
+void emit_empty_parquet(std::string_view rel_name,
+                         std::size_t column_count,
+                         const fs::path& root,
+                         mora::DiagBag& diags) {
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    fields.reserve(column_count);
+    for (std::size_t c = 0; c < column_count; ++c) {
+        fields.push_back(arrow::field(fmt::format("col{}", c),
+                                       arrow::utf8()));
+    }
+    std::vector<std::shared_ptr<arrow::Array>> columns;
+    columns.reserve(column_count);
+    for (std::size_t c = 0; c < column_count; ++c) {
+        arrow::StringBuilder b;
+        std::shared_ptr<arrow::Array> out;
+        (void)b.Finish(&out);
+        columns.push_back(out);
+    }
+    auto empty_schema = arrow::schema(fields);
+    auto empty_table  = arrow::Table::Make(empty_schema, columns);
+
+    auto out_path = parquet_path_for(rel_name, root);
+    std::error_code mk_ec;
+    fs::create_directories(out_path.parent_path(), mk_ec);
+    if (mk_ec) {
+        diags.error("parquet-mkdir",
+            fmt::format("parquet.snapshot: cannot create dir {}: {}",
+                        out_path.parent_path().string(), mk_ec.message()),
+            mora::SourceSpan{}, "");
+        return;
+    }
+    auto outfile = arrow::io::FileOutputStream::Open(out_path.string());
+    if (!outfile.ok()) {
+        diags.error("parquet-open",
+            fmt::format("parquet.snapshot: cannot open {} for writing: {}",
+                        out_path.string(), outfile.status().ToString()),
+            mora::SourceSpan{}, "");
+        return;
+    }
+    (void)parquet::arrow::WriteTable(
+        *empty_table, arrow::default_memory_pool(), *outfile,
+        /*chunk_size*/ 64 * 1024);
+}
+
 } // namespace
 
 std::string_view ParquetSnapshotSink::name() const {
@@ -108,12 +195,38 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
     if (ctx.config.empty()) {
         ctx.diags.error("parquet-config",
             "parquet.snapshot requires a config path: "
-            "--sink parquet.snapshot=<out-dir>",
+            "--sink parquet.snapshot=<out-dir>[?output-only]",
             mora::SourceSpan{}, "");
         return;
     }
 
-    fs::path root(ctx.config);
+    std::vector<std::string> unknown_flags;
+    ParsedConfig cfg = parse_config(ctx.config, unknown_flags);
+    for (const auto& f : unknown_flags) {
+        ctx.diags.warning("parquet-unknown-flag",
+            fmt::format("parquet.snapshot: unknown flag '{}' ignored", f),
+            mora::SourceSpan{}, "");
+    }
+
+    // When output-only is requested, we need the ExtensionContext to
+    // discover which relations are flagged is_output. Without a context
+    // pointer, there's no way to know.
+    std::optional<std::unordered_set<std::string>> output_names;
+    if (cfg.output_only) {
+        if (ctx.extension == nullptr) {
+            ctx.diags.error("parquet-output-only",
+                "parquet.snapshot: 'output-only' requires an ExtensionContext; "
+                "not available in this invocation",
+                mora::SourceSpan{}, "");
+            return;
+        }
+        output_names.emplace();
+        for (const auto& schema : ctx.extension->schemas()) {
+            if (schema.is_output) output_names->insert(schema.name);
+        }
+    }
+
+    fs::path root = cfg.root;
     std::error_code ec;
     fs::create_directories(root, ec);
     if (ec) {
@@ -124,10 +237,36 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
         return;
     }
 
+    // In output-only mode also iterate every declared output relation
+    // whose name isn't in the FactDB yet — we emit an empty parquet
+    // file for it so downstream tooling sees a stable file set.
+    std::unordered_set<uint32_t> seen;
     for (auto rel_id : db.all_relation_names()) {
         const auto rel_name = ctx.pool.get(rel_id);
+        seen.insert(rel_id.index);
+        if (output_names.has_value() &&
+            !output_names->contains(std::string(rel_name))) {
+            continue;  // filtered out by output-only
+        }
         const auto& tuples = db.get_relation(rel_id);
-        if (tuples.empty()) continue;
+        if (tuples.empty() && !output_names.has_value()) continue;
+
+        if (tuples.empty()) {
+            // Output-only mode: we were asked to emit even for empty
+            // output relations. Look up the schema to get the column
+            // count. If no schema is registered, skip.
+            const auto* schema = ctx.extension->find_schema(std::string(rel_name));
+            if (schema == nullptr) {
+                ctx.diags.warning("parquet-skip-empty-no-schema",
+                    fmt::format("parquet.snapshot: skipping empty relation '{}' "
+                                "— no schema registered",
+                                rel_name),
+                    mora::SourceSpan{}, "");
+                continue;
+            }
+            emit_empty_parquet(rel_name, schema->columns.size(), root, ctx.diags);
+            continue;
+        }
 
         const std::size_t arity = tuples.front().size();
         std::vector<mora::Value::Kind> kinds(arity);
@@ -227,6 +366,19 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
                             out_path.string(), write_status.ToString()),
                 mora::SourceSpan{}, "");
             continue;
+        }
+    }
+
+    // In output-only mode: any declared output relation that wasn't in
+    // the FactDB (no slot configured) still needs an empty parquet
+    // file so downstream sees a predictable file set. Re-emit via the
+    // same empty-file logic used above.
+    if (output_names.has_value()) {
+        for (const auto& schema : ctx.extension->schemas()) {
+            if (!schema.is_output) continue;
+            auto name_id = ctx.pool.intern(schema.name);
+            if (seen.count(name_id.index)) continue;  // already handled
+            emit_empty_parquet(schema.name, schema.columns.size(), root, ctx.diags);
         }
     }
 }

@@ -50,6 +50,24 @@ void register_skyrim(mora::ext::ExtensionContext& ctx) {
     for (const auto* core : bridge.all_schemas()) {
         ctx.register_relation(to_ext_schema(*core, bridge_pool));
     }
+
+    // Effect relations — populated by the evaluator in a later plan.
+    // For Plan 4 they exist as schemas only; their FactDB slots stay
+    // empty, and the parquet sink's output-only filter emits an empty
+    // parquet file for each. Once the evaluator starts producing
+    // effect facts (spec step 11), these files will carry the data
+    // that mora_patches.bin carries today.
+    for (std::string_view effect : {"skyrim/set", "skyrim/add", "skyrim/remove"}) {
+        ctx.register_relation(mora::ext::RelationSchema{
+            .name      = std::string(effect),
+            .columns   = {
+                {"entity", /*indexed*/ true},
+                {"field",  /*indexed*/ false},
+                {"value",  /*indexed*/ false},
+            },
+            .is_output = true,
+        });
+    }
 }
 
 } // namespace mora_skyrim_compile
