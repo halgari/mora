@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mora/core/type.h"
 #include "mora/ext/data_source.h"
 #include "mora/ext/relation_schema.h"
 #include "mora/ext/sink.h"
@@ -38,6 +39,12 @@ public:
 
     // Register a Sink. Takes ownership.
     void register_sink(std::unique_ptr<Sink> sink);
+
+    // Register a nominal type tag (e.g. "FormID") layered over a physical
+    // type. Returns a stable singleton pointer. Idempotent: registering
+    // the same name twice returns the same pointer.
+    const Type* register_nominal_type(std::string_view name,
+                                       const Type* physical);
 
     // Register a RelationSchema. Takes ownership of the copy — caller
     // may let the argument go out of scope after the call. Names must

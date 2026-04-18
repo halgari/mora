@@ -15,6 +15,11 @@ struct ExtensionContext::Impl {
 ExtensionContext::ExtensionContext()  : impl_(std::make_unique<Impl>()) {}
 ExtensionContext::~ExtensionContext() = default;
 
+const Type* ExtensionContext::register_nominal_type(std::string_view name,
+                                                    const Type* physical) {
+    return TypeRegistry::instance().register_nominal(name, physical);
+}
+
 void ExtensionContext::register_data_source(std::unique_ptr<DataSource> src) {
     impl_->sources.push_back(std::move(src));
 }
