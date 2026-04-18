@@ -232,8 +232,10 @@ if not is_plat("windows") then
     includes("extensions/parquet/xmake.lua")
     includes("extensions/skyrim_compile/xmake.lua")
     includes("extensions/synthetic/xmake.lua")
-    includes("extensions/skyrim_runtime/xmake.lua")
 end
+-- skyrim_runtime contributes mora_runtime DLL + harness DLLs on
+-- Windows; each target inside is individually platform-gated.
+includes("extensions/skyrim_runtime/xmake.lua")
 
 -- CLI executable (Linux/macOS only — the Windows build produces
 -- only the SKSE DLLs; the compile step runs on the host).
