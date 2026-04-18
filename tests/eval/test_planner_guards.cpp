@@ -1,6 +1,6 @@
 // Plan 14 M2 — Planner guard and conditional-effect integration tests.
-// Covers: GuardClause in rule bodies via FilterOp, ConditionalEffect via
-// FilterOp + EffectAppendOp, multiple guards in the same rule.
+// Covers: GuardClause in rule bodies via FilterOp, multiple guards in
+// the same rule. All effects use qualified rule heads + DerivedAppendOp.
 
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"

@@ -173,51 +173,6 @@ void NameResolver::register_builtins() {
     reg("kid_filter",   3);
     reg("kid_exclude",  3);
 
-    // ── Effects / actions (auto-registered from form model) ──
-    namespace m = model;
-
-    // Scalar field setters: set_gold_value, set_damage, set_speed, etc.
-    // All setters are binary: (form, value)
-    for (size_t i = 0; i < m::kFieldCount; i++) {
-        auto& f = m::kFields[i];
-        if (!f.set_action) continue;
-        reg(f.set_action, 2);
-    }
-
-    // Form array operations: add_keyword, remove_keyword, add_spell, etc.
-    // All collection ops are binary: (form, item)
-    for (size_t i = 0; i < m::kFormArrayCount; i++) {
-        auto& fa = m::kFormArrays[i];
-        if (fa.add_action)    reg(fa.add_action,    2);
-        if (fa.remove_action) reg(fa.remove_action, 2);
-    }
-
-    // Boolean flag setters: set_essential, set_protected, set_auto_calc_stats
-    // All flag setters are binary: (form, int)
-    for (size_t i = 0; i < m::kFlagCount; i++) {
-        auto& fl = m::kFlags[i];
-        if (!fl.set_action) continue;
-        reg(fl.set_action, 2);
-    }
-
-    // Leveled list operations
-    reg("add_to_leveled_list",      4);
-    reg("remove_from_leveled_list", 2);
-    reg("clear_leveled_list",       1);
-    reg("clear_all",                1);
-
-    // Multiply operations (legacy, pending removal)
-    reg("mul_damage",       2);
-    reg("mul_armor_rating", 2);
-    reg("mul_gold_value",   2);
-    reg("mul_weight",       2);
-    reg("mul_speed",        2);
-    reg("mul_crit_percent", 2);
-
-    // Legacy effects
-    reg("add_item",          2);
-    reg("distribute_items",  2);
-    reg("set_game_setting",  2);
 }
 
 // ---------------------------------------------------------------------------

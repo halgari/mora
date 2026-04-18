@@ -21,7 +21,7 @@ Value resolve_spec(const EffectArgSpec&                          spec,
             int const col = chunk.index_of(spec.var_name);
             if (col < 0) {
                 throw std::runtime_error(
-                    "EffectAppendOp: spec references unbound variable");
+                    "DerivedAppendOp: spec references unbound variable");
             }
             return chunk.cell(row, static_cast<size_t>(col));
         }
@@ -39,37 +39,6 @@ Value resolve_spec(const EffectArgSpec&                          spec,
 }
 
 } // namespace
-
-EffectAppendOp::EffectAppendOp(std::unique_ptr<Operator> input,
-                                StringId                  out_relation_name,
-                                StringId                  field_keyword_id,
-                                EffectArgSpec             target_spec,
-                                EffectArgSpec             value_spec,
-                                StringPool&               pool,
-                                const std::unordered_map<uint32_t, uint32_t>& symbols)
-    : input_(std::move(input))
-    , out_relation_name_(out_relation_name)
-    , field_kw_id_(field_keyword_id)
-    , target_spec_(std::move(target_spec))
-    , value_spec_(std::move(value_spec))
-    , pool_(pool)
-    , symbols_(symbols)
-{}
-
-void EffectAppendOp::run(FactDB& db) {
-    Value const field_kw = Value::make_keyword(field_kw_id_);
-    while (auto chunk_opt = input_->next_chunk()) {
-        BindingChunk const& chunk = *chunk_opt;
-        for (size_t row = 0; row < chunk.row_count(); ++row) {
-            Value const target = resolve_spec(target_spec_, chunk, row, pool_, symbols_);
-            Value const value  = resolve_spec(value_spec_,  chunk, row, pool_, symbols_);
-            // target must resolve to a FormID for an effect to make sense.
-            if (target.kind() != Value::Kind::FormID) continue;
-            db.add_fact(out_relation_name_,
-                        Tuple{target, field_kw, value});
-        }
-    }
-}
 
 DerivedAppendOp::DerivedAppendOp(std::unique_ptr<Operator>   input,
                                   StringId                    derived_rel_name,

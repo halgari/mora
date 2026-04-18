@@ -175,7 +175,6 @@ target("mora_lib")
               "src/cli/*.cpp", "src/eval/*.cpp", "src/ext/*.cpp",
               "src/data/columnar_relation.cpp",
               "src/data/schema_registry.cpp",
-              "src/data/action_names.cpp",
               "src/data/value.cpp", "src/data/vector.cpp", "src/data/column.cpp",
               "src/model/*.cpp",
               "src/lsp/*.cpp", "src/lsp/handlers/*.cpp")

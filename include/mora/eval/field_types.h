@@ -60,7 +60,7 @@ enum class FieldId : uint16_t {
     Essential        = 72,
     Protected        = 73,
 
-    // Sentinel — returned by action_to_field() when the action name is unknown.
+    // Sentinel — used when a FieldId is unknown or not applicable.
     Invalid          = 0xFF,
 };
 
