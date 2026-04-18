@@ -107,7 +107,10 @@ TEST(ParquetSnapshotSink, RoundtripsAFullyTypedRelation) {
     EXPECT_EQ(levels->Value(1), 12);
 }
 
-TEST(ParquetSnapshotSink, SkipsHeterogeneousRelation) {
+TEST(ParquetSnapshotSink, EmitsTaggedColumnsForHeterogeneousRelation) {
+    // After Plan 6 M1, heterogeneous relations are no longer skipped —
+    // they are emitted with six tagged sub-columns per heterogeneous
+    // input column. Verify no error and the file is present.
     mora::StringPool pool;
     mora::DiagBag diags;
     mora::FactDB db(pool);
@@ -123,12 +126,12 @@ TEST(ParquetSnapshotSink, SkipsHeterogeneousRelation) {
     sink.emit(ctx, db);
 
     EXPECT_FALSE(diags.has_errors());
-    bool saw_warning = false;
+    // No parquet-skip-heterogeneous warning (that code is retired).
     for (const auto& d : diags.all()) {
-        if (d.code == "parquet-skip-heterogeneous") saw_warning = true;
+        EXPECT_NE(d.code, "parquet-skip-heterogeneous");
     }
-    EXPECT_TRUE(saw_warning);
-    EXPECT_FALSE(fs::exists(out_dir / "bad" / "mixed.parquet"));
+    // The file IS emitted now (not skipped).
+    EXPECT_TRUE(fs::exists(out_dir / "bad" / "mixed.parquet"));
 }
 
 } // namespace
