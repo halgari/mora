@@ -226,7 +226,7 @@ includes("extensions/synthetic/xmake.lua")
 target("mora")
     set_kind("binary")
     add_files("src/main.cpp")
-    add_deps("mora_lib", "mora_skyrim_compile")
+    add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet")
     -- CLI11 is header-only; bring in its multi-file include tree.
     -- Submodule pinned at v2.6.2 under extern/CLI11.
     add_includedirs("extern/CLI11/include")
@@ -272,6 +272,17 @@ for _, testfile in ipairs(os.files("tests/**/test_*.cpp")) do
         add_packages("gtest")
         add_syslinks("gtest_main")
         add_tests(name)
+    target_end()
+end
+
+-- Override for tests under tests/cli that need the parquet extension
+-- (arrow + mora_parquet). Discovered by the preceding glob; this just
+-- adds the extra deps.
+for _, testfile in ipairs(os.files("tests/cli/test_cli_parquet_*.cpp")) do
+    local name = path.basename(testfile)
+    target(name)
+        add_deps("mora_parquet")
+        add_packages("arrow")
     target_end()
 end
 

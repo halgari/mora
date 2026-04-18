@@ -19,9 +19,11 @@
 #include "mora/model/relations.h"
 #include "mora/core/digest.h"
 #include <algorithm>
+#include <unordered_map>
 #include "mora/core/string_utils.h"
 #include "mora/ext/extension.h"
 #include "mora_skyrim_compile/register.h"
+#include "mora_parquet/register.h"
 #include "mora_skyrim_compile/esp/load_order.h"
 #include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -516,7 +518,8 @@ static int write_patch_file(
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir, const std::string& plugins_txt,
-                        mora::Output& out, bool use_color) {
+                        mora::Output& out, bool use_color,
+                        const std::unordered_map<std::string, std::string>& sink_configs) {
     auto start = std::chrono::steady_clock::now();
     out.print_header(MORA_VERSION);
 
@@ -553,10 +556,15 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::EditorIdMap editor_id_map;
     mora::PluginSet loaded_plugins;
 
-    if (!data_dir.empty()) {
-        mora::ext::ExtensionContext ext_ctx;
-        mora_skyrim_compile::register_skyrim(ext_ctx);
+    // Registration is cheap (one unique_ptr per extension); dispatch is
+    // gated below on --data-dir (load_required) and --sink (sinks loop).
+    // Hoisted out of the data_dir branch so ext_ctx stays in scope for
+    // the post-evaluation sink-dispatch loop.
+    mora::ext::ExtensionContext ext_ctx;
+    mora_skyrim_compile::register_skyrim(ext_ctx);
+    mora_parquet::register_parquet(ext_ctx);
 
+    if (!data_dir.empty()) {
         mora::ext::LoadCtx load_ctx{
             cr.pool,
             cr.diags,
@@ -626,6 +634,26 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     // Write patch file
     int const write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool);
     if (write_rc != 0) return write_rc;
+
+    // Dispatch configured sinks (e.g. --sink parquet.snapshot=./out).
+    // Snapshot errors per-sink so a failure reports against the sink
+    // that emitted it rather than against "some sink". First failing
+    // sink short-circuits later sinks.
+    for (const auto& sink : ext_ctx.sinks()) {
+        auto it = sink_configs.find(std::string(sink->name()));
+        if (it == sink_configs.end()) continue;
+        const auto errors_before_sink = cr.diags.error_count();
+        mora::ext::EmitCtx emit_ctx{cr.pool, cr.diags, it->second};
+        sink->emit(emit_ctx, db);
+        if (cr.diags.error_count() > errors_before_sink) {
+            mora::log::error("  sink '{}' emitted {} error(s); aborting\n",
+                sink->name(),
+                cr.diags.error_count() - errors_before_sink);
+            mora::DiagRenderer const renderer(use_color);
+            mora::log::info("\n{}", renderer.render_all(cr.diags));
+            return 1;
+        }
+    }
 
     // Summary
     auto patch_path = fs::path(target_path);
@@ -820,6 +848,7 @@ int main(int argc, char* argv[]) try {
     std::string comp_output;
     std::string comp_data_dir;
     std::string comp_plugins_txt;
+    std::vector<std::string> comp_sinks;
     auto* c_compile = app.add_subcommand("compile",
                                          "Compile .mora files into mora_patches.bin");
     c_compile->fallthrough();
@@ -832,6 +861,10 @@ int main(int argc, char* argv[]) try {
                           "Skyrim Data/ directory for ESP loading (auto-detected if omitted)");
     c_compile->add_option("--plugins-txt", comp_plugins_txt,
                           "Path to Plugins.txt (authoritative load-order; auto-detected if omitted)");
+    c_compile->add_option("--sink", comp_sinks,
+        "Sink to invoke after evaluation. Repeatable. Format: "
+        "<sink-name>=<config-string>, e.g. --sink parquet.snapshot=./out")
+        ->expected(0, -1);
 
     // `inspect`
     std::string insp_target = ".";
@@ -916,8 +949,30 @@ int main(int argc, char* argv[]) try {
             comp_plugins_txt.empty() ? "<none>" : comp_plugins_txt, tag(explicit_plugins_txt));
         mora::log::info("  output:      {}{}\n", comp_output, tag(explicit_output));
 
+        // Parse --sink entries into a map keyed by sink name. Duplicate
+        // names (e.g. `--sink parquet.snapshot=a --sink parquet.snapshot=b`)
+        // are a configuration mistake — warn and keep the last value.
+        std::unordered_map<std::string, std::string> sink_configs;
+        for (const auto& entry : comp_sinks) {
+            auto eq = entry.find('=');
+            if (eq == std::string::npos) {
+                mora::log::error(
+                    "--sink '{}' has no '='; expected <sink-name>=<config>\n",
+                    entry);
+                return 2;
+            }
+            auto name   = entry.substr(0, eq);
+            auto config = entry.substr(eq + 1);
+            if (auto prior = sink_configs.find(name); prior != sink_configs.end()) {
+                mora::log::warn(
+                    "--sink '{}' specified more than once; keeping last value '{}' (previous: '{}')\n",
+                    name, config, prior->second);
+            }
+            sink_configs[name] = config;
+        }
+
         return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
-                           out, use_color);
+                           out, use_color, sink_configs);
     }
     if (*c_inspect) {
         return cmd_inspect(insp_target, show_conflicts, use_color);
