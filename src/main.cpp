@@ -18,6 +18,8 @@
 #include "mora/ext/extension.h"
 #include "mora_skyrim_compile/register.h"
 #include "mora_parquet/register.h"
+#include "mora_skyrim_runtime/runtime.h"
+#include "mora_skyrim_runtime/game_api.h"
 #include "mora_skyrim_compile/esp/load_order.h"
 #include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -466,6 +468,23 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     return 0;
 }
 
+static int cmd_apply(const std::string& parquet_dir) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    mora_skyrim_runtime::MockGameAPI api;
+    auto count = mora_skyrim_runtime::runtime_apply(
+        std::filesystem::path(parquet_dir), api, pool, diags);
+
+    if (diags.has_errors()) {
+        mora::DiagRenderer renderer(/*use_color*/true);
+        mora::log::info("\n{}", renderer.render_all(diags));
+        return 1;
+    }
+    mora::log::info("  Applied {} effect fact(s) via MockGameAPI\n", count);
+    mora::log::info("  (Mock — no game state was modified)\n");
+    return 0;
+}
+
 static int cmd_inspect(const std::string& target_path, bool show_conflicts,
                        bool use_color) {
     auto files = find_mora_files(target_path);
@@ -657,6 +676,15 @@ int main(int argc, char* argv[]) try {
     c_inspect->add_flag("--conflicts", show_conflicts,
                         "Show only conflict info");
 
+    // `apply`
+    std::string apply_parquet_dir;
+    auto* c_apply = app.add_subcommand("apply",
+                                       "Apply a parquet snapshot via MockGameAPI");
+    c_apply->fallthrough();
+    c_apply->add_option("parquet-dir", apply_parquet_dir,
+                        "Directory containing skyrim/{set,add,remove,multiply}.parquet")
+           ->required();
+
     // `info`
     std::string info_target = ".";
     std::string info_data_dir;
@@ -755,6 +783,9 @@ int main(int argc, char* argv[]) try {
     }
     if (*c_inspect) {
         return cmd_inspect(insp_target, show_conflicts, use_color);
+    }
+    if (*c_apply) {
+        return cmd_apply(apply_parquet_dir);
     }
     if (*c_info) {
         if (info_data_dir.empty()) info_data_dir = detect_skyrim_data_dir();

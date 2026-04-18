@@ -220,12 +220,13 @@ target_end()
 includes("extensions/parquet/xmake.lua")
 includes("extensions/skyrim_compile/xmake.lua")
 includes("extensions/synthetic/xmake.lua")
+includes("extensions/skyrim_runtime/xmake.lua")
 
 -- CLI executable
 target("mora")
     set_kind("binary")
     add_files("src/main.cpp")
-    add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet")
+    add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet", "mora_skyrim_runtime")
     -- CLI11 is header-only; bring in its multi-file include tree.
     -- Submodule pinned at v2.6.2 under extern/CLI11.
     add_includedirs("extern/CLI11/include")
