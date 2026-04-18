@@ -47,12 +47,8 @@ TEST_F(IntegrationTest, CompleteValidFile) {
     ));
 }
 
-TEST_F(IntegrationTest, ArityMismatchNotDetectedInM2) {
-    // Arity checking lived in TypeChecker (removed in M2). This test verifies
-    // the parse+resolve pipeline completes without crashing on arity mismatches.
-    // Arity errors will return as runtime checks in a later plan.
-    check("wrong(NPC):\n    form/npc(NPC, @Extra)\n");
-    // No assertion — just check it doesn't crash/abort.
+TEST_F(IntegrationTest, ArityMismatchDetected) {
+    EXPECT_FALSE(check("wrong(NPC):\n    form/npc(NPC, @Extra)\n"));
 }
 
 TEST_F(IntegrationTest, UnknownFactDetected) {

@@ -312,19 +312,38 @@ void NameResolver::register_rule_as_fact(const Rule& rule) {
 
 // Check a name/span pair without needing a FactPattern copy.
 void NameResolver::check_fact_exists(const FactPattern& pattern) {
-    // If the pattern is namespace-qualified and the namespaced relation exists
-    // in the kRelations registry, defer to the type-checker for validation.
+    auto arity_msg = [&](std::string_view display_name, size_t expected) {
+        return std::string("arity mismatch: '") + std::string(display_name) +
+               "' expects " + std::to_string(expected) + " argument(s), got " +
+               std::to_string(pattern.args.size());
+    };
+
     std::string_view const ns = pool_.get(pattern.qualifier);
     std::string_view const nm = pool_.get(pattern.name);
     if (!ns.empty()) {
-        if (model::find_relation(ns, nm, model::kRelations, model::kRelationCount)) {
+        if (auto const* rel = model::find_relation(
+                ns, nm, model::kRelations, model::kRelationCount)) {
+            if (pattern.args.size() != rel->arg_count) {
+                std::string qname;
+                qname += ns;
+                qname += '/';
+                qname += nm;
+                diags_.error("E014", arity_msg(qname, rel->arg_count),
+                             pattern.span, source_line(pattern.span));
+            }
             return;
         }
     }
-    if (lookup_fact(pattern.name) == nullptr) {
+    auto const* sig = lookup_fact(pattern.name);
+    if (sig == nullptr) {
         diags_.error("E011",
                      std::string("unknown fact or rule: '") +
                          std::string(pool_.get(pattern.name)) + "'",
+                     pattern.span, source_line(pattern.span));
+        return;
+    }
+    if (pattern.args.size() != sig->arity) {
+        diags_.error("E014", arity_msg(pool_.get(pattern.name), sig->arity),
                      pattern.span, source_line(pattern.span));
     }
 }
