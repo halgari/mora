@@ -103,9 +103,12 @@ void AnyVector::append(const Value& v) {
             bool_payloads_.push_back(v.as_bool() ? 1 : 0);
             break;
         case Value::Kind::Var:
-        case Value::Kind::List:
-            // Not expected in FactDB columns; drop to placeholder.
+            // Unbound variable — drop to placeholder (index 0 is harmless).
             payload_idx_.push_back(0);
+            break;
+        case Value::Kind::List:
+            payload_idx_.push_back(static_cast<uint32_t>(list_payloads_.size()));
+            list_payloads_.push_back(v);
             break;
     }
 }
@@ -122,7 +125,7 @@ Value AnyVector::get(size_t i) const {
         case Value::Kind::Keyword: return Value::make_keyword(StringId{string_payloads_[idx]});
         case Value::Kind::Bool:    return Value::make_bool(bool_payloads_[idx] != 0);
         case Value::Kind::Var:     return Value::make_var();
-        case Value::Kind::List:    return Value::make_var();  // not supported
+        case Value::Kind::List:    return list_payloads_[idx];
     }
     return Value::make_var();
 }

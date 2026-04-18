@@ -189,13 +189,14 @@ TEST(RulePlannerSingle, MultipleEffects_Vectorized) {
     EXPECT_EQ(tuples.size(), 2u);
 }
 
-// ── Rule with negated body clause → fallback ────────────────────────────
+// ── Rule with negated body clause → vectorized (M3: AntiJoinOp) ────────────
 
-TEST(RulePlannerSingle, NegatedPattern_Fallback) {
+TEST(RulePlannerSingle, NegatedPattern_Vectorized) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Negated pattern forces fallback.
+    // M3: negated pattern is now handled by AntiJoinOp.
+    // Rule: NPCs that have no weapon entry.
     std::string const source =
         "no_weapon_npc(NPC):\n"
         "    form/npc(NPC)\n"
@@ -208,13 +209,22 @@ TEST(RulePlannerSingle, NegatedPattern_Fallback) {
     ASSERT_FALSE(diags.has_errors());
 
     mora::FactDB db(pool);
-    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0x3)});
+    // NPC 0x1: NOT in weapon → should get effect.
+    // NPC 0x2: IS in weapon → should be suppressed.
+    db.add_fact(pool.intern("npc"),    mora::Tuple{mora::Value::make_formid(0x1)});
+    db.add_fact(pool.intern("npc"),    mora::Tuple{mora::Value::make_formid(0x2)});
+    db.add_fact(pool.intern("weapon"), mora::Tuple{mora::Value::make_formid(0x2)});
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Multi-clause + negation → fallback.
-    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+    // M3: negation now vectorized.
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    // Only NPC 0x1 should appear in skyrim/set.
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    ASSERT_EQ(tuples.size(), 1u);
+    EXPECT_EQ(tuples[0][0].as_formid(), 0x1u);
 }
 
 } // namespace

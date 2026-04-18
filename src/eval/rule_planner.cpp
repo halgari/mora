@@ -1,8 +1,11 @@
 #include "mora/eval/rule_planner.h"
 
 #include "mora/data/action_names.h"
+#include "mora/eval/expr_eval.h"
 #include "mora/eval/field_types.h"
+#include "mora/eval/op_antijoin.h"
 #include "mora/eval/op_filter.h"
+#include "mora/eval/op_in_clause.h"
 #include "mora/eval/op_join.h"
 #include "mora/eval/op_scan.h"
 #include "mora/eval/op_union.h"
@@ -27,21 +30,29 @@ bool is_simple_arg_expr(const Expr& e) {
 
 // Returns true iff every body clause is either:
 // - a positive (non-negated) FactPattern with only simple args, or
-// - a GuardClause (M2: guards are supported via FilterOp).
-// InClause, negated patterns → false (M3).
+// - a negated FactPattern with only simple args (M3: AntiJoinOp), or
+// - a GuardClause (M2: guards are supported via FilterOp), or
+// - an InClause with a single values expression (M3: InClauseOp).
+// OrClause → false (not supported).
 bool body_is_supported_for_vectorized(const Rule& rule) {
-    // Must have at least one FactPattern to scan.
-    bool has_fact_pattern = false;
+    // Must have at least one positive FactPattern to scan.
+    bool has_positive_fact_pattern = false;
     for (auto const& clause : rule.body) {
         bool ok = std::visit([](auto const& c) -> bool {
             using T = std::decay_t<decltype(c)>;
             if constexpr (std::is_same_v<T, FactPattern>) {
-                return !c.negated;
+                return true;  // both positive and negated are now supported
             }
             if constexpr (std::is_same_v<T, GuardClause>) {
                 return true;  // M2: guards are supported
             }
-            return false;  // InClause, negated, OrClause → reject
+            if constexpr (std::is_same_v<T, InClause>) {
+                // M3: InClause supported when there is exactly one values
+                // expression (the list/generator form). Multi-value literal
+                // sets are rejected here — fall back to tuple evaluator.
+                return c.values.size() == 1;
+            }
+            return false;  // OrClause → reject
         }, clause.data);
         if (!ok) return false;
 
@@ -50,10 +61,10 @@ bool body_is_supported_for_vectorized(const Rule& rule) {
             for (auto const& a : fp->args) {
                 if (!is_simple_arg_expr(a)) return false;
             }
-            has_fact_pattern = true;
+            if (!fp->negated) has_positive_fact_pattern = true;
         }
     }
-    return has_fact_pattern;
+    return has_positive_fact_pattern;
 }
 
 // Selectivity score for a FactPattern: count non-variable args.
@@ -181,10 +192,12 @@ static StringId field_op_to_rel(FieldOp op, StringPool& pool) {
 }
 
 // Build the body operator tree from a rule's body clauses.
-// FactPatterns are sorted by selectivity and joined left-deep.
-// GuardClauses are applied AFTER all scans/joins via FilterOp.
-// Returns nullopt for unsupported body shapes (Cartesian join between
-// any pair of FactPatterns).
+// Positive FactPatterns are sorted by selectivity and joined left-deep.
+// Negated FactPatterns (M3) are appended as AntiJoinOps after positive joins.
+// InClauses (M3) are spliced in body order after all positive joins.
+// GuardClauses (M2) are applied AFTER everything else via FilterOp.
+// Returns nullopt for unsupported body shapes (Cartesian join, anti-Cartesian
+// negation, or InClause-first with unbound var).
 static std::optional<std::unique_ptr<Operator>> plan_body(
     const Rule&                                  rule,
     const FactDB&                                input_db,
@@ -192,7 +205,7 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
     StringPool&                                  pool,
     const std::unordered_map<uint32_t, uint32_t>& symbol_formids)
 {
-    // Collect and sort only the FactPattern clauses.
+    // Collect and sort only the POSITIVE FactPattern clauses.
     struct ScoredFP {
         size_t idx;   // index into rule.body
         int    score;
@@ -200,10 +213,12 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
     std::vector<ScoredFP> scored;
     for (size_t i = 0; i < rule.body.size(); ++i) {
         if (auto const* fp = std::get_if<FactPattern>(&rule.body[i].data)) {
-            scored.push_back({i, selectivity_score(*fp)});
+            if (!fp->negated) {
+                scored.push_back({i, selectivity_score(*fp)});
+            }
         }
     }
-    // body_is_supported_for_vectorized guarantees at least one FactPattern.
+    // body_is_supported_for_vectorized guarantees at least one positive FactPattern.
     std::stable_sort(scored.begin(), scored.end(),
                      [](const ScoredFP& a, const ScoredFP& b) {
                          return a.score < b.score;
@@ -215,7 +230,7 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
         build_source(first_fp, input_db, derived_facts, pool, symbol_formids);
     std::vector<StringId> cumulative_vars = cumulative->output_var_names();
 
-    // Chain subsequent scans via JoinOp.
+    // Chain subsequent positive scans via JoinOp.
     for (size_t k = 1; k < scored.size(); ++k) {
         auto const& fp = std::get<FactPattern>(rule.body[scored[k].idx].data);
 
@@ -239,9 +254,71 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
             std::move(cumulative), std::move(scan), std::move(shared));
     }
 
+    // M3: Walk body in declaration order and splice AntiJoinOps for negated
+    // FactPatterns and InClauseOps for InClauses.
+    //
+    // Both are applied AFTER all positive scans/joins so that the maximum set
+    // of variables is bound — correct but does not push operators down.
+    // Optimization is Plan 15+.
+    for (auto const& clause : rule.body) {
+        if (auto const* fp = std::get_if<FactPattern>(&clause.data)) {
+            if (!fp->negated) continue;
+
+            // Negated FactPattern: build a scan for the right (probe) side.
+            auto neg_source =
+                build_source(*fp, input_db, derived_facts, pool, symbol_formids);
+            std::vector<StringId> neg_vars = neg_source->output_var_names();
+
+            // Shared vars = intersection of cumulative output and negated scan output.
+            std::vector<StringId> shared =
+                var_intersection(cumulative_vars, neg_vars);
+
+            if (shared.empty()) {
+                // Anti-Cartesian — planner cannot express this. Fall back.
+                return std::nullopt;
+            }
+
+            cumulative = std::make_unique<AntiJoinOp>(
+                std::move(cumulative), std::move(neg_source), std::move(shared));
+            // cumulative_vars unchanged — right columns don't appear in output.
+
+        } else if (auto const* ic = std::get_if<InClause>(&clause.data)) {
+            // InClause: determine generator vs membership based on whether
+            // the variable is already bound in cumulative_vars.
+            const auto* ve = std::get_if<VariableExpr>(&ic->variable->data);
+            if (!ve) {
+                // Non-variable LHS — not supported. Fall back.
+                return std::nullopt;
+            }
+
+            // Check if ?var is already bound.
+            bool is_bound = false;
+            for (auto const& cv : cumulative_vars) {
+                if (cv.index == ve->name.index) { is_bound = true; break; }
+            }
+
+            if (is_bound) {
+                // Membership filter: keep rows where the var's value is in the list.
+                cumulative = InClauseOp::build_membership(
+                    std::move(cumulative), ve->name, &ic->values[0],
+                    pool, symbol_formids);
+            } else {
+                // Generator: adds the var as a new column.
+                // Reject if there is no upstream operator (InClause-first with
+                // unbound var — no source to prime the generator). Since we
+                // always have at least one positive FactPattern before arriving
+                // here, this case cannot arise. But guard defensively.
+                cumulative = InClauseOp::build_generator(
+                    std::move(cumulative), ve->name, &ic->values[0],
+                    pool, symbol_formids);
+                cumulative_vars.push_back(ve->name);
+            }
+        }
+    }
+
     // Walk body in declaration order and splice FilterOps for GuardClauses.
-    // Applied AFTER all scans/joins so every variable is bound — correct
-    // but doesn't push predicates down. Optimization is Plan 15+.
+    // Applied last so every variable is bound — correct but doesn't push
+    // predicates down. Optimization is Plan 15+.
     for (auto const& clause : rule.body) {
         if (auto const* g = std::get_if<GuardClause>(&clause.data)) {
             cumulative = std::make_unique<FilterOp>(

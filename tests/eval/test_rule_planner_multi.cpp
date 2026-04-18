@@ -343,4 +343,299 @@ TEST(RulePlannerMulti, TwoClause_VectorizedPathFires) {
     EXPECT_EQ(tuples[0][2].as_int(), 7);
 }
 
+// ── M3: AntiJoinOp integration ────────────────────────────────────────────
+//
+// Rule (built programmatically):
+//   safe_weapons(W): weapon(W), not dangerous(W) => set form/gold_value(W, 1)
+// Only weapons that do NOT appear in dangerous get an effect.
+//
+// Programmatic rule construction bypasses NameResolver, allowing arbitrary
+// relation names without schema registration.
+
+TEST(RulePlannerMulti, NegatedPattern_AntiJoin) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    mora::FactDB db(pool);
+    // Weapon 0xA: safe (not in dangerous) → gets effect
+    // Weapon 0xB: dangerous → suppressed
+    // Weapon 0xC: safe → gets effect
+    db.add_fact(pool.intern("weapon"),   mora::Tuple{mora::Value::make_formid(0xA)});
+    db.add_fact(pool.intern("weapon"),   mora::Tuple{mora::Value::make_formid(0xB)});
+    db.add_fact(pool.intern("weapon"),   mora::Tuple{mora::Value::make_formid(0xC)});
+    db.add_fact(pool.intern("dangerous"),mora::Tuple{mora::Value::make_formid(0xB)});
+
+    auto var = [&](const char* name) -> mora::Expr {
+        return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
+    };
+
+    mora::Rule rule;
+    rule.name = pool.intern("safe_weapons");
+    rule.head_args.push_back(var("W"));
+
+    // Clause 1: weapon(W)
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("weapon");
+        fp.negated = false;
+        fp.args.push_back(var("W"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+    // Clause 2: not dangerous(W)
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("dangerous");
+        fp.negated = true;
+        fp.args.push_back(var("W"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+    // Effect
+    {
+        mora::Effect eff;
+        eff.verb       = mora::VerbKind::Set;
+        eff.namespace_ = pool.intern("form");
+        eff.name       = pool.intern("gold_value");
+        eff.args.push_back(var("W"));
+        eff.args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
+        rule.effects.push_back(std::move(eff));
+    }
+
+    mora::Module mod;
+    mod.rules.push_back(std::move(rule));
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    ASSERT_EQ(tuples.size(), 2u);
+
+    std::vector<uint32_t> out;
+    for (auto const& t : tuples) out.push_back(t[0].as_formid());
+    std::sort(out.begin(), out.end());
+    EXPECT_EQ(out[0], 0xAu);
+    EXPECT_EQ(out[1], 0xCu);
+}
+
+// ── M3: AntiJoin — negated relation with no rows (empty right) → all left pass
+TEST(RulePlannerMulti, NegatedPattern_EmptyNegated_AllPass) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    mora::FactDB db(pool);
+    // 3 weapons, banned relation is absent → all 3 get the effect.
+    db.add_fact(pool.intern("weapon"), mora::Tuple{mora::Value::make_formid(0x1)});
+    db.add_fact(pool.intern("weapon"), mora::Tuple{mora::Value::make_formid(0x2)});
+    db.add_fact(pool.intern("weapon"), mora::Tuple{mora::Value::make_formid(0x3)});
+    // (no "banned" facts)
+
+    auto var = [&](const char* name) -> mora::Expr {
+        return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
+    };
+
+    mora::Rule rule;
+    rule.name = pool.intern("no_banned");
+    rule.head_args.push_back(var("W"));
+
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("weapon");
+        fp.negated = false;
+        fp.args.push_back(var("W"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("banned");
+        fp.negated = true;
+        fp.args.push_back(var("W"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+    {
+        mora::Effect eff;
+        eff.verb       = mora::VerbKind::Set;
+        eff.namespace_ = pool.intern("form");
+        eff.name       = pool.intern("gold_value");
+        eff.args.push_back(var("W"));
+        eff.args.push_back(mora::Expr{mora::IntLiteral{99, {}}, {}});
+        rule.effects.push_back(std::move(eff));
+    }
+
+    mora::Module mod;
+    mod.rules.push_back(std::move(rule));
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    ASSERT_EQ(tuples.size(), 3u);
+}
+
+// ── M3: InClause generator integration ───────────────────────────────────────
+//
+// Rule: ?item in ?item_list where item_list is bound from a relation holding
+// a List-typed value.
+// Uses the Evaluator + programmatically built Rule AST (same idiom as
+// evaluator_test.cpp's ElementInListVar test).
+
+TEST(RulePlannerMulti, InClause_Generator_Vectorized) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    // Relation: kw_source(weapon_formid, kw_list)
+    // kw_list is a List<formid> of keyword IDs.
+    mora::FactDB db(pool);
+    mora::Value kw_list = mora::Value::make_list({
+        mora::Value::make_formid(0xAA01),
+        mora::Value::make_formid(0xAA02),
+        mora::Value::make_formid(0xAA03),
+    });
+    db.add_fact(pool.intern("kw_source"), {
+        mora::Value::make_formid(0x10),
+        kw_list,
+    });
+
+    // Rule (built programmatically):
+    //   has_keyword(W, KW):
+    //       kw_source(W, KwList)
+    //       KW in KwList
+    //       => set form/gold_value(W, 1)
+    auto var = [&](const char* name) -> mora::Expr {
+        return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
+    };
+
+    mora::Rule rule;
+    rule.name = pool.intern("has_keyword");
+    rule.head_args.push_back(var("W"));
+    rule.head_args.push_back(var("KW"));
+
+    // Clause 1: kw_source(W, KwList)
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("kw_source");
+        fp.negated = false;
+        fp.args.push_back(var("W"));
+        fp.args.push_back(var("KwList"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+
+    // Clause 2: KW in KwList
+    {
+        mora::InClause ic;
+        ic.variable = std::make_unique<mora::Expr>(var("KW"));
+        ic.values.push_back(var("KwList"));
+        rule.body.push_back(mora::Clause{std::move(ic), {}});
+    }
+
+    // Effect: => set form/gold_value(W, 1) — goes into rule.effects, not rule.body
+    {
+        mora::Effect eff;
+        eff.verb       = mora::VerbKind::Set;
+        eff.namespace_ = pool.intern("form");
+        eff.name       = pool.intern("gold_value");
+        eff.args.push_back(var("W"));
+        eff.args.push_back(mora::Expr{mora::IntLiteral{1, {}}, {}});
+        rule.effects.push_back(std::move(eff));
+    }
+
+    mora::Module mod;
+    mod.rules.push_back(std::move(rule));
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    // Should be vectorized: kw_source scan + InClauseOp generator.
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    // Weapon 0x10 has 3 keywords → should produce 3 rows in skyrim/set.
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    // The effect sets gold_value on W (0x10) for each KW iteration.
+    // So 3 rows: (0x10, GoldValue, 1) × 3.
+    ASSERT_EQ(tuples.size(), 3u);
+    for (auto const& t : tuples) {
+        EXPECT_EQ(t[0].as_formid(), 0x10u);
+        EXPECT_EQ(t[2].as_int(), 1);
+    }
+}
+
+// ── M3: InClause membership integration ─────────────────────────────────────
+//
+// Rule: kw_check(KwId, W) :-
+//     kw_data(KwId, KwList, W)  -- KwId and KwList come from same row
+//     KwId in KwList             -- membership: KwId is already bound
+//     => set form/gold_value(W, 42)
+//
+// The single kw_data relation holds (kw_id, kw_list, weapon_formid).
+// Row 1: kw_id=0x100 IN [0x100, 0x200], weapon=0x10 → passes
+// Row 2: kw_id=0x999 NOT IN [0x100, 0x200], weapon=0x20 → excluded
+
+TEST(RulePlannerMulti, InClause_Membership_Vectorized) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    mora::FactDB db(pool);
+    mora::Value list = mora::Value::make_list({
+        mora::Value::make_formid(0x100),
+        mora::Value::make_formid(0x200),
+    });
+    // (kw_id, kw_list, weapon)
+    db.add_fact(pool.intern("kw_data"), {mora::Value::make_formid(0x100), list,
+                                          mora::Value::make_formid(0x10)});  // passes
+    db.add_fact(pool.intern("kw_data"), {mora::Value::make_formid(0x999), list,
+                                          mora::Value::make_formid(0x20)});  // excluded
+
+    auto var = [&](const char* name) -> mora::Expr {
+        return mora::Expr{mora::VariableExpr{pool.intern(name), {}}, {}};
+    };
+
+    mora::Rule rule;
+    rule.name = pool.intern("kw_check");
+    rule.head_args.push_back(var("W"));
+
+    // Clause 1: kw_data(KwId, KwList, W)
+    {
+        mora::FactPattern fp;
+        fp.name    = pool.intern("kw_data");
+        fp.negated = false;
+        fp.args.push_back(var("KwId"));
+        fp.args.push_back(var("KwList"));
+        fp.args.push_back(var("W"));
+        rule.body.push_back(mora::Clause{std::move(fp), {}});
+    }
+    // Clause 2: KwId in KwList (membership — KwId already bound by scan)
+    {
+        mora::InClause ic;
+        ic.variable = std::make_unique<mora::Expr>(var("KwId"));
+        ic.values.push_back(var("KwList"));
+        rule.body.push_back(mora::Clause{std::move(ic), {}});
+    }
+    // Effect
+    {
+        mora::Effect eff;
+        eff.verb       = mora::VerbKind::Set;
+        eff.namespace_ = pool.intern("form");
+        eff.name       = pool.intern("gold_value");
+        eff.args.push_back(var("W"));
+        eff.args.push_back(mora::Expr{mora::IntLiteral{42, {}}, {}});
+        rule.effects.push_back(std::move(eff));
+    }
+
+    mora::Module mod;
+    mod.rules.push_back(std::move(rule));
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    // Only weapon 0x10 (KwId=0x100 is in KwList) gets the effect.
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    ASSERT_EQ(tuples.size(), 1u);
+    EXPECT_EQ(tuples[0][0].as_formid(), 0x10u);
+    EXPECT_EQ(tuples[0][2].as_int(), 42);
+}
+
 } // namespace

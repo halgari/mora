@@ -156,6 +156,9 @@ private:
     std::vector<double>   float_payloads_;
     std::vector<uint32_t> string_payloads_;   // indexed by seq of String/Keyword rows
     std::vector<uint8_t>  bool_payloads_;
+    // List payloads store the shared_ptr from Value::make_list so that
+    // list data survives across column boundaries without copying.
+    std::vector<Value>    list_payloads_;     // indexed by seq of List rows
     // Dense position-in-kind map: for row i, which index into the
     // matching payload column to read.
     std::vector<uint32_t> payload_idx_;
