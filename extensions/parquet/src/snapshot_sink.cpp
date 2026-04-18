@@ -1,6 +1,7 @@
 #include "mora_parquet/snapshot_sink.h"
 
 #include "mora/core/string_pool.h"
+#include "mora/data/columnar_relation.h"
 #include "mora/data/value.h"
 #include "mora/eval/fact_db.h"
 #include "mora/ext/extension.h"
@@ -42,41 +43,45 @@ std::shared_ptr<arrow::DataType> arrow_type_for(mora::Value::Kind k) {
     return nullptr;
 }
 
-// Build an Arrow array for a single column. Precondition: every tuple
-// has at least `col + 1` values; every value at position `col` has kind
-// equal to `kind`. Caller enforces both invariants before calling.
+// Build an Arrow array for a single column. Precondition: every value
+// at position `col` has kind equal to `kind`. Caller enforces this
+// invariant before calling.
 arrow::Result<std::shared_ptr<arrow::Array>>
-build_column(const std::vector<mora::Tuple>& tuples,
+build_column(const mora::ColumnarRelation& rel,
              std::size_t col, mora::Value::Kind kind,
+             std::size_t num_rows,
              const mora::StringPool& pool) {
     using K = mora::Value::Kind;
     switch (kind) {
         case K::FormID: {
             arrow::UInt32Builder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) b.UnsafeAppend(t[col].as_formid());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r)
+                b.UnsafeAppend(rel.column(col).at(r).as_formid());
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
             return out;
         }
         case K::Int: {
             arrow::Int64Builder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) b.UnsafeAppend(t[col].as_int());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r)
+                b.UnsafeAppend(rel.column(col).at(r).as_int());
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
             return out;
         }
         case K::Float: {
             arrow::DoubleBuilder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) b.UnsafeAppend(t[col].as_float());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r)
+                b.UnsafeAppend(rel.column(col).at(r).as_float());
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
             return out;
         }
         case K::String: {
             arrow::StringBuilder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) {
-                auto sv = pool.get(t[col].as_string());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r) {
+                auto sv = pool.get(rel.column(col).at(r).as_string());
                 ARROW_RETURN_NOT_OK(b.Append(sv.data(), sv.size()));
             }
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
@@ -84,16 +89,17 @@ build_column(const std::vector<mora::Tuple>& tuples,
         }
         case K::Bool: {
             arrow::BooleanBuilder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) b.UnsafeAppend(t[col].as_bool());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r)
+                b.UnsafeAppend(rel.column(col).at(r).as_bool());
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
             return out;
         }
         case K::Keyword: {
             arrow::StringBuilder b;
-            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
-            for (const auto& t : tuples) {
-                auto sv = pool.get(t[col].as_keyword());
+            ARROW_RETURN_NOT_OK(b.Reserve(num_rows));
+            for (std::size_t r = 0; r < num_rows; ++r) {
+                auto sv = pool.get(rel.column(col).at(r).as_keyword());
                 ARROW_RETURN_NOT_OK(b.Append(sv.data(), sv.size()));
             }
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
@@ -130,13 +136,13 @@ const char* kind_name_for(mora::Value::Kind k) {
 // the kind tag set to "Keyword" (Plan 6 uses six sub-columns, not
 // seven — keyword payload is an interned string either way).
 //
-// Precondition: every tuple has at least `col + 1` values. Only Bool /
-// FormID / Int / Float / String / Keyword kinds are expected here —
-// unsupported kinds (Var/List) trigger a relation-level skip before
-// this function is called.
+// Only Bool / FormID / Int / Float / String / Keyword kinds are expected
+// here — unsupported kinds (Var/List) trigger a relation-level skip
+// before this function is called.
 arrow::Result<std::vector<std::shared_ptr<arrow::Array>>>
-build_tagged_columns(const std::vector<mora::Tuple>& tuples,
+build_tagged_columns(const mora::ColumnarRelation& rel,
                      std::size_t col,
+                     std::size_t num_rows,
                      const mora::StringPool& pool) {
     arrow::StringBuilder  b_kind;
     arrow::UInt32Builder  b_formid;
@@ -145,15 +151,15 @@ build_tagged_columns(const std::vector<mora::Tuple>& tuples,
     arrow::StringBuilder  b_string;
     arrow::BooleanBuilder b_bool;
 
-    ARROW_RETURN_NOT_OK(b_kind.Reserve(tuples.size()));
-    ARROW_RETURN_NOT_OK(b_formid.Reserve(tuples.size()));
-    ARROW_RETURN_NOT_OK(b_int.Reserve(tuples.size()));
-    ARROW_RETURN_NOT_OK(b_float.Reserve(tuples.size()));
-    ARROW_RETURN_NOT_OK(b_string.Reserve(tuples.size()));
-    ARROW_RETURN_NOT_OK(b_bool.Reserve(tuples.size()));
+    ARROW_RETURN_NOT_OK(b_kind.Reserve(num_rows));
+    ARROW_RETURN_NOT_OK(b_formid.Reserve(num_rows));
+    ARROW_RETURN_NOT_OK(b_int.Reserve(num_rows));
+    ARROW_RETURN_NOT_OK(b_float.Reserve(num_rows));
+    ARROW_RETURN_NOT_OK(b_string.Reserve(num_rows));
+    ARROW_RETURN_NOT_OK(b_bool.Reserve(num_rows));
 
-    for (const auto& t : tuples) {
-        const auto& v = t[col];
+    for (std::size_t r = 0; r < num_rows; ++r) {
+        const auto v = rel.column(col).at(r);
         const auto k = v.kind();
         const auto* name = kind_name_for(k);
         ARROW_RETURN_NOT_OK(b_kind.Append(name, std::strlen(name)));
@@ -385,10 +391,9 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
             !output_names->contains(std::string(rel_name))) {
             continue;  // filtered out by output-only
         }
-        const auto& tuples = db.get_relation(rel_id);
-        if (tuples.empty() && !output_names.has_value()) continue;
-
-        if (tuples.empty()) {
+        const auto* rel = db.get_relation_columnar(rel_id);
+        if (rel == nullptr || rel->row_count() == 0) {
+            if (!output_names.has_value()) continue;
             // Output-only mode: we were asked to emit even for empty
             // output relations. Look up the schema to get the column
             // count. If no schema is registered, skip.
@@ -405,28 +410,17 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
             continue;
         }
 
-        const std::size_t arity = tuples.front().size();
-
-        // Arity consistency — a hard shape error; skip whole relation.
-        bool arity_mismatch = false;
-        for (const auto& t : tuples) {
-            if (t.size() != arity) { arity_mismatch = true; break; }
-        }
-        if (arity_mismatch) {
-            ctx.diags.warning("parquet-skip-arity-mismatch",
-                fmt::format("parquet.snapshot: skipping relation '{}' — "
-                            "tuples have inconsistent arity",
-                            rel_name),
-                mora::SourceSpan{}, "");
-            continue;
-        }
+        const std::size_t arity    = rel->arity();
+        const std::size_t num_rows = rel->row_count();
 
         // Per-column kind sets. Size 1 = homogeneous (single typed
         // Arrow column). Size > 1 = heterogeneous (six tagged fields).
+        // ColumnarRelation guarantees all rows have exactly `arity()`
+        // columns — no arity consistency check needed.
         std::vector<std::unordered_set<mora::Value::Kind>> col_kinds(arity);
         for (std::size_t c = 0; c < arity; ++c) {
-            for (const auto& t : tuples) {
-                col_kinds[c].insert(t[c].kind());
+            for (std::size_t r = 0; r < num_rows; ++r) {
+                col_kinds[c].insert(rel->column(c).at(r).kind());
             }
         }
 
@@ -465,7 +459,7 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
                 const auto k = *col_kinds[c].begin();
                 fields.push_back(arrow::field(fmt::format("col{}", c),
                                                arrow_type_for(k)));
-                auto col = build_column(tuples, c, k, ctx.pool);
+                auto col = build_column(*rel, c, k, num_rows, ctx.pool);
                 if (!col.ok()) {
                     ctx.diags.error("parquet-build-column",
                         fmt::format("parquet.snapshot: failed to build "
@@ -489,7 +483,7 @@ void ParquetSnapshotSink::emit(mora::ext::EmitCtx& ctx,
                     fmt::format("col{}_string",  c), arrow::utf8()));
                 fields.push_back(arrow::field(
                     fmt::format("col{}_bool",    c), arrow::boolean()));
-                auto tagged = build_tagged_columns(tuples, c, ctx.pool);
+                auto tagged = build_tagged_columns(*rel, c, num_rows, ctx.pool);
                 if (!tagged.ok()) {
                     ctx.diags.error("parquet-build-column",
                         fmt::format("parquet.snapshot: failed to build "

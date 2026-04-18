@@ -41,6 +41,13 @@ public:
     // Callers using `const auto&` are fine — temp lifetime extension applies.
     std::vector<Tuple> get_relation(StringId relation) const;
 
+    // Read-only access to the underlying columnar storage. Returns nullptr
+    // if the relation has no rows and hasn't been configured. Plan 12
+    // added this as a cheaper path than get_relation() (which materializes
+    // a tuple vector per call); prefer this when the caller can read
+    // columns directly.
+    const ColumnarRelation* get_relation_columnar(StringId relation) const;
+
 private:
     StringPool& pool_;
     std::unordered_map<uint32_t, ColumnarRelation> relations_;

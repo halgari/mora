@@ -41,13 +41,16 @@ void FactDB::merge_from(FactDB& other) {
     for (auto& [idx, rel] : other.relations_) {
         auto mine = relations_.find(idx);
         if (mine == relations_.end()) {
-            // No local relation — auto-vivify with Any columns and absorb rows.
-            auto rows = rel.materialize();
-            std::vector<const Type*> auto_types(rel.arity(), types::any());
-            relations_.try_emplace(idx, std::move(auto_types),
-                                    std::vector<size_t>{});
-            auto& dest = relations_.at(idx);
-            for (auto& t : rows) dest.append(t);
+            // No local relation — vivify using the source's column types.
+            std::vector<const Type*> src_types;
+            src_types.reserve(rel.arity());
+            for (size_t i = 0; i < rel.arity(); ++i) {
+                src_types.push_back(rel.column(i).type());
+            }
+            auto [emplaced, ok] = relations_.try_emplace(
+                idx, std::move(src_types), std::vector<size_t>{});
+            (void)ok;
+            emplaced->second.absorb(rel.materialize());
         } else {
             mine->second.absorb(rel.materialize());
         }
@@ -83,6 +86,12 @@ std::vector<Tuple> FactDB::get_relation(StringId relation) const {
     auto it = relations_.find(relation.index);
     if (it == relations_.end()) return {};
     return it->second.materialize();
+}
+
+const ColumnarRelation* FactDB::get_relation_columnar(StringId relation) const {
+    auto it = relations_.find(relation.index);
+    if (it == relations_.end()) return nullptr;
+    return &it->second;
 }
 
 std::vector<StringId> FactDB::all_relation_names() const {
