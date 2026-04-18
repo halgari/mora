@@ -145,12 +145,19 @@ add_requires("nlohmann_json")
 -- recipe that disables SIMD (ARROW_SIMD_LEVEL=NONE + RUNTIME variant).
 -- The override repo must be registered before any matching
 -- add_requires() below.
-add_repositories("mora-local scripts/xmake-repo")
-
-add_requires("arrow 7.0.0", {
-    configs = { parquet = true, csv = false, jemalloc = false, mimalloc = false,
-                engine = false, dataset = false }
-})
+--
+-- Arrow is Linux/macOS only in v3: the xmake recipe's on_install has
+-- no Windows handler, and cross-compiling the full Arrow+Parquet stack
+-- via xwin+clang-cl is a non-trivial port. The SKSE runtime DLL
+-- (M2) will read a simpler flat-binary runtime snapshot emitted by a
+-- separate sink on the compile-time host.
+if not is_plat("windows") then
+    add_repositories("mora-local scripts/xmake-repo")
+    add_requires("arrow 7.0.0", {
+        configs = { parquet = true, csv = false, jemalloc = false, mimalloc = false,
+                    engine = false, dataset = false }
+    })
+end
 
 -- Vendored zlib (extern/zlib submodule, v1.3.1). Only included on
 -- windows to avoid the xrepo-zlib + static-CRT + lld-link collision
@@ -215,29 +222,38 @@ target("mora_lib")
 target_end()
 
 -- ══════════════════════════════════════════════════════════════
--- Extensions (foundation stubs — no-op until Plan 3)
+-- Extensions. Linux/macOS build the full set; Windows builds only
+-- those used by the SKSE runtime DLL (M2) — parquet and the
+-- skyrim_runtime C++ reader aren't needed in the DLL (it reads a
+-- simpler flat-binary snapshot), and skyrim_compile bundles ESP
+-- parsing that only runs at compile time on the host.
 -- ══════════════════════════════════════════════════════════════
-includes("extensions/parquet/xmake.lua")
-includes("extensions/skyrim_compile/xmake.lua")
-includes("extensions/synthetic/xmake.lua")
-includes("extensions/skyrim_runtime/xmake.lua")
+if not is_plat("windows") then
+    includes("extensions/parquet/xmake.lua")
+    includes("extensions/skyrim_compile/xmake.lua")
+    includes("extensions/synthetic/xmake.lua")
+    includes("extensions/skyrim_runtime/xmake.lua")
+end
 
--- CLI executable
-target("mora")
-    set_kind("binary")
-    add_files("src/main.cpp")
-    add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet", "mora_skyrim_runtime")
-    -- CLI11 is header-only; bring in its multi-file include tree.
-    -- Submodule pinned at v2.6.2 under extern/CLI11.
-    add_includedirs("extern/CLI11/include")
-    -- Keep the compile-time banner in sync with xmake's version —
-    -- the previous hardcoded "0.1.0" string drifted over four
-    -- bumps. Projected into main.cpp via MORA_VERSION.
-    on_load(function (target)
-        import("core.project.project")
-        target:add("defines", "MORA_VERSION=\"" .. project.version() .. "\"")
-    end)
-target_end()
+-- CLI executable (Linux/macOS only — the Windows build produces
+-- only the SKSE DLLs; the compile step runs on the host).
+if not is_plat("windows") then
+    target("mora")
+        set_kind("binary")
+        add_files("src/main.cpp")
+        add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet", "mora_skyrim_runtime")
+        -- CLI11 is header-only; bring in its multi-file include tree.
+        -- Submodule pinned at v2.6.2 under extern/CLI11.
+        add_includedirs("extern/CLI11/include")
+        -- Keep the compile-time banner in sync with xmake's version —
+        -- the previous hardcoded "0.1.0" string drifted over four
+        -- bumps. Projected into main.cpp via MORA_VERSION.
+        on_load(function (target)
+            import("core.project.project")
+            target:add("defines", "MORA_VERSION=\"" .. project.version() .. "\"")
+        end)
+    target_end()
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- Tests (Linux only — rely on POSIX-specific gtest setup)
@@ -303,3 +319,70 @@ for _, testfile in ipairs(os.files("tests/cli/test_cli_parquet_*.cpp")) do
 end
 
 end -- not windows
+
+-- ══════════════════════════════════════════════════════════════
+-- Windows-only: CommonLibSSE-NG + spdlog static libs
+--
+-- Can't `includes("extern/CommonLibSSE-NG")` to reuse its xmake
+-- target: the upstream pulls spdlog/directxmath/directxtk via the
+-- xmake package manager, and those packages' on_install uses
+-- `package.tools.cmake` which hardcodes the "Visual Studio"
+-- generator on windows — that generator needs a real MSVC install,
+-- defeating our wine-free cross-compile from Linux.
+--
+-- Compile CommonLibSSE-NG's sources in-tree with our own target.
+-- Bring spdlog/fmt via `extern/spdlog-shim`, DirectXMath.h from the
+-- xwin Windows SDK, and DirectXTK::SimpleMath via the POD shim at
+-- `extern/simplemath-shim` (Mora doesn't call its methods).
+-- ══════════════════════════════════════════════════════════════
+if is_plat("windows") then
+
+target("commonlibsse_ng")
+    set_kind("static")
+    set_languages("c++23")
+    -- /O2 semantics required for SSE intrinsics (_mm_set_ps1,
+    -- _mm_shuffle_ps, etc.) to inline rather than emit undefined
+    -- external references.
+    set_optimize("fastest")
+
+    add_files("extern/CommonLibSSE-NG/src/**.cpp")
+
+    add_includedirs("extern/CommonLibSSE-NG/include",
+                    "extern/spdlog-shim",
+                    "extern/simplemath-shim",
+                    {public = true})
+
+    add_defines("ENABLE_SKYRIM_SE=1", "ENABLE_SKYRIM_AE=1",
+                "SPDLOG_COMPILED_LIB", "SPDLOG_FMT_EXTERNAL",
+                {public = true})
+    add_defines("WIN32", "_WINDOWS", "NOMINMAX")
+
+    -- /FI re-parses PCH.h per TU (clean build ~14s) rather than
+    -- /Yu'ing a binary PCH — clang-cl + /Yu truncates SSE intrinsic
+    -- inline bodies, leaving unresolved _mm_set_ps1 etc. at link.
+    add_cxflags("/FISKSE/Impl/PCH.h", {force = true})
+
+    -- Third-party code: suppress all warnings for this TU only.
+    add_cxflags("/w", "/bigobj", "/utf-8", "/permissive-",
+                "/Zc:preprocessor", {force = true})
+
+    add_syslinks("advapi32", "bcrypt", "d3d11", "d3dcompiler",
+                 "dbghelp", "dxgi", "ole32", "shell32", "user32",
+                 "version")
+target_end()
+
+-- spdlog compiled-library TUs from the shim. Split out to keep the
+-- CommonLib PCH off their compile; these two files exist solely to
+-- satisfy SPDLOG_COMPILED_LIB's ODR needs.
+target("spdlog_rt")
+    set_kind("static")
+    set_languages("c++23")
+    add_files("extern/spdlog-shim/spdlog.cpp",
+              "extern/spdlog-shim/fmt.cpp")
+    add_includedirs("extern/spdlog-shim", {public = true})
+    add_defines("SPDLOG_COMPILED_LIB", "SPDLOG_FMT_EXTERNAL",
+                {public = true})
+    add_cxflags("/w", "/utf-8", {force = true})
+target_end()
+
+end -- windows
