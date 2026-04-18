@@ -83,7 +83,7 @@ TEST(ExtensionContext, LoadRequiredOnlyInvokesMatchingSources) {
     EXPECT_EQ(counter_c, 1U);
 }
 
-TEST(ExtensionContext, DuplicateProvidesEmitsDiagnostic) {
+TEST(ExtensionContext, DuplicateProvidesEmitsDiagnostic_GivenEmptyBag) {
     mora::StringPool pool;
     mora::DiagBag diags;
     mora::FactDB db(pool);
@@ -109,6 +109,72 @@ TEST(ExtensionContext, DuplicateProvidesEmitsDiagnostic) {
     EXPECT_TRUE(diags.has_errors());
     ASSERT_FALSE(diags.all().empty());
     EXPECT_EQ(diags.all().front().code, "data-source-conflict");
+}
+
+class StubSink : public mora::ext::Sink {
+public:
+    StubSink(std::string_view name, std::size_t* invocation_counter)
+        : name_(name), counter_(invocation_counter) {}
+
+    std::string_view name() const override { return name_; }
+
+    void emit(mora::ext::EmitCtx&, const mora::FactDB&) override {
+        ++*counter_;
+    }
+
+private:
+    std::string  name_;
+    std::size_t* counter_;
+};
+
+TEST(ExtensionContext, SinkRegistrationPreservesOrder) {
+    mora::ext::ExtensionContext ec;
+    std::size_t counter = 0;
+    ec.register_sink(std::make_unique<StubSink>("a", &counter));
+    ec.register_sink(std::make_unique<StubSink>("b", &counter));
+
+    auto sinks = ec.sinks();
+    ASSERT_EQ(sinks.size(), 2U);
+    EXPECT_EQ(sinks[0]->name(), "a");
+    EXPECT_EQ(sinks[1]->name(), "b");
+}
+
+TEST(ExtensionContext, SinksAccessorReturnsRegisteredSinks) {
+    mora::ext::ExtensionContext ec;
+    EXPECT_TRUE(ec.sinks().empty());
+
+    std::size_t counter = 0;
+    ec.register_sink(std::make_unique<StubSink>("parquet.snapshot", &counter));
+
+    auto sinks = ec.sinks();
+    ASSERT_EQ(sinks.size(), 1U);
+    EXPECT_EQ(sinks[0]->name(), "parquet.snapshot");
+}
+
+TEST(ExtensionContext, LoadRequiredToleratesPreexistingErrorsInDiagBag) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    mora::FactDB db(pool);
+
+    // Simulate an earlier pipeline stage having already emitted an
+    // error (e.g. sema reported a type mismatch). load_required must
+    // still invoke matching sources without treating that pre-existing
+    // error as a collision.
+    diags.error("preexisting", "earlier-stage error",
+                mora::SourceSpan{}, "");
+    ASSERT_TRUE(diags.has_errors());
+
+    mora::ext::ExtensionContext ec;
+    std::size_t counter_a = 0;
+    ec.register_data_source(std::make_unique<StubSource>("a",
+        std::vector<std::string>{"rel.one"}, &counter_a));
+
+    auto id_one = pool.intern("rel.one").index;
+    mora::ext::LoadCtx ctx{pool, diags, {}, {}, {id_one}};
+    auto invoked = ec.load_required(ctx, db);
+
+    EXPECT_EQ(invoked, 1U);
+    EXPECT_EQ(counter_a, 1U);
 }
 
 } // namespace

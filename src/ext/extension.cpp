@@ -7,6 +7,7 @@ namespace mora::ext {
 
 struct ExtensionContext::Impl {
     std::vector<std::unique_ptr<DataSource>> sources;
+    std::vector<std::unique_ptr<Sink>>       sinks;
 };
 
 ExtensionContext::ExtensionContext()  : impl_(std::make_unique<Impl>()) {}
@@ -21,7 +22,18 @@ ExtensionContext::data_sources() const {
     return impl_->sources;
 }
 
+void ExtensionContext::register_sink(std::unique_ptr<Sink> sink) {
+    impl_->sinks.push_back(std::move(sink));
+}
+
+std::span<const std::unique_ptr<Sink>>
+ExtensionContext::sinks() const {
+    return impl_->sinks;
+}
+
 std::size_t ExtensionContext::load_required(LoadCtx& ctx, FactDB& out) const {
+    const auto errors_before = ctx.diags.error_count();
+
     // First pass: find the set of sources whose provides() intersects
     // needed_relations, and detect collisions where two or more sources
     // claim the same relation. Each DataSource returns relation NAMES
@@ -51,7 +63,7 @@ std::size_t ExtensionContext::load_required(LoadCtx& ctx, FactDB& out) const {
         if (touches_needed) matching.push_back(src.get());
     }
 
-    if (ctx.diags.has_errors()) return 0;
+    if (ctx.diags.error_count() > errors_before) return 0;
 
     for (auto* src : matching) {
         src->load(ctx, out);

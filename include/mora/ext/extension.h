@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mora/ext/data_source.h"
+#include "mora/ext/sink.h"
 
 #include <memory>
 #include <span>
@@ -34,8 +35,14 @@ public:
     // Register a DataSource. Takes ownership.
     void register_data_source(std::unique_ptr<DataSource> src);
 
+    // Register a Sink. Takes ownership.
+    void register_sink(std::unique_ptr<Sink> sink);
+
     // Read-only view of all registered data sources, in registration order.
     std::span<const std::unique_ptr<DataSource>> data_sources() const;
+
+    // Read-only view of all registered sinks, in registration order.
+    std::span<const std::unique_ptr<Sink>> sinks() const;
 
     // Convenience driver: invoke every registered DataSource whose
     // provides() intersects ctx.needed_relations, in registration order.
