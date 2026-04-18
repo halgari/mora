@@ -37,6 +37,10 @@ private:
     StringId effect_rel_remove_;
     StringId effect_rel_multiply_;
     bool     effect_rels_configured_ = false;
+
+    // Only populated during evaluate_module; read by evaluate_rule when
+    // emitting diagnostics so the renderer has a source line to show.
+    const Module* current_module_ = nullptr;
 };
 
 } // namespace mora

@@ -223,8 +223,9 @@ static StringId field_op_to_rel(FieldOp op, StringPool& pool) {
 // Negated FactPatterns (M3) are appended as AntiJoinOps after positive joins.
 // InClauses (M3) are spliced in body order after all positive joins.
 // GuardClauses (M2) are applied AFTER everything else via FilterOp.
-// Returns nullopt for unsupported body shapes (Cartesian join, anti-Cartesian
-// negation, or InClause-first with unbound var).
+// Returns nullopt for unsupported body shapes (Cartesian join,
+// anti-Cartesian negation, or non-variable InClause LHS); the caller
+// emits a hard diagnostic.
 static std::optional<std::unique_ptr<Operator>> plan_body(
     const Rule&                                  rule,
     const FactDB&                                input_db,
@@ -269,7 +270,7 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
         std::vector<StringId> shared = var_intersection(cumulative_vars, scan_vars);
 
         if (shared.empty()) {
-            // Cartesian join — reject. Fall back to tuple evaluator.
+            // Cartesian join — reject; caller emits a diagnostic.
             return std::nullopt;
         }
 
@@ -301,7 +302,7 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
                 var_intersection(cumulative_vars, neg_vars);
 
             if (shared.empty()) {
-                // Anti-Cartesian — planner cannot express this. Fall back.
+                // Anti-Cartesian — planner cannot express this.
                 return std::nullopt;
             }
 
@@ -314,7 +315,7 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
             // the variable is already bound in cumulative_vars.
             const auto* ve = std::get_if<VariableExpr>(&ic->variable->data);
             if (!ve) {
-                // Non-variable LHS — not supported. Fall back.
+                // Non-variable LHS — not supported.
                 return std::nullopt;
             }
 

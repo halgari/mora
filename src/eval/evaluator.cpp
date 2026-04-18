@@ -48,20 +48,25 @@ void Evaluator::ensure_effect_relations_configured(FactDB& db) {
 void Evaluator::evaluate_module(const Module& mod, FactDB& out_facts,
                                   ProgressCallback progress) {
     ensure_effect_relations_configured(out_facts);
+    current_module_ = &mod;
     for (size_t i = 0; i < mod.rules.size(); ++i) {
         const Rule& rule = mod.rules[i];
         evaluate_rule(rule, out_facts);
         if (progress) progress(i + 1, mod.rules.size(), pool_.get(rule.name));
     }
+    current_module_ = nullptr;
 }
 
 void Evaluator::evaluate_rule(const Rule& rule, FactDB& db) {
     auto plan = plan_rule(rule, db_, derived_facts_, pool_, symbol_formids_);
     if (!plan) {
+        std::string const src_line = current_module_
+            ? current_module_->get_line(rule.span.start_line)
+            : std::string{};
         diags_.error("eval-unsupported",
                       std::string("internal: vectorized planner declined rule '") +
                           std::string(pool_.get(rule.name)) + "'",
-                      rule.span, "");
+                      rule.span, src_line);
         return;
     }
     for (auto& op : plan->effect_ops) op->run(db);
