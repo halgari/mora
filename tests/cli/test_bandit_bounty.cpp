@@ -1,7 +1,7 @@
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 #include "mora/diag/diagnostic.h"
 #include <gtest/gtest.h>
 #include <filesystem>
@@ -31,7 +31,7 @@ std::string read_file(const std::filesystem::path& p) {
 
 } // namespace
 
-TEST(BanditBounty, ParsesResolvesAndTypeChecks) {
+TEST(BanditBounty, ParsesAndResolves) {
     auto path = locate_fixture();
     ASSERT_FALSE(path.empty()) << "could not find test_data/bandit_bounty.mora";
 
@@ -48,8 +48,7 @@ TEST(BanditBounty, ParsesResolvesAndTypeChecks) {
     NameResolver nr(pool, diags);
     nr.resolve(mod);
 
-    TypeChecker tc(pool, diags, nr);
-    tc.check(mod);
+    // TypeChecker removed in M2
 
     for (const auto& d : diags.all()) {
         if (d.level == DiagLevel::Error) {

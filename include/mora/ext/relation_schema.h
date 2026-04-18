@@ -3,17 +3,19 @@
 #include <any>
 #include <string>
 #include <vector>
+#include "mora/core/type.h"
 
 namespace mora::ext {
 
 // A relation column description. Pool-agnostic: names are std::string
-// and the caller interns them into its own pool at use time. Column
-// type info is intentionally absent in Plan 4 — it lands alongside the
-// vectorized evaluator work. `indexed` tracks whether the column
-// should be hash-indexed for lookup.
+// and the caller interns them into its own pool at use time. `indexed`
+// tracks whether the column should be hash-indexed for lookup. `type`
+// points to a Type singleton (nullptr for legacy Plan 4 schemas that
+// predate the type system).
 struct ColumnSpec {
     std::string name;
     bool        indexed = false;
+    const Type* type    = nullptr;  // nominal or physical singleton; nullptr = legacy
 };
 
 // A relation schema registered by an extension. Pool-agnostic — names

@@ -4,7 +4,7 @@
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 
 using namespace mora;
 
@@ -85,52 +85,7 @@ TEST(BuiltinFns, ArithmeticComposition) {
     EXPECT_EQ(eval_damage(f, "10 * 4 + 5 * max(0, 4 - 10)"), 40);
 }
 
-TEST(BuiltinFns, TypeCheckerAcceptsKnownBuiltins) {
-    Fixture f;
-    auto mod = f.parse_and_resolve(
-        "namespace t\n"
-        "r(W):\n"
-        "    => set form/damage(W, max(1, min(abs(0 - 3), clamp(10, 0, 7))))\n");
-    NameResolver nr(f.pool, f.diags);
-    nr.resolve(mod);
-    TypeChecker tc(f.pool, f.diags, nr);
-    tc.check(mod);
-    for (const auto& d : f.diags.all()) {
-        if (d.level == DiagLevel::Error) ADD_FAILURE() << d.message;
-    }
-    EXPECT_FALSE(f.diags.has_errors());
-}
-
-TEST(BuiltinFns, TypeCheckerRejectsUnknownBuiltin) {
-    Fixture f;
-    auto mod = f.parse_and_resolve(
-        "namespace t\n"
-        "r(W):\n"
-        "    => set form/damage(W, nosuchfn(1, 2))\n");
-    NameResolver nr(f.pool, f.diags);
-    nr.resolve(mod);
-    TypeChecker tc(f.pool, f.diags, nr);
-    tc.check(mod);
-    bool saw_e040 = false;
-    for (const auto& d : f.diags.all()) {
-        if (d.level == DiagLevel::Error && d.code == "E040") saw_e040 = true;
-    }
-    EXPECT_TRUE(saw_e040);
-}
-
-TEST(BuiltinFns, TypeCheckerRejectsWrongArity) {
-    Fixture f;
-    auto mod = f.parse_and_resolve(
-        "namespace t\n"
-        "r(W):\n"
-        "    => set form/damage(W, max(1))\n");
-    NameResolver nr(f.pool, f.diags);
-    nr.resolve(mod);
-    TypeChecker tc(f.pool, f.diags, nr);
-    tc.check(mod);
-    bool saw_e041 = false;
-    for (const auto& d : f.diags.all()) {
-        if (d.level == DiagLevel::Error && d.code == "E041") saw_e041 = true;
-    }
-    EXPECT_TRUE(saw_e041);
-}
+// TypeCheckerAcceptsKnownBuiltins, TypeCheckerRejectsUnknownBuiltin,
+// and TypeCheckerRejectsWrongArity tests removed in M2 (TypeChecker excluded
+// from build; deleted in M3). Builtin-fn validation will return via the
+// vectorized evaluator in a later plan.

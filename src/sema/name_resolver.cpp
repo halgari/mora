@@ -104,8 +104,8 @@ void apply_imports_to_clause(Clause& clause, const ImportMap& im,
 // Helpers
 // ---------------------------------------------------------------------------
 
-static FactSignature make_sig(StringId name, std::vector<MoraType> types) {
-    return FactSignature{name, std::move(types)};
+static FactSignature make_sig(StringId name, size_t arity, bool is_builtin = false) {
+    return FactSignature{name, arity, is_builtin};
 }
 
 // ---------------------------------------------------------------------------
@@ -118,139 +118,127 @@ NameResolver::NameResolver(StringPool& pool, DiagBag& diags)
 }
 
 // ---------------------------------------------------------------------------
-// register_builtins — all built-in Skyrim facts
+// register_builtins — all built-in Skyrim facts (arity-only; no types)
 // ---------------------------------------------------------------------------
 
 void NameResolver::register_builtins() {
-    // Helper lambda to register one fact by name string + type list
-    auto reg = [&](const char* n, std::vector<MoraType> types) {
+    // Helper lambda to register one fact by name string + arity
+    auto reg = [&](const char* n, size_t arity) {
         StringId const id = pool_.intern(n);
-        facts_.emplace(id.index, make_sig(id, std::move(types)));
+        facts_.emplace(id.index, make_sig(id, arity, /*is_builtin=*/true));
     };
 
-    using T = TypeKind;
-    auto t = [](TypeKind k) { return MoraType::make(k); };
+    // ── Existence facts (arity 1) ──
+    reg("npc",          1);
+    reg("weapon",       1);
+    reg("armor",        1);
+    reg("spell",        1);
+    reg("perk",         1);
+    reg("keyword",      1);
+    reg("faction",      1);
+    reg("race",         1);
+    reg("leveled_list", 1);
+    reg("ammo",         1);
+    reg("book",         1);
+    reg("potion",       1);
+    reg("misc_item",    1);
+    reg("magic_effect", 1);
+    reg("ingredient",   1);
+    reg("activator",    1);
+    reg("flora",        1);
+    reg("scroll",       1);
+    reg("soul_gem",     1);
+    reg("location",     1);
+    reg("key",          1);
+    reg("furniture",    1);
+    reg("enchantment",  1);
 
-    // ── Existence facts ──
-    reg("npc",          { t(T::NpcID)    });
-    reg("weapon",       { t(T::WeaponID) });
-    reg("armor",        { t(T::ArmorID)  });
-    reg("spell",        { t(T::SpellID)  });
-    reg("perk",         { t(T::PerkID)   });
-    reg("keyword",      { t(T::KeywordID)});
-    reg("faction",      { t(T::FactionID)});
-    reg("race",         { t(T::RaceID)   });
-    reg("leveled_list", { t(T::FormID)   });
-    reg("ammo",         { t(T::FormID)   });
-    reg("book",         { t(T::FormID)   });
-    reg("potion",       { t(T::FormID)   });
-    reg("misc_item",    { t(T::FormID)   });
-    reg("magic_effect", { t(T::FormID)   });
-    reg("ingredient",   { t(T::FormID)   });
-    reg("activator",    { t(T::FormID)   });
-    reg("flora",        { t(T::FormID)   });
-    reg("scroll",       { t(T::FormID)   });
-    reg("soul_gem",     { t(T::FormID)   });
-    reg("location",     { t(T::FormID)   });
-    reg("key",          { t(T::FormID)   });
-    reg("furniture",    { t(T::FormID)   });
-    reg("enchantment",  { t(T::FormID)   });
-
-    // ── Property facts ──
-    reg("has_keyword",   { t(T::FormID), t(T::KeywordID) });
-    reg("has_faction",   { t(T::FormID), t(T::FactionID) });
-    reg("has_perk",      { t(T::FormID), t(T::PerkID)    });
-    reg("has_spell",     { t(T::FormID), t(T::SpellID)   });
-    reg("base_level",    { t(T::FormID), t(T::Int)       });
-    reg("level",         { t(T::FormID), t(T::Int)       });
-    reg("race_of",       { t(T::FormID), t(T::RaceID)    });
-    reg("name",          { t(T::FormID), t(T::String)    });
-    reg("editor_id",     { t(T::FormID), t(T::String)    });
-    reg("gold_value",    { t(T::FormID), t(T::Int)       });
-    reg("weight",        { t(T::FormID), t(T::Float)     });
-    reg("damage",        { t(T::FormID), t(T::Int)       });
-    reg("armor_rating",  { t(T::FormID), t(T::Int)       });
+    // ── Property facts (arity 2) ──
+    reg("has_keyword",   2);
+    reg("has_faction",   2);
+    reg("has_perk",      2);
+    reg("has_spell",     2);
+    reg("base_level",    2);
+    reg("level",         2);
+    reg("race_of",       2);
+    reg("name",          2);
+    reg("editor_id",     2);
+    reg("gold_value",    2);
+    reg("weight",        2);
+    reg("damage",        2);
+    reg("armor_rating",  2);
 
     // ── Relationships ──
-    reg("has_form",      { t(T::FormID), t(T::FormID) });
-    reg("template_of",   { t(T::FormID), t(T::FormID) });
-    reg("leveled_entry", { t(T::FormID), t(T::FormID), t(T::Int) });
-    reg("outfit_has",    { t(T::FormID), t(T::FormID) });
+    reg("has_form",      2);
+    reg("template_of",   2);
+    reg("leveled_entry", 3);
+    reg("outfit_has",    2);
 
     // ── Instance facts ──
-    reg("current_level",    { t(T::FormID), t(T::Int)        });
-    reg("current_location", { t(T::FormID), t(T::LocationID) });
-    reg("current_cell",     { t(T::FormID), t(T::CellID)     });
-    reg("equipped",         { t(T::FormID), t(T::FormID)     });
-    reg("in_inventory",     { t(T::FormID), t(T::FormID), t(T::Int) });
-    reg("quest_stage",      { t(T::QuestID), t(T::Int)       });
-    reg("is_alive",         { t(T::FormID)                   });
+    reg("current_level",    2);
+    reg("current_location", 2);
+    reg("current_cell",     2);
+    reg("equipped",         2);
+    reg("in_inventory",     3);
+    reg("quest_stage",      2);
+    reg("is_alive",         1);
 
     // ── SPID distribution facts ──
-    reg("spid_dist",    { t(T::Int), t(T::String), t(T::FormID) });
-    reg("spid_filter",  { t(T::Int), t(T::String), t(T::FormID) });
-    reg("spid_exclude", { t(T::Int), t(T::String), t(T::FormID) });
-    reg("spid_level",   { t(T::Int), t(T::Int), t(T::Int) });
+    reg("spid_dist",    3);
+    reg("spid_filter",  3);
+    reg("spid_exclude", 3);
+    reg("spid_level",   3);
 
     // ── KID distribution facts ──
-    reg("kid_dist",     { t(T::Int), t(T::FormID), t(T::String) });
-    reg("kid_filter",   { t(T::Int), t(T::String), t(T::FormID) });
-    reg("kid_exclude",  { t(T::Int), t(T::String), t(T::FormID) });
+    reg("kid_dist",     3);
+    reg("kid_filter",   3);
+    reg("kid_exclude",  3);
 
     // ── Effects / actions (auto-registered from form model) ──
     namespace m = model;
 
     // Scalar field setters: set_gold_value, set_damage, set_speed, etc.
+    // All setters are binary: (form, value)
     for (size_t i = 0; i < m::kFieldCount; i++) {
         auto& f = m::kFields[i];
         if (!f.set_action) continue;
-        auto& member = m::kComponents[f.component_idx].members[f.member_idx];
-        T const form_tk = m::effect_form_type_kind(f.component_idx);
-        T const val_tk = m::value_type_to_type_kind(member.value_type);
-        reg(f.set_action, { t(form_tk), t(val_tk) });
+        reg(f.set_action, 2);
     }
 
     // Form array operations: add_keyword, remove_keyword, add_spell, etc.
+    // All collection ops are binary: (form, item)
     for (size_t i = 0; i < m::kFormArrayCount; i++) {
         auto& fa = m::kFormArrays[i];
-        T const form_tk = m::effect_form_type_kind(fa.component_idx);
-        // Determine value type from the field id
-        T val_tk = T::FormID;
-        if (fa.field_id == FieldId::Keywords) val_tk = T::KeywordID;
-        else if (fa.field_id == FieldId::Spells) val_tk = T::SpellID;
-        else if (fa.field_id == FieldId::Perks) val_tk = T::PerkID;
-        else if (fa.field_id == FieldId::Factions) val_tk = T::FactionID;
-
-        if (fa.add_action) reg(fa.add_action, { t(form_tk), t(val_tk) });
-        if (fa.remove_action) reg(fa.remove_action, { t(form_tk), t(val_tk) });
+        if (fa.add_action)    reg(fa.add_action,    2);
+        if (fa.remove_action) reg(fa.remove_action, 2);
     }
 
     // Boolean flag setters: set_essential, set_protected, set_auto_calc_stats
+    // All flag setters are binary: (form, int)
     for (size_t i = 0; i < m::kFlagCount; i++) {
         auto& fl = m::kFlags[i];
         if (!fl.set_action) continue;
-        T const form_tk = m::effect_form_type_kind(fl.component_idx);
-        reg(fl.set_action, { t(form_tk), t(T::Int) });
+        reg(fl.set_action, 2);
     }
 
     // Leveled list operations
-    reg("add_to_leveled_list",      { t(T::FormID), t(T::FormID), t(T::Int), t(T::Int) });
-    reg("remove_from_leveled_list", { t(T::FormID), t(T::FormID) });
-    reg("clear_leveled_list",       { t(T::FormID) });
-    reg("clear_all",                { t(T::FormID) });
+    reg("add_to_leveled_list",      4);
+    reg("remove_from_leveled_list", 2);
+    reg("clear_leveled_list",       1);
+    reg("clear_all",                1);
 
     // Multiply operations (legacy, pending removal)
-    reg("mul_damage",       { t(T::WeaponID), t(T::Float) });
-    reg("mul_armor_rating", { t(T::ArmorID),  t(T::Float) });
-    reg("mul_gold_value",   { t(T::FormID),   t(T::Float) });
-    reg("mul_weight",       { t(T::FormID),   t(T::Float) });
-    reg("mul_speed",        { t(T::WeaponID), t(T::Float) });
-    reg("mul_crit_percent", { t(T::WeaponID), t(T::Float) });
+    reg("mul_damage",       2);
+    reg("mul_armor_rating", 2);
+    reg("mul_gold_value",   2);
+    reg("mul_weight",       2);
+    reg("mul_speed",        2);
+    reg("mul_crit_percent", 2);
 
     // Legacy effects
-    reg("add_item",          { t(T::FormID), t(T::FormID)    });
-    reg("distribute_items",  { t(T::FormID), t(T::FormID)    });
-    reg("set_game_setting",  { t(T::FormID), t(T::Float)     });
+    reg("add_item",          2);
+    reg("distribute_items",  2);
+    reg("set_game_setting",  2);
 }
 
 // ---------------------------------------------------------------------------
@@ -316,12 +304,9 @@ void NameResolver::register_rule_as_fact(const Rule& rule) {
         return;
     }
 
-    // Build a signature based on the arity of the head.  We do not know the
-    // exact types yet (that is the type-checker's job), so we use FormID as
-    // a universal placeholder for each argument.
-    std::vector<MoraType> param_types(rule.head_args.size(),
-                                      MoraType::make(TypeKind::FormID));
-    FactSignature sig{rule.name, std::move(param_types)};
+    // Build a signature based on the arity of the head only.
+    // Sema no longer tracks per-parameter types.
+    FactSignature sig{rule.name, rule.head_args.size(), /*is_builtin=*/false};
     facts_.emplace(rule.name.index, std::move(sig));
 }
 

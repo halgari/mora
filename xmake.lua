@@ -171,7 +171,7 @@ target("mora_lib")
     set_kind("static")
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
-              "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
+              "src/parser/*.cpp", "src/sema/*.cpp|type_checker.cpp", "src/diag/*.cpp",
               "src/cli/*.cpp", "src/eval/*.cpp", "src/ext/*.cpp",
               "src/data/chunk_pool.cpp", "src/data/columnar_relation.cpp",
               "src/data/indexed_relation.cpp", "src/data/schema_registry.cpp",
@@ -247,16 +247,19 @@ add_requires("gtest")
 
 for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
     local name = path.basename(testfile)
-    target(name)
-        set_kind("binary")
-        set_default(false)
-        add_files(testfile)
-        add_includedirs("tests")
-        add_deps("mora_lib")
-        add_packages("gtest")
-        add_syslinks("gtest_main")
-        add_tests(name)
-    target_end()
+    -- type_checker_test.cpp excluded in M2; deleted in M3
+    if name ~= "type_checker_test" then
+        target(name)
+            set_kind("binary")
+            set_default(false)
+            add_files(testfile)
+            add_includedirs("tests")
+            add_deps("mora_lib")
+            add_packages("gtest")
+            add_syslinks("gtest_main")
+            add_tests(name)
+        target_end()
+    end
 end
 
 -- Tests under subdirectories (tests/<group>/test_*.cpp).
@@ -266,7 +269,11 @@ end
 -- generic per-file loop can't produce via override.
 for _, testfile in ipairs(os.files("tests/**/test_*.cpp")) do
     local basename = path.basename(testfile)
-    if not basename:startswith("test_cli_parquet_") then
+    -- Exclude parquet-specific tests (handled below) and type-checker-dependent
+    -- tests (type_checker.cpp excluded in M2; deleted in M3).
+    local excluded = basename:startswith("test_cli_parquet_")
+                  or basename == "test_verb_legality"
+    if not excluded then
         local name = basename
         target(name)
             set_kind("binary")

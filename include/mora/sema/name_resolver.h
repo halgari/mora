@@ -2,13 +2,15 @@
 #include "mora/ast/ast.h"
 #include "mora/core/string_pool.h"
 #include "mora/diag/diagnostic.h"
+#include <cstddef>
 #include <unordered_map>
 
 namespace mora {
 
 struct FactSignature {
     StringId name;
-    std::vector<MoraType> param_types;
+    size_t   arity = 0;
+    bool     is_builtin = false;
 };
 
 class NameResolver {

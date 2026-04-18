@@ -6,7 +6,7 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 
 #include <gtest/gtest.h>
 

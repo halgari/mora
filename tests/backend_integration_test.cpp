@@ -2,7 +2,7 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
@@ -26,11 +26,9 @@ TEST_F(BackendIntegrationTest, FullPipeline) {
     mod.source = source;
     ASSERT_FALSE(diags.has_errors());
 
-    // Resolve + type check
+    // Resolve (TypeChecker removed in M2)
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);
-    mora::TypeChecker checker(pool, diags, resolver);
-    checker.check(mod);
     ASSERT_FALSE(diags.has_errors());
 
     // Classify
@@ -73,8 +71,7 @@ TEST_F(BackendIntegrationTest, DynamicRulesSkipped) {
 
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);
-    mora::TypeChecker checker(pool, diags, resolver);
-    checker.check(mod);
+    // TypeChecker removed in M2
     ASSERT_FALSE(diags.has_errors());
 
     mora::PhaseClassifier classifier(pool);

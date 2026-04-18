@@ -19,8 +19,22 @@ TEST_F(NameResolverTest, BuiltinFactsRegistered) {
     mora::NameResolver resolver(pool, diags);
     auto* fact = resolver.lookup_fact(pool.intern("npc"));
     ASSERT_NE(fact, nullptr);
-    EXPECT_EQ(fact->param_types.size(), 1u);
-    EXPECT_EQ(fact->param_types[0].kind, mora::TypeKind::NpcID);
+    EXPECT_EQ(fact->arity, 1u);
+    EXPECT_TRUE(fact->is_builtin);
+}
+
+TEST_F(NameResolverTest, HasKeywordArity) {
+    mora::NameResolver resolver(pool, diags);
+    auto* fact = resolver.lookup_fact(pool.intern("has_keyword"));
+    ASSERT_NE(fact, nullptr);
+    EXPECT_EQ(fact->arity, 2u);
+}
+
+TEST_F(NameResolverTest, LeveledEntryArity) {
+    mora::NameResolver resolver(pool, diags);
+    auto* fact = resolver.lookup_fact(pool.intern("leveled_entry"));
+    ASSERT_NE(fact, nullptr);
+    EXPECT_EQ(fact->arity, 3u);
 }
 
 TEST_F(NameResolverTest, ResolveRuleReferencingBuiltin) {
@@ -45,6 +59,21 @@ TEST_F(NameResolverTest, DerivedRuleUsableAsFact) {
     mora::NameResolver resolver(pool, diags);
     resolver.resolve(mod);
     EXPECT_FALSE(diags.has_errors());
+}
+
+TEST_F(NameResolverTest, DerivedRuleArityRecorded) {
+    auto mod = parse(
+        "bandit(NPC):\n"
+        "    npc(NPC)\n"
+    );
+    mora::NameResolver resolver(pool, diags);
+    resolver.resolve(mod);
+    EXPECT_FALSE(diags.has_errors());
+    // Derived rules get arity from their head arg count
+    auto* fact = resolver.lookup_fact(pool.intern("bandit"));
+    ASSERT_NE(fact, nullptr);
+    EXPECT_EQ(fact->arity, 1u);
+    EXPECT_FALSE(fact->is_builtin);
 }
 
 TEST_F(NameResolverTest, UnknownFactError) {

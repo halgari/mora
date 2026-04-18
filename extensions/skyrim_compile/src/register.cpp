@@ -1,5 +1,6 @@
 #include "mora_skyrim_compile/register.h"
 #include "mora_skyrim_compile/esp_data_source.h"
+#include "mora_skyrim_compile/types.h"
 #include "mora/core/string_pool.h"
 #include "mora/data/schema_registry.h"
 #include "mora/ext/extension.h"
@@ -15,10 +16,8 @@ namespace {
 
 // Convert the core, StringPool-bound mora::RelationSchema into the
 // pool-agnostic mora::ext::RelationSchema that ExtensionContext stores.
-// The core schema's EspSource vector and MoraType column types aren't
-// carried over — the ESP reader and sema keep consuming the core
-// SchemaRegistry directly, so no downstream consumer needs them on the
-// ext side yet.
+// EspSource vectors stay in the core SchemaRegistry; the ext side gets
+// column type pointers (const Type* singletons) for downstream consumers.
 mora::ext::RelationSchema to_ext_schema(const mora::RelationSchema& core,
                                          const mora::StringPool& pool) {
     mora::ext::RelationSchema out;
@@ -28,8 +27,9 @@ mora::ext::RelationSchema to_ext_schema(const mora::RelationSchema& core,
                                     core.indexed_columns.end());
     for (size_t i = 0; i < core.column_types.size(); ++i) {
         mora::ext::ColumnSpec c;
-        c.name = "col" + std::to_string(i);  // positional; real names land with Plan 5+
+        c.name    = "col" + std::to_string(i);  // positional; real names land with Plan 5+
         c.indexed = idx.contains(i);
+        c.type    = core.column_types[i];  // const Type* singleton
         out.columns.push_back(std::move(c));
     }
     return out;
@@ -38,6 +38,10 @@ mora::ext::RelationSchema to_ext_schema(const mora::RelationSchema& core,
 } // namespace
 
 void register_skyrim(mora::ext::ExtensionContext& ctx) {
+    // Register Skyrim nominal types first so schema-building code can
+    // resolve type names via mora::types::get().
+    register_all_nominal_types(ctx);
+
     ctx.register_data_source(std::make_unique<SkyrimEspDataSource>());
 
     // Bridge: enumerate the default Skyrim schemas via a throwaway

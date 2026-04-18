@@ -13,9 +13,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "mora/eval/field_types.h"  // FieldId, FieldOp
-#include "mora/ast/types.h"        // TypeKind
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <string_view>
 
 namespace mora::model {
 
@@ -229,33 +230,33 @@ struct FormTypeDef {
     const char*          record_tag;      // "WEAP", "ARMO", "NPC_"
     const char*          relation_name;   // "weapon", "armor", "npc"
     uint8_t              form_type_byte;  // 0x29, 0x1A, 0x2B
-    TypeKind             type_kind;       // TypeKind::WeaponID, etc.
+    std::string_view     type_name;       // "WeaponID", "NpcID", etc.; resolved at registration time
     const ComponentSlot* slots;
     uint8_t              slot_count;
 };
 
 inline constexpr FormTypeDef kWeapon = {
-    "WEAP", "weapon", 0x29, TypeKind::WeaponID,
+    "WEAP", "weapon", 0x29, "WeaponID",
     kWeaponSlots, sizeof(kWeaponSlots) / sizeof(kWeaponSlots[0]),
 };
 
 inline constexpr FormTypeDef kArmor = {
-    "ARMO", "armor", 0x1A, TypeKind::ArmorID,
+    "ARMO", "armor", 0x1A, "ArmorID",
     kArmorSlots, sizeof(kArmorSlots) / sizeof(kArmorSlots[0]),
 };
 
 inline constexpr FormTypeDef kNpc = {
-    "NPC_", "npc", 0x2B, TypeKind::NpcID,
+    "NPC_", "npc", 0x2B, "NpcID",
     kNpcSlots, sizeof(kNpcSlots) / sizeof(kNpcSlots[0]),
 };
 
 inline constexpr FormTypeDef kLeveledItem = {
-    "LVLI", "leveled_list", 0x2D, TypeKind::FormID,
+    "LVLI", "leveled_list", 0x2D, "FormID",
     kLeveledItemSlots, sizeof(kLeveledItemSlots) / sizeof(kLeveledItemSlots[0]),
 };
 
 inline constexpr FormTypeDef kLeveledChar = {
-    "LVLN", "leveled_char", 0x2C, TypeKind::FormID,
+    "LVLN", "leveled_char", 0x2C, "FormID",
     kLeveledCharSlots, sizeof(kLeveledCharSlots) / sizeof(kLeveledCharSlots[0]),
 };
 
@@ -560,26 +561,26 @@ constexpr const FormTypeDef* unique_form_type_for(uint8_t comp_idx) {
 // Used by schema_registry for the existence relation loop.
 
 struct ExistenceOnlyDef {
-    const char* record_tag;
-    const char* relation_name;
-    TypeKind    type_kind;
+    const char*      record_tag;
+    const char*      relation_name;
+    std::string_view type_name;   // e.g. "FormID", "SpellID"; resolved at registration time
 };
 
 inline constexpr ExistenceOnlyDef kExistenceOnly[] = {
-    {"AMMO", "ammo",         TypeKind::FormID},
-    {"ALCH", "potion",       TypeKind::FormID},
-    {"INGR", "ingredient",   TypeKind::FormID},
-    {"BOOK", "book",         TypeKind::FormID},
-    {"SCRL", "scroll",       TypeKind::FormID},
-    {"ENCH", "enchantment",  TypeKind::FormID},
-    {"MGEF", "magic_effect", TypeKind::FormID},
-    {"MISC", "misc_item",    TypeKind::FormID},
-    {"SLGM", "soul_gem",     TypeKind::FormID},
-    {"SPEL", "spell",        TypeKind::SpellID},
-    {"PERK", "perk",         TypeKind::PerkID},
-    {"KYWD", "keyword",      TypeKind::KeywordID},
-    {"FACT", "faction",      TypeKind::FactionID},
-    {"RACE", "race",         TypeKind::RaceID},
+    {"AMMO", "ammo",         "FormID"},
+    {"ALCH", "potion",       "FormID"},
+    {"INGR", "ingredient",   "FormID"},
+    {"BOOK", "book",         "FormID"},
+    {"SCRL", "scroll",       "FormID"},
+    {"ENCH", "enchantment",  "FormID"},
+    {"MGEF", "magic_effect", "FormID"},
+    {"MISC", "misc_item",    "FormID"},
+    {"SLGM", "soul_gem",     "FormID"},
+    {"SPEL", "spell",        "SpellID"},
+    {"PERK", "perk",         "PerkID"},
+    {"KYWD", "keyword",      "KeywordID"},
+    {"FACT", "faction",      "FactionID"},
+    {"RACE", "race",         "RaceID"},
 };
 
 inline constexpr size_t kExistenceOnlyCount =
@@ -615,46 +616,28 @@ inline constexpr const char* kFullNameRecords[] = {
 inline constexpr size_t kFullNameRecordCount =
     sizeof(kFullNameRecords) / sizeof(kFullNameRecords[0]);
 
-// ── Type system queries (for type checker) ─────────────────────────────
+// ── Type name queries ──────────────────────────────────────────────────
 
-// Find the FormTypeDef for a given TypeKind. Returns nullptr for generic FormID.
-constexpr const FormTypeDef* find_form_type_by_kind(TypeKind tk) {
-    for (size_t i = 0; i < kFormTypeCount; i++) {
-        if (kFormTypes[i]->type_kind == tk)
-            return kFormTypes[i];
-    }
-    return nullptr;
-}
-
-// Check if a TypeKind's form type has a given component.
-// Returns true for generic FormID (can't statically disprove).
-constexpr bool type_has_component(TypeKind tk, uint8_t comp_idx) {
-    if (tk == TypeKind::FormID) return true;
-    auto* ft = find_form_type_by_kind(tk);
-    if (!ft) return true;  // unknown type — allow
-    return has_component(*ft, comp_idx);
-}
-
-// Convert model ValueType to TypeKind for type checking.
-constexpr TypeKind value_type_to_type_kind(ValueType vt) {
+// Convert model ValueType to a type name string.
+constexpr std::string_view value_type_to_type_name(ValueType vt) {
     switch (vt) {
         case ValueType::Int8:
         case ValueType::Int16:
         case ValueType::Int32:
         case ValueType::UInt8:
         case ValueType::UInt16:
-        case ValueType::UInt32:    return TypeKind::Int;
-        case ValueType::Float32:   return TypeKind::Float;
-        case ValueType::FormRef:   return TypeKind::FormID;
-        case ValueType::BSFixedString: return TypeKind::String;
+        case ValueType::UInt32:    return "Int64";
+        case ValueType::Float32:   return "Float64";
+        case ValueType::FormRef:   return "FormID";
+        case ValueType::BSFixedString: return "String";
     }
-    return TypeKind::Int;
+    return "Int64";
 }
 
-// Determine the narrowest first-param TypeKind for an effect's component.
-constexpr TypeKind effect_form_type_kind(uint8_t comp_idx) {
+// Determine the narrowest first-param type name for an effect's component.
+constexpr std::string_view effect_form_type_name(uint8_t comp_idx) {
     auto* unique = unique_form_type_for(comp_idx);
-    return unique ? unique->type_kind : TypeKind::FormID;
+    return unique ? unique->type_name : std::string_view("FormID");
 }
 
 // Get all form type names that have a given component (for error messages).

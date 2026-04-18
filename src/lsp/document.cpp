@@ -6,7 +6,7 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 
 namespace mora::lsp {
 
@@ -51,11 +51,9 @@ const std::vector<mora::Diagnostic>& Document::diagnostics() {
     mora::NameResolver resolver(*pool, bag);
     resolver.resolve(*module);
 
-    mora::TypeChecker tc(*pool, bag, resolver);
-    tc.check(*module);
-
-    // Build the symbol index while sema objects (resolver, tc) are still alive.
-    index_.build(*module, resolver, tc, *pool);
+    // TypeChecker removed in M2 (excluded from build); deleted in M3.
+    // Build the symbol index while sema objects (resolver) are still alive.
+    index_.build(*module, resolver, *pool);
 
     // Hand off ownership so Phase-3 accessors remain valid after return.
     pool_   = std::move(pool);

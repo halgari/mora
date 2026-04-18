@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "mora/ast/types.h"
+#include "mora/core/type.h"
 #include "mora/core/string_pool.h"
 
 namespace mora {
@@ -35,7 +35,7 @@ struct EspSource {
 
 struct RelationSchema {
     StringId name;
-    std::vector<MoraType> column_types;
+    std::vector<const Type*> column_types;   // each points to a Type singleton
     std::vector<size_t> indexed_columns;
     std::vector<EspSource> esp_sources;
 };

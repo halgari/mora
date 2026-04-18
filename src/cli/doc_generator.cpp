@@ -12,25 +12,6 @@ namespace mora {
 
 namespace {
 
-const char* type_kind_name(TypeKind tk) {
-    switch (tk) {
-        case TypeKind::Int:       return "Int";
-        case TypeKind::Float:     return "Float";
-        case TypeKind::String:    return "String";
-        case TypeKind::Bool:      return "Bool";
-        case TypeKind::FormID:    return "FormID";
-        case TypeKind::NpcID:     return "NpcID";
-        case TypeKind::WeaponID:  return "WeaponID";
-        case TypeKind::ArmorID:   return "ArmorID";
-        case TypeKind::KeywordID: return "KeywordID";
-        case TypeKind::FactionID: return "FactionID";
-        case TypeKind::SpellID:   return "SpellID";
-        case TypeKind::PerkID:    return "PerkID";
-        case TypeKind::RaceID:    return "RaceID";
-        default:                  return "Unknown";
-    }
-}
-
 std::string applicable_types(uint8_t comp_idx) {
     return model::form_types_with_component(comp_idx);
 }
@@ -71,12 +52,12 @@ void generate_docs(std::ostream& out) {
     for (size_t i = 0; i < m::kFormTypeCount; i++) {
         auto& ft = *m::kFormTypes[i];
         out << fmt::format("| `{}` | `({})` |\n",
-            ft.relation_name, type_kind_name(ft.type_kind));
+            ft.relation_name, ft.type_name);
     }
     for (size_t i = 0; i < m::kExistenceOnlyCount; i++) {
         auto& eo = m::kExistenceOnly[i];
         out << fmt::format("| `{}` | `({})` |\n",
-            eo.relation_name, type_kind_name(eo.type_kind));
+            eo.relation_name, eo.type_name);
     }
     out << "\n---\n\n";
 
@@ -91,9 +72,9 @@ void generate_docs(std::ostream& out) {
         auto& f = m::kFields[i];
         if (!f.relation_name) continue;
         auto& member = m::kComponents[f.component_idx].members[f.member_idx];
-        auto val_tk = m::value_type_to_type_kind(member.value_type);
+        auto val_name = m::value_type_to_type_name(member.value_type);
         out << fmt::format("| `{}` | `(FormID, {})` | {} |\n",
-            f.relation_name, type_kind_name(val_tk),
+            f.relation_name, val_name,
             applicable_types(f.component_idx));
     }
 
@@ -124,10 +105,10 @@ void generate_docs(std::ostream& out) {
         auto& f = m::kFields[i];
         if (!f.set_action) continue;
         auto& member = m::kComponents[f.component_idx].members[f.member_idx];
-        auto val_tk = m::value_type_to_type_kind(member.value_type);
-        auto form_tk = m::effect_form_type_kind(f.component_idx);
+        auto val_name  = m::value_type_to_type_name(member.value_type);
+        auto form_name = m::effect_form_type_name(f.component_idx);
         out << fmt::format("| `{}` | `({}, {})` | {} |\n",
-            f.set_action, type_kind_name(form_tk), type_kind_name(val_tk),
+            f.set_action, form_name, val_name,
             applicable_types(f.component_idx));
     }
     out << "\n";
@@ -138,7 +119,7 @@ void generate_docs(std::ostream& out) {
     out << "|--------|-----------|------------|\n";
     for (size_t i = 0; i < m::kFormArrayCount; i++) {
         auto& fa = m::kFormArrays[i];
-        auto form_tk = m::effect_form_type_kind(fa.component_idx);
+        auto form_name = m::effect_form_type_name(fa.component_idx);
         const char* val_type = "FormID";
         if (fa.field_id == FieldId::Keywords) val_type = "KeywordID";
         else if (fa.field_id == FieldId::Spells) val_type = "SpellID";
@@ -147,12 +128,12 @@ void generate_docs(std::ostream& out) {
 
         if (fa.add_action) {
             out << fmt::format("| `{}` | `({}, {})` | {} |\n",
-                fa.add_action, type_kind_name(form_tk), val_type,
+                fa.add_action, form_name, val_type,
                 applicable_types(fa.component_idx));
         }
         if (fa.remove_action) {
             out << fmt::format("| `{}` | `({}, {})` | {} |\n",
-                fa.remove_action, type_kind_name(form_tk), val_type,
+                fa.remove_action, form_name, val_type,
                 applicable_types(fa.component_idx));
         }
     }
@@ -165,9 +146,9 @@ void generate_docs(std::ostream& out) {
     for (size_t i = 0; i < m::kFlagCount; i++) {
         auto& fl = m::kFlags[i];
         if (!fl.set_action) continue;
-        auto form_tk = m::effect_form_type_kind(fl.component_idx);
-        out << fmt::format("| `{}` | `({}, Int)` | {} |\n",
-            fl.set_action, type_kind_name(form_tk),
+        auto form_name = m::effect_form_type_name(fl.component_idx);
+        out << fmt::format("| `{}` | `({}, Int64)` | {} |\n",
+            fl.set_action, form_name,
             applicable_types(fl.component_idx));
     }
     out << "\n---\n\n";

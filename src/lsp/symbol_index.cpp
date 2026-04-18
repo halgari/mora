@@ -1,7 +1,6 @@
 #include "mora/lsp/symbol_index.h"
 #include "mora/ast/ast.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
 #include <limits>
 #include <unordered_map>
 
@@ -11,7 +10,6 @@ namespace {
 
 // Forward declaration.
 void walk_expr(const mora::Expr& expr,
-               const mora::TypeChecker& tc,
                std::unordered_map<uint32_t, mora::SourceSpan>& bindings_seen,
                std::vector<SymbolEntry>& out);
 
@@ -36,7 +34,6 @@ void emit_variable(const mora::VariableExpr& var,
 }
 
 void walk_expr(const mora::Expr& expr,
-               const mora::TypeChecker& tc,
                std::unordered_map<uint32_t, mora::SourceSpan>& bindings_seen,
                std::vector<SymbolEntry>& out) {
     // VariableExpr (plan called it mora::Variable)
@@ -53,13 +50,13 @@ void walk_expr(const mora::Expr& expr,
     }
     // BinaryExpr: recurse into both sides
     else if (const auto* bin = std::get_if<mora::BinaryExpr>(&expr.data)) {
-        if (bin->left)  walk_expr(*bin->left,  tc, bindings_seen, out);
-        if (bin->right) walk_expr(*bin->right, tc, bindings_seen, out);
+        if (bin->left)  walk_expr(*bin->left,  bindings_seen, out);
+        if (bin->right) walk_expr(*bin->right, bindings_seen, out);
     }
     // CallExpr: recurse into args
     else if (const auto* call = std::get_if<mora::CallExpr>(&expr.data)) {
         for (const auto& arg : call->args) {
-            walk_expr(arg, tc, bindings_seen, out);
+            walk_expr(arg, bindings_seen, out);
         }
     }
     // Other expression kinds (IntLiteral, FloatLiteral, StringLiteral, SymbolExpr,
@@ -85,17 +82,15 @@ mora::SourceSpan fact_name_span(const mora::FactPattern& fp,
 }
 
 void walk_effect(const mora::Effect& eff,
-                 const mora::TypeChecker& tc,
                  std::unordered_map<uint32_t, mora::SourceSpan>& bindings_seen,
                  std::vector<SymbolEntry>& out) {
     for (const auto& arg : eff.args) {
-        walk_expr(arg, tc, bindings_seen, out);
+        walk_expr(arg, bindings_seen, out);
     }
 }
 
 void walk_clause(const mora::Clause& clause,
                  const mora::NameResolver& resolver,
-                 const mora::TypeChecker& tc,
                  const mora::StringPool& pool,
                  std::unordered_map<uint32_t, mora::SourceSpan>& bindings_seen,
                  std::vector<SymbolEntry>& out) {
@@ -118,11 +113,11 @@ void walk_clause(const mora::Clause& clause,
         out.push_back(e);
 
         for (const auto& arg : fp->args) {
-            walk_expr(arg, tc, bindings_seen, out);
+            walk_expr(arg, bindings_seen, out);
         }
     }
     else if (const auto* guard = std::get_if<mora::GuardClause>(&clause.data)) {
-        if (guard->expr) walk_expr(*guard->expr, tc, bindings_seen, out);
+        if (guard->expr) walk_expr(*guard->expr, bindings_seen, out);
     }
     else if (const auto* or_cl = std::get_if<mora::OrClause>(&clause.data)) {
         // OrClause has branches of FactPattern vectors.
@@ -140,23 +135,23 @@ void walk_clause(const mora::Clause& clause,
                 }
                 out.push_back(e);
                 for (const auto& arg : fp2.args) {
-                    walk_expr(arg, tc, bindings_seen, out);
+                    walk_expr(arg, bindings_seen, out);
                 }
             }
         }
     }
     else if (const auto* in_cl = std::get_if<mora::InClause>(&clause.data)) {
-        if (in_cl->variable) walk_expr(*in_cl->variable, tc, bindings_seen, out);
+        if (in_cl->variable) walk_expr(*in_cl->variable, bindings_seen, out);
         for (const auto& val : in_cl->values) {
-            walk_expr(val, tc, bindings_seen, out);
+            walk_expr(val, bindings_seen, out);
         }
     }
     else if (const auto* eff = std::get_if<mora::Effect>(&clause.data)) {
-        walk_effect(*eff, tc, bindings_seen, out);
+        walk_effect(*eff, bindings_seen, out);
     }
     else if (const auto* cond_eff = std::get_if<mora::ConditionalEffect>(&clause.data)) {
-        if (cond_eff->guard) walk_expr(*cond_eff->guard, tc, bindings_seen, out);
-        walk_effect(cond_eff->effect, tc, bindings_seen, out);
+        if (cond_eff->guard) walk_expr(*cond_eff->guard, bindings_seen, out);
+        walk_effect(cond_eff->effect, bindings_seen, out);
     }
 }
 
@@ -164,7 +159,6 @@ void walk_clause(const mora::Clause& clause,
 
 void SymbolIndex::build(const mora::Module& mod,
                         const mora::NameResolver& resolver,
-                        const mora::TypeChecker& tc,
                         const mora::StringPool& pool) {
     entries_.clear();
 
@@ -191,23 +185,23 @@ void SymbolIndex::build(const mora::Module& mod,
 
         // Head args: variables here are always bindings (first occurrences).
         for (const auto& arg : rule.head_args) {
-            walk_expr(arg, tc, bindings_seen, entries_);
+            walk_expr(arg, bindings_seen, entries_);
         }
 
         // Body clauses.
         for (const auto& cl : rule.body) {
-            walk_clause(cl, resolver, tc, pool, bindings_seen, entries_);
+            walk_clause(cl, resolver, pool, bindings_seen, entries_);
         }
 
         // Top-level effects.
         for (const auto& eff : rule.effects) {
-            walk_effect(eff, tc, bindings_seen, entries_);
+            walk_effect(eff, bindings_seen, entries_);
         }
 
         // Conditional effects.
         for (const auto& cond_eff : rule.conditional_effects) {
-            if (cond_eff.guard) walk_expr(*cond_eff.guard, tc, bindings_seen, entries_);
-            walk_effect(cond_eff.effect, tc, bindings_seen, entries_);
+            if (cond_eff.guard) walk_expr(*cond_eff.guard, bindings_seen, entries_);
+            walk_effect(cond_eff.effect, bindings_seen, entries_);
         }
     }
 }
