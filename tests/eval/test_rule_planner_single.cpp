@@ -1,0 +1,206 @@
+#include "mora/core/string_pool.h"
+#include "mora/data/value.h"
+#include "mora/diag/diagnostic.h"
+#include "mora/eval/evaluator.h"
+#include "mora/eval/fact_db.h"
+#include "mora/lexer/lexer.h"
+#include "mora/parser/parser.h"
+#include "mora/sema/name_resolver.h"
+
+#include <gtest/gtest.h>
+
+namespace {
+
+mora::Module parse_and_resolve(mora::StringPool& pool,
+                                mora::DiagBag& diags,
+                                const std::string& source)
+{
+    mora::Lexer lexer(source, "test.mora", pool, diags);
+    mora::Parser parser(lexer, pool, diags);
+    auto mod = parser.parse_module();
+    mora::NameResolver resolver(pool, diags);
+    resolver.resolve(mod);
+    return mod;
+}
+
+// ── Effect-rule: set gold_value(?npc, 100) :- npc(?npc) ─────────────────
+
+TEST(RulePlannerSingle, SetEffectRule_VectorizedPath) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    std::string const source =
+        "give_gold(NPC):\n"
+        "    form/npc(NPC)\n"
+        "    => set form/gold_value(NPC, 100)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0xABC)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    // Vectorized path should have fired for this single-clause set rule.
+    EXPECT_GE(eval.vectorized_rules_count(), 1u);
+
+    auto rel_set = pool.intern("skyrim/set");
+    const auto& tuples = db.get_relation(rel_set);
+    ASSERT_EQ(tuples.size(), 1u);
+    EXPECT_EQ(tuples[0][0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(tuples[0][0].as_formid(), 0xABCu);
+    EXPECT_EQ(pool.get(tuples[0][1].as_keyword()), "GoldValue");
+    EXPECT_EQ(tuples[0][2].as_int(), 100);
+}
+
+// ── Multiple input rows → multiple output rows ───────────────────────────
+
+TEST(RulePlannerSingle, SetEffectRule_MultipleInputRows) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    std::string const source =
+        "give_gold(NPC):\n"
+        "    form/npc(NPC)\n"
+        "    => set form/gold_value(NPC, 50)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    auto npc = pool.intern("npc");
+    db.add_fact(npc, mora::Tuple{mora::Value::make_formid(0x001)});
+    db.add_fact(npc, mora::Tuple{mora::Value::make_formid(0x002)});
+    db.add_fact(npc, mora::Tuple{mora::Value::make_formid(0x003)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    EXPECT_GE(eval.vectorized_rules_count(), 1u);
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    EXPECT_EQ(tuples.size(), 3u);
+}
+
+// ── Derived rule: derived(?x) :- src(?x) ────────────────────────────────
+
+TEST(RulePlannerSingle, DerivedRule_VectorizedPath) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    // Use a form/ namespace relation so name resolution works fine.
+    std::string const source =
+        "filtered(NPC):\n"
+        "    form/npc(NPC)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0xF00D)});
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0xBEEF)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    EXPECT_GE(eval.vectorized_rules_count(), 1u);
+
+    // The derived relation is "filtered" (the rule name).
+    // We can only check via the evaluator's internal derived_facts through a
+    // follow-on effect rule. Instead, verify indirectly: add a second module
+    // rule that reads derived facts. Here we settle for checking that at least
+    // 1 rule went vectorized (derived path).
+    // (Direct access to derived_facts_ is private; that's fine — the real
+    // test is the integration test with a follow-on effect rule in Plan 14.)
+}
+
+// ── Rule with a guard → fallback (vectorized_rules_count stays 0) ────────
+
+TEST(RulePlannerSingle, GuardClause_Fallback) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    // Rule has a guard expression (bare comparison in body) — the planner
+    // must decline and fall back to the tuple evaluator.
+    std::string const source =
+        "high_value(NPC, Level):\n"
+        "    form/npc(NPC)\n"
+        "    form/base_level(NPC, Level)\n"
+        "    Level >= 0\n"  // GuardClause expression
+        "    => set form/gold_value(NPC, 999)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0x1)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    // Multi-clause + guard → fallback.
+    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+}
+
+// ── Rule with multiple effects → fallback ───────────────────────────────
+
+TEST(RulePlannerSingle, MultipleEffects_Fallback) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    // Two effects in one rule → M1 planner declines (multiple effects).
+    std::string const source =
+        "dual_effect(NPC):\n"
+        "    form/npc(NPC)\n"
+        "    => set form/gold_value(NPC, 100)\n"
+        "    => set form/damage(NPC, 5)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0x2)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    // Multiple effects → fallback.
+    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+
+    // Tuple path still emits both effects.
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    EXPECT_EQ(tuples.size(), 2u);
+}
+
+// ── Rule with negated body clause → fallback ────────────────────────────
+
+TEST(RulePlannerSingle, NegatedPattern_Fallback) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+
+    // Negated pattern forces fallback.
+    std::string const source =
+        "no_weapon_npc(NPC):\n"
+        "    form/npc(NPC)\n"
+        "    not form/weapon(NPC)\n"
+        "    => set form/gold_value(NPC, 1)\n";
+
+    auto mod = parse_and_resolve(pool, diags, source);
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
+    mora::FactDB db(pool);
+    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0x3)});
+
+    mora::Evaluator eval(pool, diags, db);
+    eval.evaluate_module(mod, db);
+
+    // Multi-clause + negation → fallback.
+    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+}
+
+} // namespace

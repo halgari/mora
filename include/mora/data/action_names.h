@@ -5,7 +5,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "mora/eval/field_types.h"
+#include "mora/core/string_pool.h"
 #include <cstdint>
+#include <utility>
 
 namespace mora {
 
@@ -197,5 +199,13 @@ namespace gender {
     constexpr const char* kMale   = "male";
     constexpr const char* kFemale = "female";
 } // namespace gender
+
+// ── Free function: action name → (FieldId, FieldOp) ────────────────
+// Maps a fully-assembled action name (e.g. "set_gold_value") to the
+// corresponding (FieldId, FieldOp) pair. Returns {FieldId::Invalid,
+// FieldOp::Set} when the name is not recognised. Used by RulePlanner
+// and by Evaluator::action_to_field (which delegates here).
+std::pair<FieldId, FieldOp> action_to_field(StringId    action_id,
+                                             const StringPool& pool);
 
 } // namespace mora

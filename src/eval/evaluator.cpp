@@ -2,6 +2,7 @@
 #include "mora/core/type.h"
 #include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
+#include "mora/eval/rule_planner.h"
 #include "mora/model/builtin_fns.h"
 #include "mora/model/field_names.h"
 #include <algorithm>
@@ -124,6 +125,15 @@ std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) {
 }
 
 void Evaluator::evaluate_rule(const Rule& rule, FactDB& db) {
+    // Try the vectorized planner first.
+    auto plan = plan_rule(rule, db_, derived_facts_, pool_, symbol_formids_);
+    if (plan) {
+        ++vectorized_rules_count_;
+        if (plan->effect_op)  plan->effect_op->run(db);
+        if (plan->derived_op) plan->derived_op->run(derived_facts_);
+        return;
+    }
+    // Fallback: tuple-based match_clauses.
     Bindings bindings;
     auto order = compute_clause_order(rule);
     match_clauses(rule, order, 0, bindings, db);
@@ -631,51 +641,12 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
 }
 
 std::pair<FieldId, FieldOp> Evaluator::action_to_field(StringId action_id) const {
-    auto name = pool_.get(action_id);
-
-    // Scalar fields: match set_action from the model
-    for (size_t i = 0; i < model::kFieldCount; i++) {
-        if (model::kFields[i].set_action && name == model::kFields[i].set_action)
-            return {model::kFields[i].field_id, FieldOp::Set};
+    auto [field, op] = mora::action_to_field(action_id, pool_);
+    if (field == FieldId::Invalid) {
+        // Legacy fallback — unknown actions default to keyword add.
+        return {FieldId::Keywords, FieldOp::Add};
     }
-
-    // Form array fields: match add_action and remove_action from the model
-    for (size_t i = 0; i < model::kFormArrayCount; i++) {
-        auto& fa = model::kFormArrays[i];
-        if (fa.add_action && name == fa.add_action)
-            return {fa.field_id, FieldOp::Add};
-        if (fa.remove_action && name == fa.remove_action)
-            return {fa.field_id, FieldOp::Remove};
-    }
-
-    // Boolean flags: match set_action
-    for (size_t i = 0; i < model::kFlagCount; i++) {
-        if (model::kFlags[i].set_action && name == model::kFlags[i].set_action)
-            return {model::kFlags[i].field_id, FieldOp::Set};
-    }
-
-    // Scalar multiply (kept for backward compat during migration)
-    using namespace mora::action;
-    if (name == kMulDamage)        return {FieldId::Damage,       FieldOp::Multiply};
-    if (name == kMulArmorRating)   return {FieldId::ArmorRating,  FieldOp::Multiply};
-    if (name == kMulGoldValue)     return {FieldId::GoldValue,    FieldOp::Multiply};
-    if (name == kMulWeight)        return {FieldId::Weight,       FieldOp::Multiply};
-    if (name == kMulSpeed)         return {FieldId::Speed,        FieldOp::Multiply};
-    if (name == kMulCritPercent)   return {FieldId::CritPercent,  FieldOp::Multiply};
-
-    // Leveled list operations (special, not in scalar model)
-    if (name == kAddToLeveledList)      return {FieldId::LeveledEntries, FieldOp::Add};
-    if (name == kRemoveFromLeveledList) return {FieldId::LeveledEntries, FieldOp::Remove};
-    if (name == kClearLeveledList)      return {FieldId::LeveledEntries, FieldOp::Set};
-
-    // Legacy: add_item, add_lev_spell, set_game_setting, clear_all
-    if (name == kAddItem)         return {FieldId::Items,       FieldOp::Add};
-    if (name == kAddLevSpell)     return {FieldId::LevSpells,   FieldOp::Add};
-    if (name == kSetGameSetting)  return {FieldId::GoldValue,   FieldOp::Set};
-    if (name == kClearAll)        return {FieldId::ClearAll,    FieldOp::Set};
-
-    // Default fallback
-    return {FieldId::Keywords, FieldOp::Add};
+    return {field, op};
 }
 
 } // namespace mora

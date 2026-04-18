@@ -25,6 +25,11 @@ public:
     void evaluate_module(const Module& mod, FactDB& out_facts,
                          ProgressCallback progress = nullptr);
 
+    // Returns the number of rules that went through the vectorized path
+    // (as opposed to the tuple-based match_clauses fallback). Useful for
+    // verifying coverage in tests. Removed once the fallback is deleted.
+    size_t vectorized_rules_count() const { return vectorized_rules_count_; }
+
 private:
     void evaluate_rule(const Rule& rule, FactDB& db);
     static std::vector<size_t> compute_clause_order(const Rule& rule) ;
@@ -52,6 +57,9 @@ private:
     StringId effect_rel_remove_;
     StringId effect_rel_multiply_;
     bool     effect_rels_configured_ = false;
+
+    // Side-channel counter: how many rules ran via the vectorized path.
+    size_t vectorized_rules_count_ = 0;
 };
 
 } // namespace mora

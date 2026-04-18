@@ -59,6 +59,9 @@ enum class FieldId : uint16_t {
     AutoCalcStats    = 71,
     Essential        = 72,
     Protected        = 73,
+
+    // Sentinel — returned by action_to_field() when the action name is unknown.
+    Invalid          = 0xFF,
 };
 
 // ---------------------------------------------------------------------------
