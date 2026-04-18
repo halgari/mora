@@ -129,7 +129,7 @@ void Evaluator::evaluate_rule(const Rule& rule, FactDB& db) {
     auto plan = plan_rule(rule, db_, derived_facts_, pool_, symbol_formids_);
     if (plan) {
         ++vectorized_rules_count_;
-        if (plan->effect_op)  plan->effect_op->run(db);
+        for (auto& op : plan->effect_ops) op->run(db);
         if (plan->derived_op) plan->derived_op->run(derived_facts_);
         return;
     }

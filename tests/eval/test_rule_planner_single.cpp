@@ -145,13 +145,13 @@ TEST(RulePlannerSingle, GuardClause_Fallback) {
     EXPECT_EQ(eval.vectorized_rules_count(), 0u);
 }
 
-// ── Rule with multiple effects → fallback ───────────────────────────────
+// ── Rule with multiple effects → vectorized (M1 re-scan strategy) ──────────
 
-TEST(RulePlannerSingle, MultipleEffects_Fallback) {
+TEST(RulePlannerSingle, MultipleEffects_Vectorized) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Two effects in one rule → M1 planner declines (multiple effects).
+    // Two effects in one rule → M1 planner now handles via re-scan strategy.
     std::string const source =
         "dual_effect(NPC):\n"
         "    form/npc(NPC)\n"
@@ -167,10 +167,10 @@ TEST(RulePlannerSingle, MultipleEffects_Fallback) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Multiple effects → fallback.
-    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+    // Multiple effects → vectorized path now fires.
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
-    // Tuple path still emits both effects.
+    // Vectorized path emits both effects.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     EXPECT_EQ(tuples.size(), 2u);
 }

@@ -13,12 +13,11 @@
 namespace mora {
 
 // Outcome of attempting to build a vectorized plan for a rule.
-// Either `effect_op` or `derived_op` is populated (never both).
-// For the M1 MVP we only support ONE effect per rule; rules with
-// multiple effects force fallback.
+// Either `effect_ops` (non-empty) or `derived_op` is populated (never both).
+// Each effect gets its own fresh operator tree (re-scan strategy).
 struct RulePlan {
-    std::unique_ptr<EffectAppendOp>  effect_op;
-    std::unique_ptr<DerivedAppendOp> derived_op;
+    std::vector<std::unique_ptr<EffectAppendOp>> effect_ops;
+    std::unique_ptr<DerivedAppendOp>             derived_op;
 };
 
 // Returns RulePlan if the rule is supported in MVP; otherwise nullopt
