@@ -35,6 +35,33 @@ if not is_plat("windows") then
 end
 
 -- ─────────────────────────────────────────────────────────────
+-- MoraTestHarness.dll — integration test plugin. TCP listener at
+-- localhost:9742; JSONL dumps of weapons / NPCs / armor / leveled
+-- lists by command. Ported verbatim from master; no mora_runtime
+-- dep. Windows-only.
+-- ─────────────────────────────────────────────────────────────
+if is_plat("windows") then
+    target("mora_test_harness")
+        set_kind("shared")
+        set_filename("MoraTestHarness.dll")
+        set_languages("c++23")
+        add_deps("commonlibsse_ng", "spdlog_rt")
+        set_warnings("none")
+
+        add_files("src/harness/*.cpp",
+                  "src/rt/form_ops.cpp")
+        add_includedirs("include", "../../include")
+
+        add_defines("SKYRIMSE", "MORA_WITH_COMMONLIB")
+        add_defines("WIN32", "_WINDOWS", "NOMINMAX")
+        add_cxflags("/utf-8", "/FISKSE/Impl/PCH.h", {force = true})
+
+        -- Winsock for the TCP listener
+        add_syslinks("ws2_32")
+    target_end()
+end
+
+-- ─────────────────────────────────────────────────────────────
 -- MoraRuntime.dll — SKSE plugin. Loads the flat-binary snapshot at
 -- Skyrim's DataLoaded event and applies every effect fact via
 -- CommonLibSSE-NG. Windows-only.
