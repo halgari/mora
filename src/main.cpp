@@ -19,7 +19,9 @@
 #include "mora_skyrim_compile/register.h"
 #include "mora_parquet/register.h"
 #include "mora_skyrim_runtime/runtime.h"
+#include "mora_skyrim_runtime/runtime_snapshot.h"
 #include "mora_skyrim_runtime/game_api.h"
+#include "mora_skyrim_runtime/register.h"
 #include "mora_skyrim_compile/esp/load_order.h"
 #include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
@@ -339,6 +341,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::ext::ExtensionContext ext_ctx;
     mora_skyrim_compile::register_skyrim(ext_ctx);
     mora_parquet::register_parquet(ext_ctx);
+    mora_skyrim_runtime::register_skyrim_runtime(ext_ctx);
 
     if (!data_dir.empty()) {
         mora::ext::LoadCtx load_ctx{
@@ -468,12 +471,26 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     return 0;
 }
 
-static int cmd_apply(const std::string& parquet_dir) {
+static int cmd_apply(const std::string& input_dir) {
+    namespace fs = std::filesystem;
     mora::StringPool pool;
     mora::DiagBag diags;
     mora_skyrim_runtime::MockGameAPI api;
-    auto count = mora_skyrim_runtime::runtime_apply(
-        std::filesystem::path(parquet_dir), api, pool, diags);
+    size_t count = 0;
+
+    fs::path const dir(input_dir);
+    fs::path const snap_path = dir / "mora_runtime.bin";
+
+    if (fs::exists(snap_path)) {
+        // Flat-binary snapshot — what the SKSE runtime DLL reads.
+        auto snap = mora_skyrim_runtime::read_snapshot(snap_path, diags);
+        if (snap) {
+            count = mora_skyrim_runtime::apply_snapshot(*snap, api, pool);
+        }
+    } else {
+        // Parquet-directory fallback — what `mora apply` originally read.
+        count = mora_skyrim_runtime::runtime_apply(dir, api, pool, diags);
+    }
 
     if (diags.has_errors()) {
         mora::DiagRenderer renderer(/*use_color*/true);

@@ -1,0 +1,9 @@
+namespace test.leveled_list_setters
+
+requires mod("Skyrim.esm")
+
+# Set the chance-of-nothing percent on a well-known populated LVLI
+# (LItemEnchWeaponBowBlacksmith, FormID 0x00000EDE).
+skyrim/set(L, :ChanceNone, 42):
+    form/leveled_list(L)
+    L == @LItemEnchWeaponBowBlacksmith

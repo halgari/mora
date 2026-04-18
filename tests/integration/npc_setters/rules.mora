@@ -1,0 +1,42 @@
+namespace test.npc_setters
+
+requires mod("Skyrim.esm")
+
+# Every in-scope NPC setter verb applied to Nazeem (EditorID `Nazeem`,
+# FormID 0x00013BBF). Counterpart to tests/getters/test_npc_getters.cpp.
+
+skyrim/set(N, :Name, "Modified Nazeem"):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :BaseLevel, 42):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :CalcLevelMin, 10):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :CalcLevelMax, 60):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :SpeedMult, 150):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Keyword, @ActorTypeNPC):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Spell, @Flames):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Perk, @Juggernaut00):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Faction, @PlayerFaction):
+    form/npc(N)
+    N == @Nazeem

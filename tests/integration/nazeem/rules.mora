@@ -1,0 +1,9 @@
+namespace test.nazeem
+
+requires mod("Skyrim.esm")
+
+# Every NPC's full name becomes "Nazeem".
+# Exercises static patching of a scalar<String> field end-to-end (set
+# form/name — backed by TESFullName → BSFixedString at the runtime).
+skyrim/set(NPC, :Name, "Nazeem"):
+    form/npc(NPC)

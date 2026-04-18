@@ -1,0 +1,8 @@
+namespace test.weapon_damage
+
+requires mod("Skyrim.esm")
+
+# Every weapon in the load order has its base damage set to 99.
+# Exercises static patching of a scalar<Int> field end-to-end.
+skyrim/set(W, :Damage, 99):
+    form/weapon(W)

@@ -1,0 +1,30 @@
+namespace test.armor_setters
+
+requires mod("Skyrim.esm")
+
+# Every in-scope armor setter applied to Iron Helmet (EditorID
+# `ArmorIronHelmet`, FormID 0x00012E4D).
+
+skyrim/set(A, :GoldValue, 777):
+    form/armor(A)
+    A == @ArmorIronHelmet
+
+skyrim/set(A, :Weight, 8.25):
+    form/armor(A)
+    A == @ArmorIronHelmet
+
+skyrim/set(A, :Name, "Modified Iron Helmet"):
+    form/armor(A)
+    A == @ArmorIronHelmet
+
+# Int literal: the runtime's apply_armor_field writes the value as
+# uint32_t directly. A Float-valued patch (as `2500.0` would produce)
+# gets its IEEE-754 bits truncated to zero when the payload is
+# reinterpreted. Keep the Int literal.
+skyrim/set(A, :ArmorRating, 2500):
+    form/armor(A)
+    A == @ArmorIronHelmet
+
+skyrim/add(A, :Keyword, @MagicDisallowEnchanting):
+    form/armor(A)
+    A == @ArmorIronHelmet

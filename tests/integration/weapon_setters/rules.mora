@@ -1,0 +1,36 @@
+namespace test.weapon_setters
+
+requires mod("Skyrim.esm")
+
+# Exercises every in-scope weapon setter verb, scoped to one well-known
+# vanilla form — Iron Sword (EditorID `IronSword`, FormID 0x00012EB7).
+# Each effect picks a distinct expected value so check.sh can assert each
+# field independently against the harness's weapons.jsonl dump.
+
+skyrim/set(W, :Damage, 42):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/set(W, :GoldValue, 999):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/set(W, :Weight, 3.5):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/set(W, :Name, "Modified Iron Sword"):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/set(W, :Speed, 2.0):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/set(W, :Reach, 1.25):
+    form/weapon(W)
+    W == @IronSword
+
+skyrim/add(W, :Keyword, @MagicDisallowEnchanting):
+    form/weapon(W)
+    W == @IronSword
