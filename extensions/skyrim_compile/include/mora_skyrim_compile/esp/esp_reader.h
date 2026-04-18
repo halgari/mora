@@ -1,10 +1,10 @@
 #pragma once
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
-#include "mora/esp/load_order.h"
-#include "mora/esp/mmap_file.h"
-#include "mora/esp/override_filter.h"
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/mmap_file.h"
+#include "mora_skyrim_compile/esp/override_filter.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include "mora/core/string_pool.h"
 #include "mora/diag/diagnostic.h"
 #include <filesystem>

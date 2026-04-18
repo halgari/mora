@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "mora/esp/mmap_file.h"
+#include "mora_skyrim_compile/esp/mmap_file.h"
 #include <fstream>
 #include <filesystem>
 

@@ -18,7 +18,7 @@
 #include "mora/data/schema_registry.h"
 #include "mora/data/value.h"
 #include "mora/diag/diagnostic.h"
-#include "mora/esp/esp_reader.h"
+#include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/eval/fact_db.h"
 
 #include <cstdio>

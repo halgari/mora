@@ -1,6 +1,6 @@
 #pragma once
-#include "mora/esp/load_order.h"
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include <cstdint>
 #include <unordered_map>
 #include <vector>

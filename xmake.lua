@@ -160,7 +160,9 @@ target("mora_lib")
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
               "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
-              "src/data/*.cpp", "src/esp/*.cpp",
+              "src/data/chunk_pool.cpp", "src/data/columnar_relation.cpp",
+              "src/data/indexed_relation.cpp", "src/data/schema_registry.cpp",
+              "src/data/value.cpp",
               "src/model/*.cpp",
               "src/lsp/*.cpp", "src/lsp/handlers/*.cpp")
     if is_plat("windows") then
@@ -210,7 +212,7 @@ includes("extensions/synthetic/xmake.lua")
 target("mora")
     set_kind("binary")
     add_files("src/main.cpp")
-    add_deps("mora_lib")
+    add_deps("mora_lib", "mora_skyrim_compile")
     -- CLI11 is header-only; bring in its multi-file include tree.
     -- Submodule pinned at v2.6.2 under extern/CLI11.
     add_includedirs("extern/CLI11/include")

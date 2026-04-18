@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "mora/esp/subrecord_reader.h"
-#include "mora/esp/mmap_file.h"
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/subrecord_reader.h"
+#include "mora_skyrim_compile/esp/mmap_file.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include <filesystem>
 
 TEST(SubrecordReaderTest, ParseSyntheticRecord) {

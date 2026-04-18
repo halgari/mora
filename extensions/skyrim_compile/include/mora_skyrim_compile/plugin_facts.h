@@ -1,7 +1,7 @@
 #pragma once
 #include "mora/core/string_pool.h"
-#include "mora/esp/load_order.h"
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include <vector>
 
 namespace mora {

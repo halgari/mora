@@ -20,9 +20,9 @@
 #include "mora/core/digest.h"
 #include <algorithm>
 #include "mora/core/string_utils.h"
-#include "mora/esp/load_order.h"
-#include "mora/esp/esp_reader.h"
-#include "mora/data/plugin_facts.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/esp_reader.h"
+#include "mora_skyrim_compile/plugin_facts.h"
 #include "mora/data/schema_registry.h"
 
 #include <CLI/CLI.hpp>

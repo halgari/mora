@@ -1,4 +1,4 @@
-#include "mora/data/plugin_facts.h"
+#include "mora_skyrim_compile/plugin_facts.h"
 #include "mora/core/string_utils.h"
 #include "mora/data/value.h"
 #include "mora/eval/fact_db.h"

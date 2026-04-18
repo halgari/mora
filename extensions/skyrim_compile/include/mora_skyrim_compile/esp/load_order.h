@@ -1,5 +1,5 @@
 #pragma once
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include <cstdint>
 #include <filesystem>
 #include <string>

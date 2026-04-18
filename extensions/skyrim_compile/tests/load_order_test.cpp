@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "mora/esp/load_order.h"
-#include "mora/esp/plugin_index.h"
-#include "mora/esp/record_types.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/record_types.h"
 #include <cstring>
 #include <filesystem>
 #include <fstream>

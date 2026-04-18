@@ -1,5 +1,5 @@
 #pragma once
-#include "mora/esp/record_types.h"
+#include "mora_skyrim_compile/esp/record_types.h"
 #include <cstdint>
 #include <span>
 #include <string_view>

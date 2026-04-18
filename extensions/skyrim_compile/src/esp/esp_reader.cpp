@@ -1,7 +1,7 @@
-#include "mora/esp/esp_reader.h"
+#include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/core/string_utils.h"
-#include "mora/esp/subrecord_reader.h"
-#include "mora/esp/record_types.h"
+#include "mora_skyrim_compile/esp/subrecord_reader.h"
+#include "mora_skyrim_compile/esp/record_types.h"
 #include <cstring>
 #include <algorithm>
 

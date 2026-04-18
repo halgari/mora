@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
-#include "mora/data/plugin_facts.h"
+#include "mora_skyrim_compile/plugin_facts.h"
 #include "mora/data/schema_registry.h"
 #include "mora/data/value.h"
-#include "mora/esp/load_order.h"
-#include "mora/esp/plugin_index.h"
-#include "mora/esp/record_types.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/record_types.h"
 #include "mora/eval/fact_db.h"
 
 static mora::PluginInfo make_info(const std::string& filename,

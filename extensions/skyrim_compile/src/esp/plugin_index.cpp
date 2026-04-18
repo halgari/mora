@@ -1,4 +1,4 @@
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include <cstring>
 #include <stdexcept>
 #include <string>

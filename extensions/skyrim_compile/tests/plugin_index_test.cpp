@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "mora/esp/plugin_index.h"
+#include "mora_skyrim_compile/esp/plugin_index.h"
 #include "skyrim_fixture.h"
 #include <filesystem>
 #include <string>

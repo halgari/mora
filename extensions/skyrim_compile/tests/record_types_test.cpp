@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "mora/esp/record_types.h"
-#include "mora/esp/mmap_file.h"
+#include "mora_skyrim_compile/esp/record_types.h"
+#include "mora_skyrim_compile/esp/mmap_file.h"
 #include <filesystem>
 
 TEST(RecordTypesTest, RecordTagComparison) {

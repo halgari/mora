@@ -1,6 +1,6 @@
 #pragma once
-#include "mora/esp/mmap_file.h"
-#include "mora/esp/record_types.h"
+#include "mora_skyrim_compile/esp/mmap_file.h"
+#include "mora_skyrim_compile/esp/record_types.h"
 #include <cstdint>
 #include <string>
 #include <unordered_map>
