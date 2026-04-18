@@ -29,7 +29,7 @@ TEST(RegisterSkyrim, MirrorsSchemasIntoExtensionContext) {
     EXPECT_NE(ctx.find_schema("plugin_exists"), nullptr);
 }
 
-TEST(RegisterSkyrim, RegistersExactlyThreeOutputRelations) {
+TEST(RegisterSkyrim, RegistersExactlyFourOutputRelations) {
     mora::ext::ExtensionContext ctx;
     mora_skyrim_compile::register_skyrim(ctx);
 
@@ -40,7 +40,8 @@ TEST(RegisterSkyrim, RegistersExactlyThreeOutputRelations) {
     std::sort(outputs.begin(), outputs.end());
 
     EXPECT_EQ(outputs,
-              (std::vector<std::string>{"skyrim/add", "skyrim/remove", "skyrim/set"}));
+              (std::vector<std::string>{"skyrim/add", "skyrim/multiply",
+                                         "skyrim/remove", "skyrim/set"}));
 }
 
 } // namespace

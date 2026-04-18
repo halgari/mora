@@ -17,6 +17,8 @@
 #include "mora/emit/patch_table.h"
 #include "mora/emit/arrangement_emit.h"
 #include "mora/model/relations.h"
+#include "mora/model/field_names.h"
+#include "mora/eval/effect_facts.h"
 #include "mora/core/digest.h"
 #include <algorithm>
 #include <unordered_map>
@@ -154,46 +156,7 @@ static std::string format_bytes(std::uintmax_t bytes) {
 // (address library lookup removed — no longer needed without LLVM codegen)
 
 static std::string field_name(mora::FieldId id) {
-    switch (id) {
-        case mora::FieldId::Name:            return "Name";
-        case mora::FieldId::Damage:          return "Damage";
-        case mora::FieldId::ArmorRating:     return "ArmorRating";
-        case mora::FieldId::GoldValue:       return "GoldValue";
-        case mora::FieldId::Weight:          return "Weight";
-        case mora::FieldId::Keywords:        return "Keywords";
-        case mora::FieldId::Factions:        return "Factions";
-        case mora::FieldId::Perks:           return "Perks";
-        case mora::FieldId::Spells:          return "Spells";
-        case mora::FieldId::Items:           return "Items";
-        case mora::FieldId::Level:           return "Level";
-        case mora::FieldId::Race:            return "Race";
-        case mora::FieldId::EditorId:        return "EditorId";
-        case mora::FieldId::Shouts:          return "Shouts";
-        case mora::FieldId::LevSpells:       return "LevSpells";
-        case mora::FieldId::Speed:           return "Speed";
-        case mora::FieldId::Reach:           return "Reach";
-        case mora::FieldId::Stagger:         return "Stagger";
-        case mora::FieldId::RangeMin:        return "RangeMin";
-        case mora::FieldId::RangeMax:        return "RangeMax";
-        case mora::FieldId::CritDamage:      return "CritDamage";
-        case mora::FieldId::CritPercent:     return "CritPercent";
-        case mora::FieldId::Health:          return "Health";
-        case mora::FieldId::CalcLevelMin:    return "CalcLevelMin";
-        case mora::FieldId::CalcLevelMax:    return "CalcLevelMax";
-        case mora::FieldId::SpeedMult:       return "SpeedMult";
-        case mora::FieldId::RaceForm:        return "Race(form)";
-        case mora::FieldId::ClassForm:       return "Class";
-        case mora::FieldId::SkinForm:        return "Skin";
-        case mora::FieldId::OutfitForm:      return "Outfit";
-        case mora::FieldId::EnchantmentForm: return "Enchantment";
-        case mora::FieldId::VoiceTypeForm:   return "VoiceType";
-        case mora::FieldId::LeveledEntries:  return "LeveledEntries";
-        case mora::FieldId::ClearAll:        return "ClearAll";
-        case mora::FieldId::AutoCalcStats:   return "AutoCalcStats";
-        case mora::FieldId::Essential:       return "Essential";
-        case mora::FieldId::Protected:       return "Protected";
-        default:                             return fmt::format("Field({})", static_cast<uint16_t>(id));
-    }
+    return mora::field_id_name(id);
 }
 
 static std::string op_prefix(mora::FieldOp op) {
@@ -629,6 +592,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::PatchBuffer patch_buf;
     std::vector<uint8_t> string_table;
     evaluate_mora_rules(cr, evaluator, patch_buf, string_table, out);
+
+    mora::populate_effect_facts(patch_buf, db, cr.pool);
 
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 

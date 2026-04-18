@@ -57,7 +57,7 @@ void register_skyrim(mora::ext::ExtensionContext& ctx) {
     // parquet file for each. Once the evaluator starts producing
     // effect facts (spec step 11), these files will carry the data
     // that mora_patches.bin carries today.
-    for (std::string_view effect : {"skyrim/set", "skyrim/add", "skyrim/remove"}) {
+    for (std::string_view effect : {"skyrim/set", "skyrim/add", "skyrim/remove", "skyrim/multiply"}) {
         ctx.register_relation(mora::ext::RelationSchema{
             .name      = std::string(effect),
             .columns   = {
