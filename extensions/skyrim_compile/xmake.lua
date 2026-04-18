@@ -4,6 +4,7 @@ target("mora_skyrim_compile")
     add_includedirs("../../include", {public = false})
     add_files("src/register.cpp",
               "src/plugin_facts.cpp",
+              "src/esp_data_source.cpp",
               "src/esp/*.cpp")
     if is_plat("windows") then
         add_deps("zlib")

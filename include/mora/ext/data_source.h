@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace mora {
@@ -39,6 +40,18 @@ struct LoadCtx {
     // says the program references. Loaders MAY use this to skip work
     // for relations nobody asked for.
     std::unordered_set<uint32_t> needed_relations;
+
+    // Option B output: if non-null, load() populates this map with
+    // EditorID → FormID entries accumulated during extraction. The
+    // caller (main.cpp) feeds the map into the evaluator after
+    // load_required() returns. Null = caller doesn't need editor IDs.
+    std::unordered_map<std::string, uint32_t>* editor_ids_out = nullptr;
+
+    // Option B output: if non-null, load() inserts every plugin
+    // filename it loads into this set. The caller uses it to build the
+    // load-order manifest for the patch-file digest and for
+    // `requires mod(...)` validation. Null = caller doesn't need the set.
+    std::unordered_set<std::string>* loaded_plugins_out = nullptr;
 };
 
 // A DataSource produces tuples into a FactDB. Loaders are registered
@@ -53,9 +66,12 @@ public:
     virtual std::string_view name() const = 0;
 
     // Which relations this source can fill. Returned as a span of
-    // interned StringId values. The core loader intersects this with
-    // LoadCtx::needed_relations to decide whether to invoke load().
-    virtual std::span<const uint32_t> provides() const = 0;
+    // relation names (pool-agnostic). ExtensionContext::load_required
+    // interns each name into ctx.pool at dispatch time and intersects
+    // the resulting ids with LoadCtx::needed_relations. Returning names
+    // rather than pool-specific ids lets a DataSource be registered
+    // once at startup and dispatched against an arbitrary per-run pool.
+    virtual std::span<const std::string> provides() const = 0;
 
     // Do the work: load facts into `out`. Errors report through
     // ctx.diags; returning doesn't imply success — check diags.

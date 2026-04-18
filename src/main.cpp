@@ -20,9 +20,10 @@
 #include "mora/core/digest.h"
 #include <algorithm>
 #include "mora/core/string_utils.h"
+#include "mora/ext/extension.h"
+#include "mora_skyrim_compile/register.h"
 #include "mora_skyrim_compile/esp/load_order.h"
 #include "mora_skyrim_compile/esp/esp_reader.h"
-#include "mora_skyrim_compile/plugin_facts.h"
 #include "mora/data/schema_registry.h"
 
 #include <CLI/CLI.hpp>
@@ -31,8 +32,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <future>
-#include <thread>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -365,152 +364,8 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
     }
 }
 
-// Load ESP plugin data into the FactDB in three phases so we can
-// apply Skyrim's whole-record override semantics without scanning
-// each plugin's GRUPs twice:
-//
-//   (1) Parse every plugin's TES4 header + record index in parallel,
-//       caching MmapFile + PluginInfo.
-//   (2) Walk the cached PluginInfos sequentially in load order,
-//       upserting `OverrideFilter::winning[gfid] = load_idx`.
-//   (3) Extract facts in parallel, with each reader gated by the
-//       filter — records whose global FormID lost the override race
-//       emit nothing, matching what Skyrim's engine would present.
-static void load_esp_data(
-    CheckResult& cr, mora::FactDB& db, mora::Evaluator& evaluator,
-    const std::string& data_dir, const std::string& plugins_txt,
-    mora::Output& out,
-    mora::EditorIdMap& editor_id_map, mora::PluginSet& loaded_plugins)
-{
-    out.phase_start("Loading ESPs");
-
-    mora::SchemaRegistry schema(cr.pool);
-    schema.register_defaults();
-    schema.configure_fact_db(db);
-
-    mora::LoadOrder lo = !plugins_txt.empty()
-        ? mora::LoadOrder::from_plugins_txt(plugins_txt, data_dir)
-        : mora::LoadOrder::from_directory(data_dir);
-    for (auto& p : lo.plugins) {
-        loaded_plugins.insert(p.filename().string());
-    }
-    if (!plugins_txt.empty()) {
-        mora::log::info("  Load order:    {} ({} plugins)\n", plugins_txt, lo.plugins.size());
-    }
-
-    // Surface any plugins.txt entries that weren't found on disk —
-    // otherwise a `requires mod("X")` failure downstream would blame
-    // the missing mod when the real cause is a typo / deleted file.
-    for (auto& name : lo.missing) {
-        cr.diags.warning(
-            "plugin-missing",
-            fmt::format("plugins.txt entry \"{}\" has no matching file under {} "
-                        "— skipped (case-insensitive search tried)",
-                        name, data_dir),
-            mora::SourceSpan{}, "");
-    }
-    if (!lo.missing.empty()) {
-        mora::log::warn("  {} plugin(s) in plugins.txt couldn't be resolved on disk; see warnings\n",
-            lo.missing.size());
-    }
-
-    auto runtime_index = lo.runtime_index_map();
-    auto needed = collect_used_relations(cr.modules);
-
-    // ── Phase 1: parallel parse ────────────────────────────────────
-    // Cache (MmapFile, PluginInfo) for every plugin so Phase 3 can
-    // emit facts without re-walking GRUPs.
-    struct Parsed {
-        mora::MmapFile file;
-        mora::PluginInfo info;
-        uint32_t load_idx = 0;  // scalar synthetic idx for the filter
-    };
-    auto parse_one = [](const std::filesystem::path& path) {
-        mora::MmapFile f(path.string());
-        auto info = mora::build_plugin_index(f, path.filename().string());
-        return Parsed{std::move(f), std::move(info), 0};
-    };
-    std::vector<std::future<Parsed>> parse_futures;
-    parse_futures.reserve(lo.plugins.size());
-    for (auto& p : lo.plugins) {
-        parse_futures.push_back(std::async(std::launch::async, parse_one, p));
-    }
-    std::vector<Parsed> parsed;
-    parsed.reserve(lo.plugins.size());
-    for (auto& fut : parse_futures) {
-        parsed.push_back(fut.get());
-    }
-    // Assign a scalar load idx per plugin. We hand the override
-    // filter a monotonic index (position in lo.plugins) rather than
-    // the rtmap high-byte because two light plugins can share a high
-    // byte (0xFE) and we still need to order them against each other.
-    for (size_t i = 0; i < parsed.size(); i++) {
-        parsed[i].load_idx = static_cast<uint32_t>(i);
-    }
-
-    // ── Phase 2: override filter ───────────────────────────────────
-    std::vector<mora::PluginInfo> infos;
-    std::vector<uint32_t> load_idxs;
-    infos.reserve(parsed.size());
-    load_idxs.reserve(parsed.size());
-    for (auto& p : parsed) {
-        infos.push_back(p.info);
-        load_idxs.push_back(p.load_idx);
-    }
-    auto override_filter = mora::OverrideFilter::build(infos, runtime_index, load_idxs);
-
-    // Plugin-level facts (exists/load_index/is_master/is_light/
-    // master_of/version/extension) land in the shared FactDB before
-    // the per-plugin fact extraction kicks off. They're shared
-    // across rules regardless of which mods a rule touches.
-    mora::populate_plugin_facts(db, cr.pool, lo, infos, runtime_index);
-
-    // ── Phase 3: parallel fact extraction ──────────────────────────
-    auto hw = std::max(1U, std::thread::hardware_concurrency());
-    size_t const batch_size = (parsed.size() + hw - 1) / hw;
-
-    struct BatchResult {
-        mora::FactDB local_db;
-        std::unordered_map<std::string, uint32_t> editor_ids;
-        BatchResult(mora::StringPool& p) : local_db(p) {}
-    };
-
-    std::vector<std::future<BatchResult>> extract_futures;
-    for (size_t i = 0; i < parsed.size(); i += batch_size) {
-        size_t const end = std::min(i + batch_size, parsed.size());
-        extract_futures.push_back(std::async(std::launch::async,
-            [&, i, end]() -> BatchResult {
-                BatchResult result(cr.pool);
-                schema.configure_fact_db(result.local_db);
-                for (size_t k = i; k < end; k++) {
-                    mora::EspReader reader(cr.pool, cr.diags, schema);
-                    reader.set_needed_relations(needed);
-                    reader.set_runtime_index_map(&runtime_index);
-                    reader.set_override_filter(&override_filter, parsed[k].load_idx);
-                    reader.extract_from(parsed[k].file, parsed[k].info, result.local_db);
-                    for (auto& [edid, fid] : reader.editor_id_map()) {
-                        result.editor_ids[edid] = fid;
-                    }
-                }
-                return result;
-            }));
-    }
-
-    for (auto& fut : extract_futures) {
-        auto result = fut.get();
-        db.merge_from(result.local_db);
-        for (auto& [edid, formid] : result.editor_ids) {
-            editor_id_map[edid] = formid;
-        }
-    }
-
-    for (auto& [edid, formid] : editor_id_map) {
-        evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
-    }
-
-    out.phase_done(fmt::format("{} plugins, {} relations \xe2\x86\x92 {} facts",
-        parsed.size(), needed.size(), db.fact_count()));
-}
+// (ESP loading is now handled by mora_skyrim_compile::SkyrimEspDataSource
+//  via ExtensionContext::load_required — see cmd_compile below.)
 
 // Evaluate .mora rules via Datalog and merge results into PatchBuffer.
 // Also produces a StringTable section (for String-valued patches) that the
@@ -699,7 +554,26 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::PluginSet loaded_plugins;
 
     if (!data_dir.empty()) {
-        load_esp_data(cr, db, evaluator, data_dir, plugins_txt, out, editor_id_map, loaded_plugins);
+        mora::ext::ExtensionContext ext_ctx;
+        mora_skyrim_compile::register_skyrim(ext_ctx);
+
+        mora::ext::LoadCtx load_ctx{
+            cr.pool,
+            cr.diags,
+            /*data_dir*/          fs::path(data_dir),
+            /*plugins_txt*/       fs::path(plugins_txt),
+            /*needed_relations*/  collect_used_relations(cr.modules),
+            /*editor_ids_out*/    &editor_id_map,
+            /*loaded_plugins_out*/&loaded_plugins,
+        };
+
+        ext_ctx.load_required(load_ctx, db);
+
+        // Feed editor IDs accumulated by SkyrimEspDataSource into the
+        // evaluator so symbol literals in .mora files resolve to FormIDs.
+        for (auto& [edid, formid] : editor_id_map) {
+            evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
+        }
     }
 
     // Enforce `requires mod("X")` — a module whose declared

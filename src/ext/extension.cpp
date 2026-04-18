@@ -24,23 +24,27 @@ ExtensionContext::data_sources() const {
 std::size_t ExtensionContext::load_required(LoadCtx& ctx, FactDB& out) const {
     // First pass: find the set of sources whose provides() intersects
     // needed_relations, and detect collisions where two or more sources
-    // claim the same relation. Spec: collisions produce a diagnostic
+    // claim the same relation. Each DataSource returns relation NAMES
+    // (pool-agnostic strings); we intern them into ctx.pool at dispatch
+    // time so the resulting ids match the pool that sema used to build
+    // needed_relations. Spec: collisions produce a diagnostic
     // (--prefer-source disambiguation lands later); load() isn't
     // invoked if any collision was reported.
     std::vector<DataSource*> matching;
     std::unordered_map<uint32_t, DataSource*> owner;
     for (auto& src : impl_->sources) {
         bool touches_needed = false;
-        for (uint32_t rel : src->provides()) {
+        for (const auto& rel_name : src->provides()) {
+            auto rel = ctx.pool.intern(rel_name).index;
             if (!ctx.needed_relations.contains(rel)) continue;
             touches_needed = true;
             auto [it, inserted] = owner.try_emplace(rel, src.get());
             if (!inserted && it->second != src.get()) {
                 ctx.diags.error("data-source-conflict",
-                    fmt::format("relation (id {}) is provided by both "
+                    fmt::format("relation '{}' is provided by both "
                                 "data sources '{}' and '{}'; disambiguate "
                                 "with --prefer-source",
-                                rel, it->second->name(), src->name()),
+                                rel_name, it->second->name(), src->name()),
                     mora::SourceSpan{}, "");
             }
         }

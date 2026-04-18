@@ -8,14 +8,14 @@ namespace {
 class StubSource : public mora::ext::DataSource {
 public:
     StubSource(std::string_view name,
-               std::vector<uint32_t> provides,
+               std::vector<std::string> provides,
                std::size_t* invocation_counter)
         : name_(name), provides_(std::move(provides)),
           counter_(invocation_counter) {}
 
     std::string_view name() const override { return name_; }
 
-    std::span<const uint32_t> provides() const override { return provides_; }
+    std::span<const std::string> provides() const override { return provides_; }
 
     void load(mora::ext::LoadCtx&, mora::FactDB&) override {
         ++*counter_;
@@ -23,7 +23,7 @@ public:
 
 private:
     std::string name_;
-    std::vector<uint32_t> provides_;
+    std::vector<std::string> provides_;
     std::size_t* counter_;
 };
 
@@ -44,9 +44,9 @@ TEST(ExtensionContext, RegisterPreservesInsertionOrder) {
     mora::ext::ExtensionContext ec;
     std::size_t counter = 0;
     ec.register_data_source(std::make_unique<StubSource>("a",
-        std::vector<uint32_t>{1}, &counter));
+        std::vector<std::string>{"rel.one"}, &counter));
     ec.register_data_source(std::make_unique<StubSource>("b",
-        std::vector<uint32_t>{2}, &counter));
+        std::vector<std::string>{"rel.two"}, &counter));
 
     auto sources = ec.data_sources();
     ASSERT_EQ(sources.size(), 2U);
@@ -64,15 +64,17 @@ TEST(ExtensionContext, LoadRequiredOnlyInvokesMatchingSources) {
     std::size_t counter_b = 0;
     std::size_t counter_c = 0;
     ec.register_data_source(std::make_unique<StubSource>("a",
-        std::vector<uint32_t>{10, 20}, &counter_a));
+        std::vector<std::string>{"rel.alpha", "rel.beta"}, &counter_a));
     ec.register_data_source(std::make_unique<StubSource>("b",
-        std::vector<uint32_t>{30},     &counter_b));
+        std::vector<std::string>{"rel.gamma"},             &counter_b));
     ec.register_data_source(std::make_unique<StubSource>("c",
-        std::vector<uint32_t>{40, 50}, &counter_c));
+        std::vector<std::string>{"rel.delta", "rel.epsilon"}, &counter_c));
 
-    // Ask for relations 20 (matches 'a') and 40 (matches 'c'); no ask
-    // for anything 'b' provides.
-    mora::ext::LoadCtx ctx{pool, diags, {}, {}, /*needed*/ {20U, 40U}};
+    // Ask for rel.beta (matches 'a') and rel.delta (matches 'c'); no
+    // ask for anything 'b' provides.
+    auto id_beta  = pool.intern("rel.beta").index;
+    auto id_delta = pool.intern("rel.delta").index;
+    mora::ext::LoadCtx ctx{pool, diags, {}, {}, {id_beta, id_delta}};
     auto invoked = ec.load_required(ctx, db);
 
     EXPECT_EQ(invoked, 2U);
@@ -89,15 +91,16 @@ TEST(ExtensionContext, DuplicateProvidesEmitsDiagnostic) {
     mora::ext::ExtensionContext ec;
     std::size_t counter_a = 0;
     std::size_t counter_b = 0;
-    // Both sources claim relation 42. When 42 is in needed_relations,
-    // load_required must emit a diagnostic and refuse to invoke either
-    // source.
+    // Both sources claim the same relation. When it's in
+    // needed_relations, load_required must emit a diagnostic and refuse
+    // to invoke either source.
     ec.register_data_source(std::make_unique<StubSource>("a",
-        std::vector<uint32_t>{42}, &counter_a));
+        std::vector<std::string>{"rel.collide"}, &counter_a));
     ec.register_data_source(std::make_unique<StubSource>("b",
-        std::vector<uint32_t>{42}, &counter_b));
+        std::vector<std::string>{"rel.collide"}, &counter_b));
 
-    mora::ext::LoadCtx ctx{pool, diags, {}, {}, /*needed*/ {42U}};
+    auto id_collide = pool.intern("rel.collide").index;
+    mora::ext::LoadCtx ctx{pool, diags, {}, {}, {id_collide}};
     auto invoked = ec.load_required(ctx, db);
 
     EXPECT_EQ(invoked, 0U);
