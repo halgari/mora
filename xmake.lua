@@ -159,7 +159,8 @@ target("mora_lib")
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
-              "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
+              "src/cli/*.cpp", "src/eval/*.cpp", "src/ext/*.cpp",
+              "src/emit/*.cpp",
               "src/data/chunk_pool.cpp", "src/data/columnar_relation.cpp",
               "src/data/indexed_relation.cpp", "src/data/schema_registry.cpp",
               "src/data/value.cpp",
