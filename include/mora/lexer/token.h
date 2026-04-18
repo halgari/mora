@@ -8,7 +8,7 @@ namespace mora {
 
 enum class TokenKind {
     // Literals
-    Integer, Float, String, Symbol, EditorId, Variable, Identifier, Discard,
+    Integer, Float, String, Keyword, Symbol, EditorId, Variable, Identifier, Discard,
 
     // Keywords
     KwNamespace, KwRequires, KwMod, KwUse, KwOnly, KwNot, KwOr, KwIn, KwImportSpid, KwImportKid,

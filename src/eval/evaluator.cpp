@@ -88,6 +88,7 @@ std::vector<size_t> Evaluator::compute_clause_order(const Rule& rule) {
                 int variables = 0;
                 for (const Expr& arg : c.args) {
                     if (std::get_if<SymbolExpr>(&arg.data) ||
+                        std::get_if<KeywordLiteral>(&arg.data) ||
                         std::get_if<IntLiteral>(&arg.data) ||
                         std::get_if<FloatLiteral>(&arg.data) ||
                         std::get_if<StringLiteral>(&arg.data)) {
@@ -317,6 +318,14 @@ std::vector<Bindings> Evaluator::match_fact_pattern(const FactPattern& pattern,
             query_tuple.push_back(Value::make_float(fl->value));
         } else if (const auto* sl = std::get_if<StringLiteral>(&arg.data)) {
             query_tuple.push_back(Value::make_string(sl->value));
+        } else if (const auto* kl = std::get_if<KeywordLiteral>(&arg.data)) {
+            // Try to resolve as a FormID symbol first; fall back to opaque keyword.
+            auto it = symbol_formids_.find(kl->value.index);
+            if (it != symbol_formids_.end()) {
+                query_tuple.push_back(Value::make_formid(it->second));
+            } else {
+                query_tuple.push_back(Value::make_keyword(kl->value));
+            }
         } else if (std::get_if<DiscardExpr>(&arg.data)) {
             query_tuple.push_back(Value::make_var());
         } else {
@@ -519,6 +528,14 @@ Value Evaluator::resolve_expr(const Expr& expr, const Bindings& bindings) {
             return Value::make_float(e.value);
         } else if constexpr (std::is_same_v<T, StringLiteral>) {
             return Value::make_string(e.value);
+        } else if constexpr (std::is_same_v<T, KeywordLiteral>) {
+            // Try to resolve as a FormID symbol first (backward-compat with
+            // legacy `:Symbol` usage). Fall back to an opaque keyword value.
+            auto it = symbol_formids_.find(e.value.index);
+            if (it != symbol_formids_.end()) {
+                return Value::make_formid(it->second);
+            }
+            return Value::make_keyword(e.value);
         } else if constexpr (std::is_same_v<T, DiscardExpr>) {
             return Value::make_var();
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {

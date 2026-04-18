@@ -206,15 +206,16 @@ static std::string op_prefix(mora::FieldOp op) {
     }
 }
 
-static std::string format_value(const mora::Value& v) {
+static std::string format_value(const mora::Value& v, const mora::StringPool& pool) {
     switch (v.kind()) {
         case mora::Value::Kind::FormID: return fmt::format("0x{:08X}", v.as_formid());
         case mora::Value::Kind::Int:    return fmt::format("{}", v.as_int());
         case mora::Value::Kind::Float:  return fmt::format("{}", v.as_float());
         case mora::Value::Kind::Bool:   return v.as_bool() ? "true" : "false";
-        case mora::Value::Kind::String: return "\"str\"";
-        case mora::Value::Kind::Var:    return "?";
-        default:                        return "<unknown>";
+        case mora::Value::Kind::String:  return fmt::format("\"{}\"", pool.get(v.as_string()));
+        case mora::Value::Kind::Keyword: return fmt::format(":{}",    pool.get(v.as_keyword()));
+        case mora::Value::Kind::Var:     return "?";
+        default:                         return "<unknown>";
     }
 }
 
@@ -764,7 +765,7 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
         for (auto& rp : all_sorted) {
             mora::log::info("  0x{:08X}:\n", rp.target_formid);
             for (auto& fp : rp.fields) {
-                mora::log::info("    {}: {} {}\n", field_name(fp.field), op_prefix(fp.op), format_value(fp.value));
+                mora::log::info("    {}: {} {}\n", field_name(fp.field), op_prefix(fp.op), format_value(fp.value, pool));
             }
             mora::log::info("\n");
         }

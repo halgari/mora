@@ -22,8 +22,9 @@ struct SymbolExpr   { StringId name; MoraType resolved_type = MoraType::make(Typ
 struct EditorIdExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
 struct IntLiteral   { int64_t value; SourceSpan span; };
 struct FloatLiteral { double value;  SourceSpan span; };
-struct StringLiteral{ StringId value; SourceSpan span; };
-struct DiscardExpr  { SourceSpan span; };
+struct StringLiteral { StringId value; SourceSpan span; };
+struct KeywordLiteral{ StringId value; SourceSpan span; };
+struct DiscardExpr   { SourceSpan span; };
 
 struct BinaryExpr {
     enum class Op { Add, Sub, Mul, Div, Eq, Neq, Lt, Gt, LtEq, GtEq };
@@ -43,7 +44,7 @@ struct CallExpr {
 
 struct Expr {
     std::variant<VariableExpr, SymbolExpr, EditorIdExpr, IntLiteral, FloatLiteral,
-                 StringLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
+                 StringLiteral, KeywordLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
     SourceSpan span;
 };
 

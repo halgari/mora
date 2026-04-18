@@ -33,15 +33,17 @@ TEST(V2Tokens, EditorIdRequiresIdentifierAfterAt) {
     EXPECT_EQ(tokens[0].kind, TokenKind::Error);
 }
 
-TEST(V2Tokens, ColonIdentIsSymbolToken) {
+TEST(V2Tokens, ColonIdentIsKeywordToken) {
     auto tokens = tokenize(":high\n");
     ASSERT_GE(tokens.size(), 1u);
-    EXPECT_EQ(tokens[0].kind, TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Keyword);
     EXPECT_EQ(tokens[0].text, "high");
 }
 
-TEST(V2Tokens, TokenKindNameForSymbolSaysKeyword) {
-    EXPECT_STREQ(token_kind_name(TokenKind::Symbol), "Keyword");
+TEST(V2Tokens, TokenKindNameForKeywordSaysKeyword) {
+    // Matches the lowercase convention used by other literal tokens
+    // (integer, float, string, variable, identifier).
+    EXPECT_STREQ(token_kind_name(TokenKind::Keyword), "keyword");
 }
 
 TEST(V2Tokens, NamespacedIdentifierLexesAsThreeTokens) {

@@ -24,9 +24,10 @@ const char* value_kind_name(Value::Kind k) {
         case Value::Kind::FormID: return "FormID";
         case Value::Kind::Int:    return "Int";
         case Value::Kind::Float:  return "Float";
-        case Value::Kind::String: return "String";
-        case Value::Kind::Bool:   return "Bool";
-        case Value::Kind::List:   return "List";
+        case Value::Kind::String:  return "String";
+        case Value::Kind::Keyword: return "Keyword";
+        case Value::Kind::Bool:    return "Bool";
+        case Value::Kind::List:    return "List";
     }
     return "?";
 }

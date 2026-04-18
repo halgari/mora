@@ -44,6 +44,13 @@ Value Value::make_string(StringId s) {
     return v;
 }
 
+Value Value::make_keyword(StringId s) {
+    Value v;
+    v.kind_ = Kind::Keyword;
+    v.data_.string_index = s.index;
+    return v;
+}
+
 Value Value::make_bool(bool b) {
     Value v;
     v.kind_ = Kind::Bool;
@@ -82,6 +89,11 @@ StringId Value::as_string() const {
     return StringId{data_.string_index};
 }
 
+StringId Value::as_keyword() const {
+    assert(kind_ == Kind::Keyword);
+    return StringId{data_.string_index};
+}
+
 bool Value::as_bool() const {
     assert(kind_ == Kind::Bool);
     return data_.boolean;
@@ -109,8 +121,9 @@ bool Value::operator==(const Value& other) const {
         case Kind::FormID: return data_.formid        == other.data_.formid;
         case Kind::Int:    return data_.integer       == other.data_.integer;
         case Kind::Float:  return data_.floating      == other.data_.floating;
-        case Kind::String: return data_.string_index  == other.data_.string_index;
-        case Kind::Bool:   return data_.boolean       == other.data_.boolean;
+        case Kind::String:  return data_.string_index  == other.data_.string_index;
+        case Kind::Keyword: return data_.string_index  == other.data_.string_index;
+        case Kind::Bool:    return data_.boolean       == other.data_.boolean;
         case Kind::List:   return *list_              == *other.list_;
     }
     return false;
@@ -126,12 +139,17 @@ bool Value::matches(const Value& other) const {
 // ---------------------------------------------------------------------------
 
 uint64_t Value::hash() const {
+    // Mix the kind_ tag into every hash so values that share a storage
+    // layout but differ by kind (e.g. String vs Keyword both holding a
+    // StringId.index) don't collide.
+    const uint64_t kind_mix = static_cast<uint64_t>(kind_) * 2654435761ULL;
     switch (kind_) {
-        case Kind::FormID: return std::hash<uint32_t>{}(data_.formid);
-        case Kind::Int:    return std::hash<int64_t>{}(data_.integer);
-        case Kind::Float:  return std::hash<double>{}(data_.floating);
-        case Kind::String: return std::hash<uint32_t>{}(data_.string_index);
-        case Kind::Bool:   return std::hash<bool>{}(data_.boolean);
+        case Kind::FormID: return std::hash<uint32_t>{}(data_.formid)      ^ kind_mix;
+        case Kind::Int:    return std::hash<int64_t>{}(data_.integer)      ^ kind_mix;
+        case Kind::Float:  return std::hash<double>{}(data_.floating)      ^ kind_mix;
+        case Kind::String:  return std::hash<uint32_t>{}(data_.string_index) ^ kind_mix;
+        case Kind::Keyword: return std::hash<uint32_t>{}(data_.string_index) ^ kind_mix;
+        case Kind::Bool:    return std::hash<bool>{}(data_.boolean)          ^ kind_mix;
         case Kind::List: {
             // FNV-style mixing of element hashes
             uint64_t h = 14695981039346656037ULL; // FNV offset basis

@@ -8,13 +8,14 @@ namespace mora {
 
 class Value {
 public:
-    enum class Kind { Var, FormID, Int, Float, String, Bool, List };
+    enum class Kind { Var, FormID, Int, Float, String, Keyword, Bool, List };
 
     static Value make_var();
     static Value make_formid(uint32_t id);
     static Value make_int(int64_t i);
     static Value make_float(double f);
     static Value make_string(StringId s);
+    static Value make_keyword(StringId s);
     static Value make_bool(bool b);
     static Value make_list(std::vector<Value> items);
 
@@ -24,8 +25,9 @@ public:
     uint32_t as_formid() const;
     int64_t  as_int()    const;
     double   as_float()  const;
-    StringId as_string() const;
-    bool     as_bool()   const;
+    StringId as_string()  const;
+    StringId as_keyword() const;
+    bool     as_bool()    const;
     const std::vector<Value>& as_list() const;
 
     bool list_contains(const Value& needle) const;

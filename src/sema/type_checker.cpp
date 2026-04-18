@@ -524,6 +524,8 @@ MoraType TypeChecker::infer_expr_type(const Expr& expr) {
             return MoraType::make(TypeKind::Float);
         } else if constexpr (std::is_same_v<NodeT, StringLiteral>) {
             return MoraType::make(TypeKind::String);
+        } else if constexpr (std::is_same_v<NodeT, KeywordLiteral>) {
+            return MoraType::make(TypeKind::Unknown);
         } else if constexpr (std::is_same_v<NodeT, SymbolExpr>) {
             return MoraType::make(TypeKind::Unknown);
         } else if constexpr (std::is_same_v<NodeT, DiscardExpr>) {

@@ -31,10 +31,11 @@ std::shared_ptr<arrow::DataType> arrow_type_for(mora::Value::Kind k) {
         case mora::Value::Kind::FormID: return arrow::uint32();
         case mora::Value::Kind::Int:    return arrow::int64();
         case mora::Value::Kind::Float:  return arrow::float64();
-        case mora::Value::Kind::String: return arrow::utf8();
-        case mora::Value::Kind::Bool:   return arrow::boolean();
+        case mora::Value::Kind::String:  return arrow::utf8();
+        case mora::Value::Kind::Keyword: return arrow::utf8();
+        case mora::Value::Kind::Bool:    return arrow::boolean();
         case mora::Value::Kind::Var:
-        case mora::Value::Kind::List:   return nullptr;
+        case mora::Value::Kind::List:    return nullptr;
     }
     return nullptr;
 }
@@ -83,6 +84,16 @@ build_column(const std::vector<mora::Tuple>& tuples,
             arrow::BooleanBuilder b;
             ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
             for (const auto& t : tuples) b.UnsafeAppend(t[col].as_bool());
+            std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
+            return out;
+        }
+        case K::Keyword: {
+            arrow::StringBuilder b;
+            ARROW_RETURN_NOT_OK(b.Reserve(tuples.size()));
+            for (const auto& t : tuples) {
+                auto sv = pool.get(t[col].as_keyword());
+                ARROW_RETURN_NOT_OK(b.Append(sv.data(), sv.size()));
+            }
             std::shared_ptr<arrow::Array> out; ARROW_RETURN_NOT_OK(b.Finish(&out));
             return out;
         }

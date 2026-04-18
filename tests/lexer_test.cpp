@@ -52,7 +52,7 @@ TEST_F(LexerTest, Variable) {
 
 TEST_F(LexerTest, Symbol) {
     auto tokens = lex(":BanditFaction");
-    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Keyword);
     EXPECT_EQ(tokens[0].text, "BanditFaction");
 }
 
@@ -173,6 +173,6 @@ TEST_F(LexerTest, ErrorOnUnexpectedCharacter) {
 
 TEST_F(LexerTest, SymbolWithPlugin) {
     auto tokens = lex(":Skyrim");
-    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Keyword);
     EXPECT_EQ(tokens[0].text, "Skyrim");
 }

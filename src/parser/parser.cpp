@@ -237,7 +237,7 @@ UseDecl Parser::parse_use() {
     // Handle v2 :as / :refer clauses.  The lexer emits `:foo` as a single
     // Symbol token whose string_id holds "foo", so we inspect the text to
     // dispatch between :as and :refer.
-    while (check(TokenKind::Symbol)) {
+    while (check(TokenKind::Keyword)) {
         Token const sym = peek();
         std::string_view const text = pool_.get(sym.string_id);
         if (text == "as") {
@@ -614,11 +614,11 @@ Expr Parser::parse_primary() {
         return e;
     }
 
-    if (tok.kind == TokenKind::Symbol) {
+    if (tok.kind == TokenKind::Keyword) {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = SymbolExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = KeywordLiteral{tok.string_id, tok.span};
         return e;
     }
 

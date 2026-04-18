@@ -229,23 +229,35 @@ Token Lexer::lex_string() {
 
 Token Lexer::lex_symbol() {
     advance(); // consume ':'
-    if (!at_end() && std::isalpha(static_cast<unsigned char>(peek()))) {
+    // Check for double colon first
+    if (!at_end() && peek() == ':') {
+        advance();
+        return make_token(TokenKind::DoubleColon);
+    }
+    // :ident — keyword literal token with interned identifier text
+    //          (the leading colon is not part of the name).
+    char c = peek();
+    if (!at_end() && (std::isalpha(static_cast<unsigned char>(c)) || c == '_')) {
         size_t const ident_start = pos_;
-        while (!at_end() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_')) {
-            advance();
+        while (!at_end()) {
+            char cc = peek();
+            if (std::isalnum(static_cast<unsigned char>(cc)) ||
+                cc == '_' || cc == '-' || cc == '.') {
+                advance();
+            } else {
+                break;
+            }
         }
         // Build token with text = identifier only (stripping ':').
         // Span still covers the ':' + identifier range.
         size_t const saved_start = token_start_;
         token_start_ = ident_start;
-        Token tok = make_token(TokenKind::Symbol);
+        StringId const sid = pool_.intern(std::string_view(source_.data() + ident_start,
+                                                           pos_ - ident_start));
+        Token tok = make_token(TokenKind::Keyword);
+        tok.string_id = sid;
         token_start_ = saved_start;
         return tok;
-    }
-    // Check for double colon
-    if (!at_end() && peek() == ':') {
-        advance();
-        return make_token(TokenKind::DoubleColon);
     }
     return make_token(TokenKind::Colon);
 }

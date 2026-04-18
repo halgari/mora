@@ -11,8 +11,10 @@ const char* token_kind_name(TokenKind kind) {
         return "float";
     case TokenKind::String:
         return "string";
+    case TokenKind::Keyword:
+        return "keyword";
     case TokenKind::Symbol:
-        return "Keyword";
+        return "symbol";
     case TokenKind::EditorId:
         return "EditorId";
     case TokenKind::Variable:
