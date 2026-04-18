@@ -79,6 +79,8 @@ public:
     void        reserve(size_t n) override;
     void        append(bool v);
     bool        get(size_t i) const;
+    // Raw uint8_t span. Non-zero = true. Used by bulk consumers (parquet sink).
+    const uint8_t* data() const { return data_.data(); }
 private:
     // Plain std::vector<uint8_t> keeps each row addressable without
     // the std::vector<bool> proxy surprises. Upgrade to a bit-packed
@@ -95,6 +97,7 @@ public:
     void        reserve(size_t n) override;
     void        append(StringId id);
     StringId    get(size_t i) const { return data_[i]; }
+    const StringId* data() const { return data_.data(); }
 private:
     std::vector<StringId> data_;
 };
@@ -107,6 +110,7 @@ public:
     void        reserve(size_t n) override;
     void        append(StringId id);
     StringId    get(size_t i) const { return data_[i]; }
+    const StringId* data() const { return data_.data(); }
 private:
     std::vector<StringId> data_;
 };
@@ -145,6 +149,18 @@ public:
     void   append(const Value& v);
     Value  get(size_t i) const;
     Value::Kind kind_at(size_t i) const { return kinds_[i]; }
+
+    // Raw accessors for bulk consumers (parquet sink). payload_idx_[i]
+    // indexes into the payload vector matching kinds_[i]. Homogeneous
+    // AnyVector chunks have the matching payload vector in row order
+    // (idx == i for every row); bulk consumers can use the payload
+    // pointer directly.
+    const std::vector<Value::Kind>& kinds()           const { return kinds_; }
+    const std::vector<uint32_t>&    payload_idx()     const { return payload_idx_; }
+    const std::vector<int64_t>&     int_payloads()    const { return int_payloads_; }
+    const std::vector<double>&      float_payloads()  const { return float_payloads_; }
+    const std::vector<uint32_t>&    string_payloads() const { return string_payloads_; }
+    const std::vector<uint8_t>&     bool_payloads()   const { return bool_payloads_; }
 
 private:
     std::vector<Value::Kind> kinds_;
