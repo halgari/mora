@@ -220,7 +220,7 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
     auto field_col = std::static_pointer_cast<arrow::StringArray>(
         table->column(1)->chunk(0));
 
-    // Order depends on PatchSet iteration. Scan all rows and match by the
+    // Order depends on FactDB iteration. Scan all rows and match by the
     // field-keyword column rather than asserting a specific row order —
     // robust to future sort changes.
     bool seen_int = false, seen_float = false, seen_formid = false;

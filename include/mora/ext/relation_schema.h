@@ -21,9 +21,8 @@ struct ColumnSpec {
 //
 // `is_output` flags relations whose facts represent side effects meant
 // to be consumed by downstream stages (currently: parquet sink's
-// `output-only` filter). In later plans, the evaluator will produce
-// facts into relations with is_output = true and the binary-patch
-// machinery under src/emit/ will be retired.
+// `output-only` filter). The evaluator writes effect facts directly
+// into these relations (skyrim/set, skyrim/add, ...).
 //
 // `ext_metadata` is an opaque escape hatch: an extension may attach
 // its own state (e.g. EspSource for Skyrim) keyed by a type the

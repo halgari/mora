@@ -429,6 +429,7 @@ void Evaluator::apply_effects(const Rule& rule, const Bindings& bindings,
             case FieldOp::Add:      rel = effect_rel_add_;      break;
             case FieldOp::Remove:   rel = effect_rel_remove_;   break;
             case FieldOp::Multiply: rel = effect_rel_multiply_; break;
+            default:                __builtin_unreachable();
         }
         auto kw = Value::make_keyword(pool_.intern(field_id_name(field)));
         db.add_fact(rel, Tuple{Value::make_formid(formid), kw, v});
