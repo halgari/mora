@@ -1,11 +1,9 @@
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
 #include "mora/diag/diagnostic.h"
-#include "mora/emit/patch_table.h"       // PatchValueType
 #include "mora/eval/effect_facts.h"      // populate_effect_facts
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_buffer.h"
-#include "mora/eval/patch_set.h"         // FieldOp
+#include "mora/eval/patch_set.h"         // PatchSet, FieldOp
 #include "mora/ext/extension.h"
 #include "mora/model/relations.h"        // FieldId
 #include "mora_parquet/register.h"
@@ -15,7 +13,6 @@
 #include <arrow/io/file.h>
 #include <parquet/arrow/reader.h>
 
-#include <bit>
 #include <filesystem>
 #include <gtest/gtest.h>
 
@@ -160,32 +157,31 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
     mora_skyrim_compile::register_skyrim(ctx);
     mora_parquet::register_parquet(ctx);
 
-    // Build a synthetic PatchBuffer with three entries, one per
-    // supported value type.
-    mora::PatchBuffer buf;
+    mora::PatchSet ps;
     auto const form = uint32_t{0x000ABCDE};
 
-    buf.emit(form,
-             static_cast<uint8_t>(mora::FieldId::GoldValue),
-             static_cast<uint8_t>(mora::FieldOp::Set),
-             static_cast<uint8_t>(mora::PatchValueType::Int),
-             /*value*/ 750);
+    ps.add_patch(form, mora::FieldId::GoldValue, mora::FieldOp::Set,
+                 mora::Value::make_int(750),
+                 mora::StringId{}, /*priority*/ 0);
 
     double const weight = 2.5;
-    buf.emit(form,
-             static_cast<uint8_t>(mora::FieldId::Weight),
-             static_cast<uint8_t>(mora::FieldOp::Set),
-             static_cast<uint8_t>(mora::PatchValueType::Float),
-             std::bit_cast<uint64_t>(weight));
+    ps.add_patch(form, mora::FieldId::Weight, mora::FieldOp::Set,
+                 mora::Value::make_float(weight),
+                 mora::StringId{}, /*priority*/ 0);
 
-    buf.emit(form,
-             static_cast<uint8_t>(mora::FieldId::Race),
-             static_cast<uint8_t>(mora::FieldOp::Set),
-             static_cast<uint8_t>(mora::PatchValueType::FormID),
-             /*value*/ uint64_t{0x01337F});
+    ps.add_patch(form, mora::FieldId::Race, mora::FieldOp::Set,
+                 mora::Value::make_formid(0x01337F),
+                 mora::StringId{}, /*priority*/ 0);
 
-    // Populate skyrim/set via the bridge.
-    mora::populate_effect_facts(buf, db, pool);
+    // String case — previously broken under the PatchBuffer path
+    // because PatchValueType::StringIndex encoded a byte offset, not
+    // a StringPool index. Plan 7's typed ResolvedPatchSet path carries
+    // the StringId directly, so the string round-trips.
+    ps.add_patch(form, mora::FieldId::Name, mora::FieldOp::Set,
+                 mora::Value::make_string(pool.intern("Skeever")),
+                 mora::StringId{}, /*priority*/ 0);
+
+    mora::populate_effect_facts(ps.resolve(), db, pool);
 
     // Dispatch the parquet sink.
     auto out_dir = fs::temp_directory_path() /
@@ -222,7 +218,7 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
     ASSERT_TRUE(reader->ReadTable(&table).ok());
 
     ASSERT_EQ(table->num_columns(), 8);
-    ASSERT_EQ(table->num_rows(), 3);
+    ASSERT_EQ(table->num_rows(), 4);
 
     auto kind_col = std::static_pointer_cast<arrow::StringArray>(
         table->column(2)->chunk(0));
@@ -230,14 +226,16 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
         table->column(4)->chunk(0));
     auto float_col = std::static_pointer_cast<arrow::DoubleArray>(
         table->column(5)->chunk(0));
+    auto string_col = std::static_pointer_cast<arrow::StringArray>(
+        table->column(6)->chunk(0));
     auto field_col = std::static_pointer_cast<arrow::StringArray>(
         table->column(1)->chunk(0));
 
-    // Order depends on PatchBuffer iteration (sort_and_dedup hasn't run,
-    // so insertion order). Scan all rows and match by the field-keyword
-    // column rather than asserting a specific row order — robust to
-    // future sort changes in PatchBuffer.
+    // Order depends on PatchSet iteration. Scan all rows and match by the
+    // field-keyword column rather than asserting a specific row order —
+    // robust to future sort changes.
     bool seen_int = false, seen_float = false, seen_formid = false;
+    bool seen_string = false;
     for (int64_t i = 0; i < table->num_rows(); ++i) {
         auto field = field_col->GetString(i);
         auto kind  = kind_col->GetString(i);
@@ -270,12 +268,18 @@ TEST(CliParquetSink, EffectFactsBridgeRoundTripThroughTaggedColumns) {
                 EXPECT_EQ(formid_col->Value(i), 0x01337F);
             }
             seen_formid = true;
+        } else if (field == "Name") {
+            EXPECT_EQ(kind, "String");
+            EXPECT_FALSE(string_col->IsNull(i));
+            EXPECT_EQ(string_col->GetString(i), "Skeever");
+            seen_string = true;
         }
     }
 
     EXPECT_TRUE(seen_int);
     EXPECT_TRUE(seen_float);
     EXPECT_TRUE(seen_formid);
+    EXPECT_TRUE(seen_string);
 }
 
 } // namespace

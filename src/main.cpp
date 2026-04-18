@@ -339,6 +339,7 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
 static void evaluate_mora_rules(
     CheckResult& cr, mora::Evaluator& evaluator,
     mora::PatchBuffer& patch_buf, std::vector<uint8_t>& string_table_out,
+    mora::ResolvedPatchSet& out_resolved,
     mora::Output& out)
 {
     string_table_out.clear();
@@ -362,10 +363,10 @@ static void evaluate_mora_rules(
     out.progress_clear();
     out.phase_done("done");
 
-    auto mora_resolved = all_patches.resolve();
+    out_resolved = all_patches.resolve();
     std::vector<mora::PatchEntry> entries;
     string_table_out = mora::build_patch_entries_and_string_table(
-        mora_resolved, cr.pool, entries);
+        out_resolved, cr.pool, entries);
     for (const auto& e : entries) {
         patch_buf.emit(e.formid, e.field_id, e.op, e.value_type, e.value);
     }
@@ -591,9 +592,10 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     mora::PatchBuffer patch_buf;
     std::vector<uint8_t> string_table;
-    evaluate_mora_rules(cr, evaluator, patch_buf, string_table, out);
-
-    mora::populate_effect_facts(patch_buf, db, cr.pool);
+    mora::ResolvedPatchSet mora_resolved;
+    evaluate_mora_rules(cr, evaluator, patch_buf, string_table,
+                        mora_resolved, out);
+    mora::populate_effect_facts(mora_resolved, db, cr.pool);
 
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
