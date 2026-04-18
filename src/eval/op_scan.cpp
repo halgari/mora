@@ -57,8 +57,7 @@ std::unique_ptr<ScanOp> ScanOp::build(
             op->const_pos_.push_back(
                 {Value::make_string(sl->value), i});
         } else if (auto const* kl = std::get_if<KeywordLiteral>(&arg.data)) {
-            // Mirror the tuple evaluator's match_fact_pattern logic: a
-            // keyword literal may be a symbol alias (e.g. :BanditFaction
+            // A keyword literal may be a symbol alias (e.g. :BanditFaction
             // stored via set_symbol_formid). If found in symbol_formids,
             // treat it as a FormID constant; otherwise as an opaque keyword.
             auto sk = symbol_formids.find(kl->value.index);

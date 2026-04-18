@@ -62,9 +62,6 @@ TEST(PlannerGuards, GuardInBody_FiltersRows) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Rule should be vectorized (guard is now supported in M2).
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     // Only NPCs 0x2 and 0x3 (level >= 10) get gold.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 2u);
@@ -112,8 +109,6 @@ TEST(PlannerGuards, MultipleGuards_BothMustPass) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     // Only NPC 0xB (level=15) is in [10,20].
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);
@@ -144,8 +139,6 @@ TEST(PlannerGuards, GuardFiltersAllRows_EmptyOutput) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // No rows should be emitted.
     auto const* set_rel = db.get_relation_columnar(pool.intern("skyrim/set"));
@@ -185,9 +178,6 @@ TEST(PlannerGuards, ConditionalEffect_VectorizedPath) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Conditional effect rule should be vectorized in M2.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     // Only NPC 0x2 passes the conditional guard.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);
@@ -226,8 +216,6 @@ TEST(PlannerGuards, ConditionalAndUnconditional_BothFire) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Both NPCs get gold (unconditional).
     auto const& set_tuples = db.get_relation(pool.intern("skyrim/set"));

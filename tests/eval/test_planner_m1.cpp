@@ -64,9 +64,6 @@ TEST(PlannerM1, MergedLookup_DerivedOnlyRelation) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Both rules should be vectorized.
-    EXPECT_EQ(eval.vectorized_rules_count(), 2u);
-
     // Effect rule should have emitted 2 rows (one per NPC).
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 2u);
@@ -116,9 +113,6 @@ TEST(PlannerM1, AddVerb_RoutesToSkyrimAdd) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Vectorized path should fire (add verb now supported).
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     // Row should appear in skyrim/add (not skyrim/set).
     auto const& add_tuples = db.get_relation(pool.intern("skyrim/add"));
     ASSERT_EQ(add_tuples.size(), 1u);
@@ -152,8 +146,6 @@ TEST(PlannerM1, RemoveVerb_RoutesToSkyrimRemove) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     auto const& rem_tuples = db.get_relation(pool.intern("skyrim/remove"));
     ASSERT_EQ(rem_tuples.size(), 1u);
     EXPECT_EQ(rem_tuples[0][0].as_formid(), 0x200u);
@@ -182,9 +174,6 @@ TEST(PlannerM1, MultiEffect_BothEffectsEmitted) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    // Vectorized path fires.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Both effects appear in skyrim/set.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
@@ -226,8 +215,6 @@ TEST(PlannerM1, MultiEffect_MixedVerbs) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // set effect
     auto const& set_tuples = db.get_relation(pool.intern("skyrim/set"));
@@ -280,8 +267,6 @@ TEST(PlannerM1, KeywordLiteral_ResolvesViaSymbolFormids) {
     // Pass without colon so the helper generates the colon-prefixed version too.
     eval.set_symbol_formid(pool.intern("FixedNPC"), 0x999);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);

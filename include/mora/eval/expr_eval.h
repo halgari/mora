@@ -11,12 +11,11 @@ namespace mora {
 using Bindings = std::unordered_map<uint32_t, Value>;
 
 // Pure-functional expression evaluation. Takes all state it needs
-// explicitly — matches the tuple-path `Evaluator::resolve_expr` behavior
-// for all expression kinds (VariableExpr, SymbolExpr, literals, BinaryExpr,
-// CallExpr, FieldAccessExpr, EditorIdExpr).
+// explicitly. Handles VariableExpr, SymbolExpr, literals, BinaryExpr,
+// CallExpr, FieldAccessExpr, EditorIdExpr.
 //
 // If `bindings` doesn't have a variable or `symbols` doesn't have a symbol,
-// returns Value::make_var() — same behavior as the tuple path.
+// returns Value::make_var().
 Value resolve_expr(const Expr& e,
                     const Bindings& bindings,
                     StringPool& pool,
@@ -24,8 +23,7 @@ Value resolve_expr(const Expr& e,
 
 // Boolean coercion of resolve_expr for guards.
 // Evaluates the expression and returns true iff the result is truthy
-// (same logic as Evaluator::evaluate_guard: compares Int/Float/FormID values
-// with BinaryExpr comparison operators).
+// (compares Int/Float/FormID values with BinaryExpr comparison operators).
 bool evaluate_guard(const Expr& e,
                      const Bindings& bindings,
                      StringPool& pool,

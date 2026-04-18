@@ -1,7 +1,6 @@
 // Tests for multi-clause positive-conjunction rule planning (M2).
 // Each test seeds small relations in FactDB, evaluates a rule via the
-// Evaluator (which tries the vectorized planner first), then asserts
-// the output skyrim/set contents or vectorized_rules_count().
+// Evaluator, then asserts the output skyrim/set contents.
 
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
@@ -66,9 +65,6 @@ TEST(RulePlannerMulti, TwoClauseJoin_SharedVar) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Must have taken the vectorized path.
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
-
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 2u);
 
@@ -125,8 +121,6 @@ TEST(RulePlannerMulti, ThreeClauseChain) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
-
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 2u);
 
@@ -139,14 +133,14 @@ TEST(RulePlannerMulti, ThreeClauseChain) {
     EXPECT_EQ(got[1].second, 2);
 }
 
-// ── 3: No shared var between two clauses → Cartesian → fallback ────────
+// ── 3: No shared var between two clauses → Cartesian → hard diagnostic ─────
 //
 // Rule:  form/npc(NPC), form/weapon(W) => ...
-// NPC and W have no shared variable. The planner must decline (Cartesian).
-// The tuple fallback runs, which actually produces the cross product —
-// we just verify vectorized_rules_count stays 0.
+// NPC and W have no shared variable. The planner declines (Cartesian join).
+// After M2 there is no tuple fallback — the evaluator emits a hard diagnostic
+// and produces no output rows.
 
-TEST(RulePlannerMulti, CartesianJoin_Rejected_Fallback) {
+TEST(RulePlannerMulti, CartesianJoin_Rejected_EmitsDiagnostic) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
@@ -169,8 +163,11 @@ TEST(RulePlannerMulti, CartesianJoin_Rejected_Fallback) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Vectorized path must NOT fire for a Cartesian rule.
-    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+    // Planner declines Cartesian join → hard diagnostic emitted.
+    EXPECT_TRUE(diags.has_errors());
+    // No output rows produced.
+    auto const* out = db.get_relation_columnar(pool.intern("skyrim/set"));
+    if (out != nullptr) { EXPECT_EQ(out->row_count(), 0u); }
 }
 
 // ── 4: Empty right side — join produces no results ─────────────────────
@@ -201,9 +198,6 @@ TEST(RulePlannerMulti, EmptyRightSide_NoResults) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    // Vectorized path fires (planner succeeds — it doesn't know base_level is empty).
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
 
     // No output rows.
     auto const* out = db.get_relation_columnar(pool.intern("skyrim/set"));
@@ -246,8 +240,6 @@ TEST(RulePlannerMulti, SharedVarAcrossTwoClauses_TwoSharedVars) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
 
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);
@@ -300,8 +292,6 @@ TEST(RulePlannerMulti, DuplicateVarWithinClause_EqFilter) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
-
     // No matching rows (FormID != Int for any row in base_level).
     auto const* out = db.get_relation_columnar(pool.intern("skyrim/set"));
     if (out != nullptr) {
@@ -309,9 +299,9 @@ TEST(RulePlannerMulti, DuplicateVarWithinClause_EqFilter) {
     }
 }
 
-// ── 7: Two-clause join — assert vectorized_rules_count > 0 explicitly ─
+// ── 7: Two-clause join — correctness check ──────────────────────────────────
 //
-// Same two-clause setup as test 1 but focused on asserting the path taken.
+// Same two-clause setup as test 1 but as an independent correctness test.
 
 TEST(RulePlannerMulti, TwoClause_VectorizedPathFires) {
     mora::StringPool pool;
@@ -334,8 +324,6 @@ TEST(RulePlannerMulti, TwoClause_VectorizedPathFires) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
 
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);
@@ -406,8 +394,6 @@ TEST(RulePlannerMulti, NegatedPattern_AntiJoin) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 2u);
 
@@ -467,8 +453,6 @@ TEST(RulePlannerMulti, NegatedPattern_EmptyNegated_AllPass) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 3u);
@@ -546,9 +530,6 @@ TEST(RulePlannerMulti, InClause_Generator_Vectorized) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    // Should be vectorized: kw_source scan + InClauseOp generator.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Weapon 0x10 has 3 keywords → should produce 3 rows in skyrim/set.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
@@ -628,8 +609,6 @@ TEST(RulePlannerMulti, InClause_Membership_Vectorized) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Only weapon 0x10 (KwId=0x100 is in KwList) gets the effect.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));

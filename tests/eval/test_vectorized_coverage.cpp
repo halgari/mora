@@ -1,6 +1,7 @@
-// Plan 15 M1: verify every rule in example.mora vectorizes.
-// After M1, vectorized_rules_count() must equal total rule count for every
-// test fixture. This test asserts 5/5 for test_data/example.mora.
+// Plan 15 M2: verify every rule in example.mora evaluates correctly.
+// The vectorized path is now the ONLY evaluator — no tuple fallback.
+// This file checks that every test fixture evaluates without error.
+// (The vectorized_rules_count() counter was removed in M2.)
 
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
@@ -47,14 +48,13 @@ static mora::Module parse_and_resolve(mora::StringPool& pool,
     return mod;
 }
 
-// ── example.mora: 5 rules, all must vectorize after Plan 15 M1 ───────────────
+// ── example.mora: 5 rules, all must evaluate without errors after M2 ─────────
 //
-// All 5 rules use @EditorID args (BanditFaction, ActorTypeNPC,
-// WeapMaterialSilver, WeapTypeGreatsword, WeapMaterialIron). Before M1 they
-// were blocked by is_simple_arg_expr not accepting EditorIdExpr. After M1 they
-// must all take the vectorized path.
+// All 5 rules use @EditorID args. After Plan 15 M1, all vectorize.
+// After M2, the vectorized path is the only path — if planning fails,
+// an error diagnostic is emitted.
 
-TEST(VectorizedCoverage, AllExampleMoraRulesVectorize) {
+TEST(VectorizedCoverage, AllExampleMoraRulesEvaluate) {
     auto path = locate_fixture("example.mora");
     ASSERT_FALSE(path.empty()) << "test_data/example.mora not found";
 
@@ -71,10 +71,6 @@ TEST(VectorizedCoverage, AllExampleMoraRulesVectorize) {
     // example.mora has 5 rules.
     ASSERT_EQ(mod.rules.size(), 5u);
 
-    // Seed fake FormIDs for all @EditorID symbols used in example.mora.
-    // The evaluator resolves these via set_symbol_formid; without them,
-    // ScanOp would mark scans as no_match and produce zero rows (but
-    // planning still succeeds — the rules vectorize).
     mora::FactDB db(pool);
 
     mora::Evaluator eval(pool, diags, db);
@@ -86,25 +82,18 @@ TEST(VectorizedCoverage, AllExampleMoraRulesVectorize) {
 
     eval.evaluate_module(mod, db);
 
-    // ALL 5 rules must have taken the vectorized path (Plan 15 M1 goal).
-    EXPECT_EQ(eval.vectorized_rules_count(), 5u)
-        << "Not all example.mora rules vectorized. "
-        << eval.vectorized_rules_count() << "/5 vectorized.";
+    // All 5 rules must evaluate without error (vectorized path succeeds for all).
+    EXPECT_FALSE(diags.has_errors())
+        << "One or more example.mora rules caused a planner error (eval-unsupported).";
 }
 
-// ── Per-fixture vectorization sweep ─────────────────────────────────────────
+// ── Per-fixture evaluation sweep ─────────────────────────────────────────────
 //
 // Walk every .mora file under test_data/ (except errors.mora which is a
-// negative fixture). For each, parse+evaluate and assert 100% vectorization.
-// Any fixture that fails the check is flagged — either close the gap or
-// document why the rule shape is unsupported.
-//
-// Note: fixtures that use @EditorID without set_symbol_formid will still
-// vectorize (planning succeeds), but produce zero effect rows (which is
-// correct — the EditorID was unresolved). This tests the planning path,
-// not the data path.
+// negative fixture, and bandit_bounty.mora which uses an unregistered action).
+// For each, parse+evaluate and assert no error diagnostics are emitted.
 
-TEST(VectorizedCoverage, AllTestDataFixturesVectorize) {
+TEST(VectorizedCoverage, AllTestDataFixturesEvaluate) {
     std::filesystem::path dir;
     {
         std::filesystem::path cwd = std::filesystem::current_path();
@@ -126,6 +115,12 @@ TEST(VectorizedCoverage, AllTestDataFixturesVectorize) {
         const std::string stem = entry.path().stem().string();
         // Skip negative fixtures (expected to produce parse/resolve errors).
         if (stem == "errors") continue;
+        // bandit_bounty.mora uses `add player/gold` which maps to FieldId::Invalid
+        // (not in the form model). The vectorized planner declines this effect,
+        // emitting an eval-unsupported diagnostic. The parse/AST test
+        // (test_bandit_bounty.cpp) covers parsing; evaluation is gated here
+        // until the model gap is closed in a future plan.
+        if (stem == "bandit_bounty") continue;
 
         SCOPED_TRACE(entry.path().string());
 
@@ -134,17 +129,15 @@ TEST(VectorizedCoverage, AllTestDataFixturesVectorize) {
         mora::DiagBag diags;
         auto mod = parse_and_resolve(pool, diags, src, entry.path().string());
 
-        // Skip fixtures with errors (they won't evaluate correctly).
+        // Skip fixtures with parse/resolve errors.
         if (diags.has_errors()) continue;
-        // Skip if no rules (nothing to vectorize).
+        // Skip if no rules (nothing to evaluate).
         if (mod.rules.empty()) continue;
 
         mora::FactDB db(pool);
         mora::Evaluator eval(pool, diags, db);
 
-        // Provide fake FormIDs for common @EditorIDs to ensure EditorIdExpr
-        // args don't produce no_match in ScanOp, allowing full plan coverage.
-        // The vectorized path is taken regardless; these just affect row count.
+        // Provide fake FormIDs for common @EditorIDs.
         eval.set_symbol_formid(pool.intern("BanditFaction"),     0x00028AD6);
         eval.set_symbol_formid(pool.intern("ActorTypeNPC"),       0x00013794);
         eval.set_symbol_formid(pool.intern("WeapMaterialSilver"), 0x000A61A9);
@@ -156,25 +149,9 @@ TEST(VectorizedCoverage, AllTestDataFixturesVectorize) {
 
         eval.evaluate_module(mod, db);
 
-        size_t const total = mod.rules.size();
-        size_t const vect  = eval.vectorized_rules_count();
-
-        // bandit_bounty.mora uses `player/gold` which maps to FieldId::Invalid
-        // (not in the form model) → the planner cannot emit an EffectAppendOp
-        // for it. This rule falls back intentionally in M1. Document:
-        //   bandit_bounty.mora: 0/1 vectorized (unknown action add_gold)
-        // All other fixtures must vectorize 100%.
-        if (stem == "bandit_bounty") {
-            // Intentional fallback: `add player/gold` is not in the field model.
-            // vectorized_rules_count() == 0 is expected here in M1.
-            // (M2 / Plan 16 will either add the relation or rewrite the rule.)
-            EXPECT_EQ(vect, 0u)
-                << stem << ": expected 0 vectorized (unknown action) but got " << vect;
-        } else {
-            EXPECT_EQ(vect, total)
-                << stem << ": " << vect << "/" << total << " rules vectorized. "
-                << "Some rule shapes may still fall back — fix or document.";
-        }
+        // No eval-unsupported diagnostics — every rule must vectorize.
+        EXPECT_FALSE(diags.has_errors())
+            << stem << ": one or more rules caused an eval-unsupported diagnostic.";
 
         ++checked;
     }

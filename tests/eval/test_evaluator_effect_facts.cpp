@@ -44,7 +44,7 @@ TEST(EvaluatorEffectFacts, SetProducesSkyrimSetTuple) {
     ASSERT_FALSE(diags.has_errors()) << "parse/resolve errors";
 
     mora::FactDB db(pool);
-    // Seed an npc fact. The evaluator's merged_query checks both db_ and derived_facts_.
+    // Seed an npc fact. The evaluator scans both db_ and derived_facts_.
     // We use pool.intern("npc") because evaluator_test.cpp does the same; the
     // parsed FactPattern has qualifier "form" and name "npc" — the evaluator looks
     // up by name only (pattern.name = pool.intern("npc")).

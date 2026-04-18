@@ -43,9 +43,6 @@ TEST(RulePlannerSingle, SetEffectRule_VectorizedPath) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Vectorized path should have fired for this single-clause set rule.
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
-
     auto rel_set = pool.intern("skyrim/set");
     const auto& tuples = db.get_relation(rel_set);
     ASSERT_EQ(tuples.size(), 1u);
@@ -78,7 +75,6 @@ TEST(RulePlannerSingle, SetEffectRule_MultipleInputRows) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     EXPECT_EQ(tuples.size(), 3u);
 }
@@ -103,8 +99,6 @@ TEST(RulePlannerSingle, DerivedRule_VectorizedPath) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    EXPECT_GE(eval.vectorized_rules_count(), 1u);
 
     // The derived relation is "filtered" (the rule name).
     // We can only check via the evaluator's internal derived_facts through a
@@ -149,9 +143,6 @@ TEST(RulePlannerSingle, GuardClause_VectorizedWithFilter) {
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // M2: guard rule now uses the vectorized path.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
-
     // Only NPC 0x2 (Level=20) passes the guard.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
     ASSERT_EQ(tuples.size(), 1u);
@@ -180,9 +171,6 @@ TEST(RulePlannerSingle, MultipleEffects_Vectorized) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    // Multiple effects → vectorized path now fires.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Vectorized path emits both effects.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
@@ -217,9 +205,6 @@ TEST(RulePlannerSingle, NegatedPattern_Vectorized) {
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
-
-    // M3: negation now vectorized.
-    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
 
     // Only NPC 0x1 should appear in skyrim/set.
     auto const& tuples = db.get_relation(pool.intern("skyrim/set"));

@@ -39,7 +39,7 @@ namespace npc_flags {
 constexpr uint64_t kFormTypeOffset = 0x1A; // offset of formType byte in TESForm
 
 // ── Action name constants ───────────────────────────────────────────
-// Used by evaluator.cpp (action_to_field) and skypatcher_parser.cpp (sky_field_to_action)
+// Used by rule_planner.cpp (action_to_field) and skypatcher_parser.cpp (sky_field_to_action)
 
 namespace action {
     // Form list add
@@ -203,8 +203,7 @@ namespace gender {
 // ── Free function: action name → (FieldId, FieldOp) ────────────────
 // Maps a fully-assembled action name (e.g. "set_gold_value") to the
 // corresponding (FieldId, FieldOp) pair. Returns {FieldId::Invalid,
-// FieldOp::Set} when the name is not recognised. Used by RulePlanner
-// and by Evaluator::action_to_field (which delegates here).
+// FieldOp::Set} when the name is not recognised. Used by RulePlanner.
 std::pair<FieldId, FieldOp> action_to_field(StringId    action_id,
                                              const StringPool& pool);
 

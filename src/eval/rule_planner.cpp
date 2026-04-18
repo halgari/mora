@@ -113,10 +113,9 @@ std::vector<StringId> var_union(const std::vector<StringId>& a,
 }
 
 // Build an EffectArgSpec from an Expr, resolving KeywordLiterals through
-// symbol_formids to match the tuple-path Evaluator::resolve_expr semantics.
-// For arbitrary expression kinds (BinaryExpr, CallExpr, etc.) that cannot be
-// resolved at plan time, returns Kind::Expr with a pointer to the Expr for
-// per-row evaluation via resolve_expr.
+// symbol_formids. For arbitrary expression kinds (BinaryExpr, CallExpr, etc.)
+// that cannot be resolved at plan time, returns Kind::Expr with a pointer to
+// the Expr for per-row evaluation via resolve_expr.
 EffectArgSpec spec_from_expr(const Expr& e,
                               StringPool& pool,
                               const std::unordered_map<uint32_t, uint32_t>& symbols)

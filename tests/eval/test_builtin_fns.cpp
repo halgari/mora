@@ -27,13 +27,19 @@ struct Fixture {
 
 // Apply a single static rule that sets form/damage on a symbol weapon,
 // then return the resulting int value from skyrim/set or -1 if no tuple landed.
+// The rule needs at least one body FactPattern for the vectorized planner to
+// accept it. We use form/npc(Anchor) with a seeded fact — the expr under test
+// is the value arg of the effect.
 int64_t eval_damage(Fixture& f, const std::string& body) {
     std::string src =
         "namespace t\n"
-        "r():\n"
+        "r(Anchor):\n"
+        "    form/npc(Anchor)\n"
         "    => set form/damage(:MyWeap, " + body + ")\n";
     auto mod = f.parse_and_resolve(src);
     FactDB db(f.pool);
+    // Seed one npc fact so the rule fires once.
+    db.add_fact(f.pool.intern("npc"), {Value::make_formid(0x001)});
     Evaluator ev(f.pool, f.diags, db);
     ev.set_symbol_formid(f.pool.intern("MyWeap"), 0x500);
     ev.evaluate_module(mod, db);
