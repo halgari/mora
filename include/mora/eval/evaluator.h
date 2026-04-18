@@ -1,5 +1,6 @@
 #pragma once
 #include "mora/ast/ast.h"
+#include "mora/eval/expr_eval.h"
 #include "mora/eval/fact_db.h"
 #include "mora/eval/field_types.h"
 #include "mora/eval/phase_classifier.h"
@@ -12,7 +13,8 @@ namespace mora {
 
 using ProgressCallback = std::function<void(size_t current, size_t total, std::string_view rule_name)>;
 
-using Bindings = std::unordered_map<uint32_t, Value>; // key: StringId.index
+// Bindings is defined in expr_eval.h (included above).
+// using Bindings = std::unordered_map<uint32_t, Value>;
 
 class Evaluator {
 public:

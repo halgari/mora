@@ -115,19 +115,22 @@ TEST(RulePlannerSingle, DerivedRule_VectorizedPath) {
     // test is the integration test with a follow-on effect rule in Plan 14.)
 }
 
-// ── Rule with a guard → fallback (vectorized_rules_count stays 0) ────────
+// ── Rule with a guard → vectorized via FilterOp (M2) ─────────────────────
+//
+// M2 introduced FilterOp so GuardClause now routes through the vectorized
+// path. This test was updated from "expect fallback" to "expect vectorized"
+// and also verifies the guard actually filters rows correctly.
 
-TEST(RulePlannerSingle, GuardClause_Fallback) {
+TEST(RulePlannerSingle, GuardClause_VectorizedWithFilter) {
     mora::StringPool pool;
     mora::DiagBag diags;
 
-    // Rule has a guard expression (bare comparison in body) — the planner
-    // must decline and fall back to the tuple evaluator.
+    // Rule with a guard: only NPCs with Level >= 10 get gold.
     std::string const source =
         "high_value(NPC, Level):\n"
         "    form/npc(NPC)\n"
         "    form/base_level(NPC, Level)\n"
-        "    Level >= 0\n"  // GuardClause expression
+        "    Level >= 10\n"  // GuardClause — now handled via FilterOp
         "    => set form/gold_value(NPC, 999)\n";
 
     auto mod = parse_and_resolve(pool, diags, source);
@@ -136,13 +139,24 @@ TEST(RulePlannerSingle, GuardClause_Fallback) {
     ASSERT_FALSE(diags.has_errors());
 
     mora::FactDB db(pool);
-    db.add_fact(pool.intern("npc"), mora::Tuple{mora::Value::make_formid(0x1)});
+    // NPC 0x1: Level 5 — should NOT get gold (fails Level >= 10).
+    // NPC 0x2: Level 20 — should get gold.
+    db.add_fact(pool.intern("npc"),        mora::Tuple{mora::Value::make_formid(0x1)});
+    db.add_fact(pool.intern("npc"),        mora::Tuple{mora::Value::make_formid(0x2)});
+    db.add_fact(pool.intern("base_level"), mora::Tuple{mora::Value::make_formid(0x1), mora::Value::make_int(5)});
+    db.add_fact(pool.intern("base_level"), mora::Tuple{mora::Value::make_formid(0x2), mora::Value::make_int(20)});
 
     mora::Evaluator eval(pool, diags, db);
     eval.evaluate_module(mod, db);
 
-    // Multi-clause + guard → fallback.
-    EXPECT_EQ(eval.vectorized_rules_count(), 0u);
+    // M2: guard rule now uses the vectorized path.
+    EXPECT_EQ(eval.vectorized_rules_count(), 1u);
+
+    // Only NPC 0x2 (Level=20) passes the guard.
+    auto const& tuples = db.get_relation(pool.intern("skyrim/set"));
+    ASSERT_EQ(tuples.size(), 1u);
+    EXPECT_EQ(tuples[0][0].as_formid(), 0x2u);
+    EXPECT_EQ(tuples[0][2].as_int(), 999);
 }
 
 // ── Rule with multiple effects → vectorized (M1 re-scan strategy) ──────────

@@ -2,6 +2,7 @@
 
 #include "mora/data/action_names.h"
 #include "mora/eval/field_types.h"
+#include "mora/eval/op_filter.h"
 #include "mora/eval/op_join.h"
 #include "mora/eval/op_scan.h"
 #include "mora/eval/op_union.h"
@@ -24,28 +25,35 @@ bool is_simple_arg_expr(const Expr& e) {
         || std::holds_alternative<SymbolExpr>(e.data);
 }
 
-// Returns true iff every body clause is a positive (non-negated) FactPattern
-// with only simple args. Guards, InClause, negated patterns → false.
-bool body_is_positive_conjunction(const Rule& rule) {
-    if (rule.body.empty()) return false;
+// Returns true iff every body clause is either:
+// - a positive (non-negated) FactPattern with only simple args, or
+// - a GuardClause (M2: guards are supported via FilterOp).
+// InClause, negated patterns → false (M3).
+bool body_is_supported_for_vectorized(const Rule& rule) {
+    // Must have at least one FactPattern to scan.
+    bool has_fact_pattern = false;
     for (auto const& clause : rule.body) {
         bool ok = std::visit([](auto const& c) -> bool {
             using T = std::decay_t<decltype(c)>;
             if constexpr (std::is_same_v<T, FactPattern>) {
                 return !c.negated;
             }
-            return false;  // GuardClause, InClause → reject
+            if constexpr (std::is_same_v<T, GuardClause>) {
+                return true;  // M2: guards are supported
+            }
+            return false;  // InClause, negated, OrClause → reject
         }, clause.data);
         if (!ok) return false;
 
-        // Also verify all args are simple.
+        // Verify all FactPattern args are simple.
         if (auto const* fp = std::get_if<FactPattern>(&clause.data)) {
             for (auto const& a : fp->args) {
                 if (!is_simple_arg_expr(a)) return false;
             }
+            has_fact_pattern = true;
         }
     }
-    return true;
+    return has_fact_pattern;
 }
 
 // Selectivity score for a FactPattern: count non-variable args.
@@ -172,9 +180,11 @@ static StringId field_op_to_rel(FieldOp op, StringPool& pool) {
     }
 }
 
-// Build the body operator tree from a rule's positive FactPattern clauses,
-// sorted by selectivity, joined left-deep. Returns nullopt for unsupported
-// body shapes (Cartesian join between any pair of clauses).
+// Build the body operator tree from a rule's body clauses.
+// FactPatterns are sorted by selectivity and joined left-deep.
+// GuardClauses are applied AFTER all scans/joins via FilterOp.
+// Returns nullopt for unsupported body shapes (Cartesian join between
+// any pair of FactPatterns).
 static std::optional<std::unique_ptr<Operator>> plan_body(
     const Rule&                                  rule,
     const FactDB&                                input_db,
@@ -182,18 +192,18 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
     StringPool&                                  pool,
     const std::unordered_map<uint32_t, uint32_t>& symbol_formids)
 {
-    // body_is_positive_conjunction already verified all clauses are non-negated
-    // FactPatterns with simple args.
+    // Collect and sort only the FactPattern clauses.
     struct ScoredFP {
-        size_t idx;
+        size_t idx;   // index into rule.body
         int    score;
     };
     std::vector<ScoredFP> scored;
-    scored.reserve(rule.body.size());
     for (size_t i = 0; i < rule.body.size(); ++i) {
-        auto const& fp = std::get<FactPattern>(rule.body[i].data);
-        scored.push_back({i, selectivity_score(fp)});
+        if (auto const* fp = std::get_if<FactPattern>(&rule.body[i].data)) {
+            scored.push_back({i, selectivity_score(*fp)});
+        }
     }
+    // body_is_supported_for_vectorized guarantees at least one FactPattern.
     std::stable_sort(scored.begin(), scored.end(),
                      [](const ScoredFP& a, const ScoredFP& b) {
                          return a.score < b.score;
@@ -229,6 +239,16 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
             std::move(cumulative), std::move(scan), std::move(shared));
     }
 
+    // Walk body in declaration order and splice FilterOps for GuardClauses.
+    // Applied AFTER all scans/joins so every variable is bound — correct
+    // but doesn't push predicates down. Optimization is Plan 15+.
+    for (auto const& clause : rule.body) {
+        if (auto const* g = std::get_if<GuardClause>(&clause.data)) {
+            cumulative = std::make_unique<FilterOp>(
+                std::move(cumulative), g->expr.get(), pool, symbol_formids);
+        }
+    }
+
     return cumulative;
 }
 
@@ -241,15 +261,13 @@ std::optional<RulePlan> plan_rule(
     StringPool&                                  pool,
     const std::unordered_map<uint32_t, uint32_t>& symbol_formids)
 {
-    // M2: any number of positive FactPattern body clauses (at least one).
-    // Guards, negation, InClause, zero clauses → fallback.
-    if (!body_is_positive_conjunction(rule)) return std::nullopt;
-
-    // Conditional effects force fallback.
-    if (!rule.conditional_effects.empty()) return std::nullopt;
+    // M2: positive FactPattern + optional GuardClause body clauses (at least
+    // one FactPattern). Negation, InClause → fallback.
+    if (!body_is_supported_for_vectorized(rule)) return std::nullopt;
 
     // ── Effects branch ───────────────────────────────────────────────
-    if (!rule.effects.empty()) {
+    // Enter if there are any unconditional or conditional effects.
+    if (!rule.effects.empty() || !rule.conditional_effects.empty()) {
         std::vector<std::unique_ptr<EffectAppendOp>> effect_ops;
         effect_ops.reserve(rule.effects.size());
 
@@ -286,6 +304,38 @@ std::optional<RulePlan> plan_rule(
             effect_ops.push_back(std::make_unique<EffectAppendOp>(
                 std::move(*body), out_rel, field_kw,
                 std::move(target_spec), std::move(value_spec)));
+        }
+
+        // ConditionalEffect: same as unconditional, but body is wrapped in
+        // a FilterOp keyed on the conditional's guard expression.
+        for (const ConditionalEffect& ce : rule.conditional_effects) {
+            if (ce.effect.args.size() != 2) return std::nullopt;
+            if (!is_simple_arg_expr(ce.effect.args[0]) || !is_simple_arg_expr(ce.effect.args[1]))
+                return std::nullopt;
+
+            std::string const ce_legacy =
+                std::string(verb_prefix(ce.effect.verb)) + std::string(pool.get(ce.effect.name));
+            StringId const ce_action_id = pool.intern(ce_legacy);
+
+            auto [ce_field, ce_op] = mora::action_to_field(ce_action_id, pool);
+            if (ce_field == FieldId::Invalid) return std::nullopt;
+
+            StringId const ce_out_rel = field_op_to_rel(ce_op, pool);
+            if (ce_out_rel.index == 0) return std::nullopt;
+
+            auto ce_body = plan_body(rule, input_db, derived_facts, pool, symbol_formids);
+            if (!ce_body) return std::nullopt;
+
+            // Wrap the body in a FilterOp for this conditional's guard.
+            auto filtered = std::make_unique<FilterOp>(
+                std::move(*ce_body), ce.guard.get(), pool, symbol_formids);
+
+            StringId const ce_field_kw = pool.intern(field_id_name(ce_field));
+
+            effect_ops.push_back(std::make_unique<EffectAppendOp>(
+                std::move(filtered), ce_out_rel, ce_field_kw,
+                spec_from_expr(ce.effect.args[0], pool, symbol_formids),
+                spec_from_expr(ce.effect.args[1], pool, symbol_formids)));
         }
 
         RulePlan plan;
