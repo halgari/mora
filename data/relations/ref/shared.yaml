@@ -3,8 +3,8 @@ namespace: ref
 # of what its base form is.
 #
 # All ref/* relations are source: handler — the runtime engine reads them
-# on demand via HandlerRegistry::bind_read(). Handler bindings on the
-# Windows side come from src/rt/handlers/ (not yet wired for every read).
+# on demand via a handler registry. Handler bindings for the Windows
+# SKSE extension are provided by the skyrim_compile extension (v3 plan).
 relations:
   base_form:
     type: const<FormRef>

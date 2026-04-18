@@ -16,8 +16,6 @@
 #include "mora/eval/patch_set.h"
 #include "mora/emit/patch_table.h"
 #include "mora/emit/arrangement_emit.h"
-#include "mora/dag/compile.h"
-#include "mora/dag/bytecode.h"
 #include "mora/model/relations.h"
 #include "mora/core/digest.h"
 #include <algorithm>
@@ -617,8 +615,7 @@ static int write_patch_file(
     const std::string& target_path,
     const std::string& output_dir, mora::Output& out,
     const mora::PluginSet& loaded_plugins,
-    const mora::FactDB& facts, mora::StringPool& pool,
-    const std::vector<mora::Module>& modules)
+    const mora::FactDB& facts, mora::StringPool& pool)
 {
     fs::path out_path(output_dir);
     if (out_path.is_relative()) {
@@ -642,19 +639,10 @@ static int write_patch_file(
 
     auto arrangements_section = build_static_arrangements_section(facts, pool);
 
-    // Compile dynamic rules to an operator DAG and emit as DagBytecode section.
-    mora::dag::DagGraph dag_graph;
-    for (const auto& m : modules) {
-        mora::dag::compile_dynamic_rules(m, pool, dag_graph);
-    }
-    std::vector<uint8_t> dag_payload;
-    if (dag_graph.node_count() > 0) {
-        dag_payload = mora::dag::serialize_dag(dag_graph);
-    }
-
     out.phase_start("Serializing patches");
     auto patch_data = mora::serialize_patch_table(
-        patch_buf.entries(), digest, arrangements_section, dag_payload, string_table);
+        patch_buf.entries(), digest, arrangements_section,
+        std::vector<uint8_t>{}, string_table);
     out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
         patch_buf.size(), format_bytes(patch_data.size())));
 
@@ -762,7 +750,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     out.phase_done(fmt::format("{} total patches", patch_buf.size()));
 
     // Write patch file
-    int const write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
+    int const write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool);
     if (write_rc != 0) return write_rc;
 
     // Summary
@@ -909,16 +897,6 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     }
 
     mora::log::info("  Mora rules:    {} across {} files\n", rule_count, files.size());
-
-    fs::path const cache_dir = base / "MoraCache";
-    fs::path const dll_path = cache_dir / "MoraRuntime.dll";
-
-    if (!fs::exists(cache_dir) || !fs::exists(dll_path)) {
-        mora::log::info("  Cache status:  no DLL (run mora compile)\n");
-    } else {
-        auto dll_size = fs::file_size(dll_path);
-        mora::log::info("  Cache status:  MoraRuntime.dll ({})\n", format_bytes(dll_size));
-    }
 
     if (!data_dir.empty()) {
         mora::LoadOrder const lo = mora::LoadOrder::from_directory(data_dir);
