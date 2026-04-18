@@ -21,6 +21,11 @@ public:
     bool has_fact(StringId relation, const Tuple& values) const;
     size_t fact_count(StringId relation) const;
     size_t fact_count() const;
+
+    // Returns the interned names of every relation that has at least
+    // one configured relation slot (whether populated or empty). Used
+    // by sinks to enumerate what to write.
+    std::vector<StringId> all_relation_names() const;
     const std::vector<Tuple>& get_relation(StringId relation) const;
 
 private:

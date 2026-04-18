@@ -139,6 +139,19 @@ else
 end
 add_requires("nlohmann_json")
 
+-- Local xmake-repo override: Apache Arrow 7.0.0 pulls in xsimd as a
+-- bundled dep whose upstream `cmake_minimum_required(VERSION 3.1)` is
+-- rejected by CMake 4.x. scripts/xmake-repo/ ships a patched arrow
+-- recipe that disables SIMD (ARROW_SIMD_LEVEL=NONE + RUNTIME variant).
+-- The override repo must be registered before any matching
+-- add_requires() below.
+add_repositories("mora-local scripts/xmake-repo")
+
+add_requires("arrow 7.0.0", {
+    configs = { parquet = true, csv = false, jemalloc = false, mimalloc = false,
+                engine = false, dataset = false }
+})
+
 -- Vendored zlib (extern/zlib submodule, v1.3.1). Only included on
 -- windows to avoid the xrepo-zlib + static-CRT + lld-link collision
 -- (see "zlib" add_requires block above for details). On linux the

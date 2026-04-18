@@ -89,4 +89,13 @@ const std::vector<Tuple>& FactDB::get_relation(StringId relation) const {
     return it->second.all();
 }
 
+std::vector<StringId> FactDB::all_relation_names() const {
+    std::vector<StringId> names;
+    names.reserve(relations_.size());
+    for (const auto& [idx, _rel] : relations_) {
+        names.push_back(StringId{idx});
+    }
+    return names;
+}
+
 } // namespace mora
