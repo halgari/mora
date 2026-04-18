@@ -40,12 +40,23 @@ public:
         StringPool&                pool,
         const std::unordered_map<uint32_t, uint32_t>& symbols);
 
-    // Factory: membership form. Output shape = input shape.
+    // Factory: membership form (single-expression list). Output shape = input shape.
     static std::unique_ptr<InClauseOp> build_membership(
         std::unique_ptr<Operator> input,
         StringId                   var_name,
         const Expr*                values_expr,
         StringPool&                pool,
+        const std::unordered_map<uint32_t, uint32_t>& symbols);
+
+    // Factory: multi-value literal membership set (`?x in [:A, :B, ...]`).
+    // Pre-resolves constant values at build time; evaluates dynamic exprs per-row.
+    // If value_exprs is empty, produces no output rows (empty set membership
+    // always false).
+    static std::unique_ptr<InClauseOp> build_membership_set(
+        std::unique_ptr<Operator>            input,
+        StringId                              var_name,
+        std::vector<const Expr*>              value_exprs,
+        StringPool&                           pool,
         const std::unordered_map<uint32_t, uint32_t>& symbols);
 
     std::optional<BindingChunk> next_chunk() override;
@@ -54,7 +65,7 @@ public:
     }
 
 private:
-    enum class Mode { Generator, Membership };
+    enum class Mode { Generator, Membership, MembershipSet };
 
     InClauseOp(std::unique_ptr<Operator> input,
                 StringId                   var_name,
@@ -71,6 +82,11 @@ private:
     Mode                                                  mode_;
 
     std::vector<StringId>   out_var_names_;
+
+    // MembershipSet mode: pre-resolved constant values + dynamic expr pointers.
+    // A row passes iff the var's value equals any element in either list.
+    std::vector<Value>       membership_consts_;   // resolved at build time
+    std::vector<const Expr*> membership_exprs_;    // evaluated per-row
 
     // Cache for the column type of the var column (generator mode only;
     // determined from the first list element we see).

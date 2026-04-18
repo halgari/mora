@@ -67,11 +67,19 @@ std::unique_ptr<ScanOp> ScanOp::build(
             } else {
                 op->const_pos_.push_back({Value::make_keyword(kl->value), i});
             }
+        } else if (auto const* eid = std::get_if<EditorIdExpr>(&arg.data)) {
+            // @EditorID resolves via symbol_formids (same as SymbolExpr).
+            // Unresolved → no-match (the symbol is unknown at compile time).
+            auto sit = symbol_formids.find(eid->name.index);
+            if (sit == symbol_formids.end()) {
+                op->no_match_ = true;
+                return op;
+            }
+            op->const_pos_.push_back({Value::make_formid(sit->second), i});
         } else {
-            // EditorIdExpr, BinaryExpr, CallExpr, FieldAccessExpr — not
-            // supported in MVP. The planner should have rejected this
-            // rule; if we got here, caller's fault. Report no-match as
-            // a safe bail.
+            // BinaryExpr, CallExpr, FieldAccessExpr — not supported in
+            // pattern args. The planner should have rejected this rule;
+            // if we got here, caller's fault. Report no-match as a safe bail.
             op->no_match_ = true;
             return op;
         }

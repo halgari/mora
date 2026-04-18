@@ -25,7 +25,8 @@ bool is_simple_arg_expr(const Expr& e) {
         || std::holds_alternative<FloatLiteral>(e.data)
         || std::holds_alternative<StringLiteral>(e.data)
         || std::holds_alternative<KeywordLiteral>(e.data)
-        || std::holds_alternative<SymbolExpr>(e.data);
+        || std::holds_alternative<SymbolExpr>(e.data)
+        || std::holds_alternative<EditorIdExpr>(e.data);
 }
 
 // Returns true iff every body clause is either:
@@ -47,10 +48,12 @@ bool body_is_supported_for_vectorized(const Rule& rule) {
                 return true;  // M2: guards are supported
             }
             if constexpr (std::is_same_v<T, InClause>) {
-                // M3: InClause supported when there is exactly one values
-                // expression (the list/generator form). Multi-value literal
-                // sets are rejected here — fall back to tuple evaluator.
-                return c.values.size() == 1;
+                // M3: single-value InClause (list/generator or membership).
+                // P15 M1: multi-value literal sets (values.size() > 1) are
+                // now also accepted — handled by build_membership_set in
+                // plan_body.  Zero-value InClause always produces no rows
+                // (empty membership set), still accepted.
+                return true;
             }
             return false;  // OrClause → reject
         }, clause.data);
@@ -111,37 +114,62 @@ std::vector<StringId> var_union(const std::vector<StringId>& a,
 
 // Build an EffectArgSpec from an Expr, resolving KeywordLiterals through
 // symbol_formids to match the tuple-path Evaluator::resolve_expr semantics.
+// For arbitrary expression kinds (BinaryExpr, CallExpr, etc.) that cannot be
+// resolved at plan time, returns Kind::Expr with a pointer to the Expr for
+// per-row evaluation via resolve_expr.
 EffectArgSpec spec_from_expr(const Expr& e,
                               StringPool& pool,
                               const std::unordered_map<uint32_t, uint32_t>& symbols)
 {
-    (void)pool;  // reserved for future use (e.g. StringLiteral interning)
+    (void)pool;
     EffectArgSpec s{};
     if (auto const* ve = std::get_if<VariableExpr>(&e.data)) {
         s.kind     = EffectArgSpec::Kind::Var;
         s.var_name = ve->name;
         return s;
     }
-    s.kind = EffectArgSpec::Kind::Constant;
     if (auto const* il = std::get_if<IntLiteral>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
         s.constant = Value::make_int(il->value);
-    } else if (auto const* fl = std::get_if<FloatLiteral>(&e.data)) {
+        return s;
+    }
+    if (auto const* fl = std::get_if<FloatLiteral>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
         s.constant = Value::make_float(fl->value);
-    } else if (auto const* sl = std::get_if<StringLiteral>(&e.data)) {
+        return s;
+    }
+    if (auto const* sl = std::get_if<StringLiteral>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
         s.constant = Value::make_string(sl->value);
-    } else if (auto const* kl = std::get_if<KeywordLiteral>(&e.data)) {
-        // Task 1.2: match the tuple-path's resolve_expr — if this keyword has
-        // an EditorID-to-FormID mapping, prefer the FormID; otherwise keyword.
+        return s;
+    }
+    if (auto const* kl = std::get_if<KeywordLiteral>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
         auto it = symbols.find(kl->value.index);
         s.constant = (it != symbols.end())
             ? Value::make_formid(it->second)
             : Value::make_keyword(kl->value);
-    } else if (auto const* se = std::get_if<SymbolExpr>(&e.data)) {
-        auto it = symbols.find(se->name.index);
-        s.constant = (it == symbols.end())
-            ? Value::make_var()
-            : Value::make_formid(it->second);
+        return s;
     }
+    if (auto const* se = std::get_if<SymbolExpr>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
+        auto it = symbols.find(se->name.index);
+        s.constant = (it != symbols.end())
+            ? Value::make_formid(it->second)
+            : Value::make_var();
+        return s;
+    }
+    if (auto const* eid = std::get_if<EditorIdExpr>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
+        auto it = symbols.find(eid->name.index);
+        s.constant = (it != symbols.end())
+            ? Value::make_formid(it->second)
+            : Value::make_var();
+        return s;
+    }
+    // Anything else (BinaryExpr, CallExpr, FieldAccessExpr): evaluate per-row.
+    s.kind = EffectArgSpec::Kind::Expr;
+    s.expr = &e;
     return s;
 }
 
@@ -297,21 +325,35 @@ static std::optional<std::unique_ptr<Operator>> plan_body(
                 if (cv.index == ve->name.index) { is_bound = true; break; }
             }
 
-            if (is_bound) {
-                // Membership filter: keep rows where the var's value is in the list.
+            if (ic->values.empty()) {
+                // Empty set — always false. Use MembershipSet with empty list.
+                cumulative = InClauseOp::build_membership_set(
+                    std::move(cumulative), ve->name, {},
+                    pool, symbol_formids);
+            } else if (ic->values.size() == 1 && is_bound) {
+                // Single-expression membership (e.g. ?x in SomeList where
+                // SomeList is a bound variable holding a List value).
                 cumulative = InClauseOp::build_membership(
                     std::move(cumulative), ve->name, &ic->values[0],
                     pool, symbol_formids);
-            } else {
-                // Generator: adds the var as a new column.
-                // Reject if there is no upstream operator (InClause-first with
-                // unbound var — no source to prime the generator). Since we
-                // always have at least one positive FactPattern before arriving
-                // here, this case cannot arise. But guard defensively.
+            } else if (ic->values.size() == 1 && !is_bound) {
+                // Single-expression generator: iterates the list and binds the var.
                 cumulative = InClauseOp::build_generator(
                     std::move(cumulative), ve->name, &ic->values[0],
                     pool, symbol_formids);
                 cumulative_vars.push_back(ve->name);
+            } else {
+                // Multi-value literal set: `?x in [:A, :B, ...]`.
+                // Always a membership check (values are literals, not a List).
+                std::vector<const Expr*> exprs;
+                exprs.reserve(ic->values.size());
+                for (auto const& v : ic->values) exprs.push_back(&v);
+                cumulative = InClauseOp::build_membership_set(
+                    std::move(cumulative), ve->name, std::move(exprs),
+                    pool, symbol_formids);
+                // If var was unbound (values.size() > 1), it's now bound as a
+                // filter (the set enumerates constants, not list elements).
+                if (!is_bound) cumulative_vars.push_back(ve->name);
             }
         }
     }
@@ -350,9 +392,8 @@ std::optional<RulePlan> plan_rule(
 
         for (const Effect& eff : rule.effects) {
             // Effect must have exactly 2 args: (target, value).
+            // (Leveled-list add uses 4 args — not yet vectorized; fall back.)
             if (eff.args.size() != 2) return std::nullopt;
-            if (!is_simple_arg_expr(eff.args[0]) || !is_simple_arg_expr(eff.args[1]))
-                return std::nullopt;
 
             // Reconstruct the legacy action name: "<verb>_<eff.name>".
             std::string const legacy =
@@ -380,15 +421,14 @@ std::optional<RulePlan> plan_rule(
 
             effect_ops.push_back(std::make_unique<EffectAppendOp>(
                 std::move(*body), out_rel, field_kw,
-                std::move(target_spec), std::move(value_spec)));
+                std::move(target_spec), std::move(value_spec),
+                pool, symbol_formids));
         }
 
         // ConditionalEffect: same as unconditional, but body is wrapped in
         // a FilterOp keyed on the conditional's guard expression.
         for (const ConditionalEffect& ce : rule.conditional_effects) {
             if (ce.effect.args.size() != 2) return std::nullopt;
-            if (!is_simple_arg_expr(ce.effect.args[0]) || !is_simple_arg_expr(ce.effect.args[1]))
-                return std::nullopt;
 
             std::string const ce_legacy =
                 std::string(verb_prefix(ce.effect.verb)) + std::string(pool.get(ce.effect.name));
@@ -412,7 +452,8 @@ std::optional<RulePlan> plan_rule(
             effect_ops.push_back(std::make_unique<EffectAppendOp>(
                 std::move(filtered), ce_out_rel, ce_field_kw,
                 spec_from_expr(ce.effect.args[0], pool, symbol_formids),
-                spec_from_expr(ce.effect.args[1], pool, symbol_formids)));
+                spec_from_expr(ce.effect.args[1], pool, symbol_formids),
+                pool, symbol_formids));
         }
 
         RulePlan plan;
@@ -437,7 +478,8 @@ std::optional<RulePlan> plan_rule(
 
         RulePlan plan;
         plan.derived_op = std::make_unique<DerivedAppendOp>(
-            std::move(*body), rule.name, std::move(head_specs));
+            std::move(*body), rule.name, std::move(head_specs),
+            pool, symbol_formids);
         return plan;
     }
 }
