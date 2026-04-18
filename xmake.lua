@@ -204,6 +204,13 @@ target("mora_lib")
     end)
 target_end()
 
+-- ══════════════════════════════════════════════════════════════
+-- Extensions (foundation stubs — no-op until Plan 3)
+-- ══════════════════════════════════════════════════════════════
+includes("extensions/parquet/xmake.lua")
+includes("extensions/skyrim_compile/xmake.lua")
+includes("extensions/synthetic/xmake.lua")
+
 -- CLI executable
 target("mora")
     set_kind("binary")

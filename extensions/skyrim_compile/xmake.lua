@@ -1,0 +1,6 @@
+target("mora_skyrim_compile")
+    set_kind("static")
+    add_includedirs("include", {public = true})
+    add_includedirs("../../include", {public = false})
+    add_files("src/register.cpp")
+target_end()
