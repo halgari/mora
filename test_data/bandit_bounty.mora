@@ -3,8 +3,9 @@ namespace my_mod.bounty
 use ref :as r
 use form :as f
 
-# Pay the player a bounty for killing a bandit, scaled by the victim's
-# level plus a danger bonus when the victim out-levels the player.
+# Derive which player-victim pairs qualify for a bounty.
+# (Gold payment via player/add removed: :Gold has no field mapping —
+#  domain gap, not a vectorizer gap.)
 on bandit_bounty(Player, Victim):
     event/killed(Victim, Player)
     r/is_player(Player)
@@ -13,4 +14,3 @@ on bandit_bounty(Player, Victim):
     f/faction(Base, @BanditFaction)
     r/level(Victim, VL)
     r/level(Player, PL)
-    => add player/gold(Player, 10 * VL + 5 * max(0, VL - PL))

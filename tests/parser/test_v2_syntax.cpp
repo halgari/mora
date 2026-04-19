@@ -86,25 +86,28 @@ TEST(V2Syntax, UnannotatedRuleIsStatic) {
     EXPECT_EQ(mod.rules[0].kind, RuleKind::Static);
 }
 
-TEST(V2Syntax, VerbEffectParsed) {
+TEST(V2Syntax, QualifiedHeadParsed) {
     StringPool pool;
     DiagBag diags;
+    // Three qualified-head rules replace the old effect syntax.
     auto mod = parse_source(
         "namespace x.y\n"
-        "r(F):\n"
+        "skyrim/set(F, :Damage, 20):\n"
         "    form/weapon(F)\n"
-        "    => set form/damage(F, 20)\n"
-        "    => add form/keyword(F, @Enchanted)\n"
-        "    => remove form/keyword(F, @Cursed)\n",
+        "skyrim/add(F, :Keyword, @Enchanted):\n"
+        "    form/weapon(F)\n"
+        "skyrim/remove(F, :Keyword, @Cursed):\n"
+        "    form/weapon(F)\n",
         pool, diags);
-    ASSERT_EQ(mod.rules.size(), 1u);
-    const auto& r = mod.rules[0];
-    ASSERT_EQ(r.effects.size(), 3u);
-    EXPECT_EQ(r.effects[0].verb, VerbKind::Set);
-    EXPECT_EQ(pool.get(r.effects[0].namespace_), "form");
-    EXPECT_EQ(pool.get(r.effects[0].name), "damage");
-    EXPECT_EQ(r.effects[1].verb, VerbKind::Add);
-    EXPECT_EQ(r.effects[2].verb, VerbKind::Remove);
+    ASSERT_EQ(mod.rules.size(), 3u);
+    EXPECT_EQ(pool.get(mod.rules[0].qualifier), "skyrim");
+    EXPECT_EQ(pool.get(mod.rules[0].name), "set");
+    ASSERT_EQ(mod.rules[0].head_args.size(), 3u);
+    EXPECT_EQ(pool.get(mod.rules[1].qualifier), "skyrim");
+    EXPECT_EQ(pool.get(mod.rules[1].name), "add");
+    EXPECT_EQ(pool.get(mod.rules[2].qualifier), "skyrim");
+    EXPECT_EQ(pool.get(mod.rules[2].name), "remove");
+    EXPECT_FALSE(diags.has_errors());
 }
 
 TEST(V2Syntax, UseDeclWithAsAndRefer) {

@@ -60,19 +60,17 @@ TEST_F(ParserTest, SimpleRule) {
     EXPECT_FALSE(diags.has_errors());
 }
 
-TEST_F(ParserTest, RuleWithEffect) {
+TEST_F(ParserTest, RuleWithQualifiedHead) {
     auto mod = parse(
-        "vampire_bane(Weapon):\n"
+        "skyrim/add(Weapon, :Keyword, :VampireBane):\n"
         "    weapon(Weapon)\n"
         "    has_keyword(Weapon, :WeapMaterialSilver)\n"
-        "    => add form/keyword(Weapon, :VampireBane)\n"
     );
     ASSERT_EQ(mod.rules.size(), 1u);
+    EXPECT_EQ(pool.get(mod.rules[0].qualifier), "skyrim");
+    EXPECT_EQ(pool.get(mod.rules[0].name), "add");
     EXPECT_EQ(mod.rules[0].body.size(), 2u);
-    EXPECT_EQ(mod.rules[0].effects.size(), 1u);
-    EXPECT_EQ(mod.rules[0].effects[0].verb, mora::VerbKind::Add);
-    EXPECT_EQ(pool.get(mod.rules[0].effects[0].namespace_), "form");
-    EXPECT_EQ(pool.get(mod.rules[0].effects[0].name), "keyword");
+    EXPECT_EQ(mod.rules[0].head_args.size(), 3u);
     EXPECT_FALSE(diags.has_errors());
 }
 
@@ -90,17 +88,18 @@ TEST_F(ParserTest, RuleWithNegation) {
     EXPECT_TRUE(fact->negated);
 }
 
-TEST_F(ParserTest, RuleWithConditionalEffects) {
+TEST_F(ParserTest, RuleWithGuardsInBody) {
+    // Guards that were formerly conditional effects now live in the rule body.
     auto mod = parse(
-        "bandit_weapons(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :SilverSword):\n"
         "    npc(NPC)\n"
         "    level(NPC, Level)\n"
-        "    Level >= 20 => add form/item(NPC, :SilverSword)\n"
-        "    Level < 20 => add form/item(NPC, :IronSword)\n"
+        "    Level >= 20\n"
     );
     ASSERT_EQ(mod.rules.size(), 1u);
-    EXPECT_EQ(mod.rules[0].body.size(), 2u);
-    EXPECT_EQ(mod.rules[0].conditional_effects.size(), 2u);
+    // body: npc(NPC), level(NPC, Level), Level >= 20
+    EXPECT_EQ(mod.rules[0].body.size(), 3u);
+    EXPECT_EQ(pool.get(mod.rules[0].qualifier), "skyrim");
     EXPECT_FALSE(diags.has_errors());
 }
 
@@ -136,7 +135,6 @@ TEST_F(ParserTest, FullFile) {
         "    weapon(Weapon)\n"
         "    has_keyword(Weapon, :WeapMaterialSilver)\n"
         "    not has_keyword(Weapon, :WeapTypeGreatsword)\n"
-        "    => add form/keyword(Weapon, :VampireBane)\n"
     );
     ASSERT_TRUE(mod.ns.has_value());
     EXPECT_EQ(mod.requires_decls.size(), 1u);

@@ -52,7 +52,7 @@ TEST_F(LexerTest, Variable) {
 
 TEST_F(LexerTest, Symbol) {
     auto tokens = lex(":BanditFaction");
-    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Keyword);
     EXPECT_EQ(tokens[0].text, "BanditFaction");
 }
 
@@ -104,9 +104,10 @@ TEST_F(LexerTest, Operators) {
     EXPECT_EQ(k[9], mora::TokenKind::Slash);
 }
 
-TEST_F(LexerTest, Arrow) {
+TEST_F(LexerTest, ArrowIsError) {
+    // => no longer exists as a token — bare '=' is an error token.
     auto tokens = lex("=>");
-    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Arrow);
+    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Error);
 }
 
 TEST_F(LexerTest, Punctuation) {
@@ -152,17 +153,16 @@ TEST_F(LexerTest, IndentDedent) {
 
 TEST_F(LexerTest, FullRuleLex) {
     std::string source =
-        "vampire_bane(Weapon):\n"
-        "    weapon(Weapon)\n"
-        "    has_keyword(Weapon, :WeapMaterialSilver)\n"
-        "    => add_keyword(Weapon, :VampireBane)\n";
+        "skyrim/add(Weapon, :Keyword, @VampireBane):\n"
+        "    form/weapon(Weapon)\n"
+        "    form/keyword(Weapon, @WeapMaterialSilver)\n";
 
     auto tokens = lex(source);
     EXPECT_EQ(tokens[0].kind, mora::TokenKind::Identifier);
-    EXPECT_EQ(tokens[0].text, "vampire_bane");
-    EXPECT_EQ(tokens[1].kind, mora::TokenKind::LParen);
-    EXPECT_EQ(tokens[2].kind, mora::TokenKind::Variable);
-    EXPECT_EQ(tokens[2].text, "Weapon");
+    EXPECT_EQ(tokens[0].text, "skyrim");
+    EXPECT_EQ(tokens[1].kind, mora::TokenKind::Slash);
+    EXPECT_EQ(tokens[2].kind, mora::TokenKind::Identifier);
+    EXPECT_EQ(tokens[2].text, "add");
     EXPECT_FALSE(diags.has_errors());
 }
 
@@ -173,6 +173,6 @@ TEST_F(LexerTest, ErrorOnUnexpectedCharacter) {
 
 TEST_F(LexerTest, SymbolWithPlugin) {
     auto tokens = lex(":Skyrim");
-    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Symbol);
+    EXPECT_EQ(tokens[0].kind, mora::TokenKind::Keyword);
     EXPECT_EQ(tokens[0].text, "Skyrim");
 }

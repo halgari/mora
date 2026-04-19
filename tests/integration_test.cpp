@@ -2,7 +2,7 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 #include "mora/diag/renderer.h"
 
 class IntegrationTest : public ::testing::Test {
@@ -16,8 +16,7 @@ protected:
         auto mod = parser.parse_module();
         mora::NameResolver resolver(pool, diags);
         resolver.resolve(mod);
-        mora::TypeChecker checker(pool, diags, resolver);
-        checker.check(mod);
+        // TypeChecker removed in M2; arity/type errors are runtime concerns
         return !diags.has_errors();
     }
 };
@@ -40,19 +39,15 @@ TEST_F(IntegrationTest, CompleteValidFile) {
         "    bandit(NPC)\n"
         "    high_level(NPC)\n"
         "\n"
-        "vampire_bane(Weapon):\n"
+        "skyrim/add(Weapon, :Keyword, @VampireBane):\n"
         "    form/weapon(Weapon)\n"
         "    form/keyword(Weapon, @WeapMaterialSilver)\n"
         "    not form/keyword(Weapon, @WeapTypeGreatsword)\n"
-        "    => add form/keyword(Weapon, @VampireBane)\n"
     ));
 }
 
 TEST_F(IntegrationTest, ArityMismatchDetected) {
-    EXPECT_FALSE(check(
-        "wrong(NPC):\n"
-        "    form/npc(NPC, @Extra)\n"
-    ));
+    EXPECT_FALSE(check("wrong(NPC):\n    form/npc(NPC, @Extra)\n"));
 }
 
 TEST_F(IntegrationTest, UnknownFactDetected) {
@@ -70,22 +65,17 @@ TEST_F(IntegrationTest, RuleCompositionWorks) {
         "b(X):\n"
         "    a(X)\n"
         "\n"
-        "c(X):\n"
+        "skyrim/add(X, :Keyword, @TestKeyword):\n"
         "    b(X)\n"
-        "    => add form/keyword(X, @TestKeyword)\n"
     ));
 }
 
-TEST_F(IntegrationTest, DiagnosticsRender) {
-    check(
-        "wrong(NPC):\n"
-        "    form/npc(NPC, @Extra)\n"
-    );
+TEST_F(IntegrationTest, DiagnosticsRenderForUnknownFact) {
+    // With TypeChecker gone (M2), use a name-resolution error (unknown fact)
+    // to verify the renderer produces non-empty error output.
+    check("wrong(NPC):\n    totally_unknown_fact(NPC)\n");
     mora::DiagRenderer renderer(false);
     auto output = renderer.render_all(diags);
-    // Arity mismatch from kRelations is reported as E024.
-    // Keep this flexible — accept either the v1 code (E020) or the v2 code (E024).
-    EXPECT_TRUE(output.find("E020") != std::string::npos
-             || output.find("E024") != std::string::npos)
-        << output;
+    // E011 = unknown fact or rule from NameResolver
+    EXPECT_TRUE(output.find("E011") != std::string::npos) << output;
 }

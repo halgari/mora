@@ -16,7 +16,7 @@ TEST(PhaseClassifierV2, UnannotatedWithOnlyFormIsStatic) {
     StringPool pool;
     DiagBag diag;
     auto m = parse_src(pool, diag,
-        "namespace x.y\nr(W):\n    form/weapon(W)\n    => set form/damage(W, 20)\n");
+        "namespace x.y\nskyrim/set(W, :Damage, 20):\n    form/weapon(W)\n");
     PhaseClassifier pc(pool, diag);
     auto classes = pc.classify(m);
     EXPECT_EQ(classes.at(0), PhaseClass::Static);

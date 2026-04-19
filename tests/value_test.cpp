@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "mora/data/value.h"
+#include "mora/core/string_pool.h"
 
 using mora::Value;
 
@@ -53,4 +54,35 @@ TEST(ValueTest, EmptyList) {
     EXPECT_EQ(list.kind(), Value::Kind::List);
     EXPECT_EQ(list.as_list().size(), 0u);
     EXPECT_FALSE(list.list_contains(Value::make_formid(0x1)));
+}
+
+TEST(ValueKeyword, MakeAndRead) {
+    mora::StringPool pool;
+    auto name = pool.intern("Name");
+    auto v = mora::Value::make_keyword(name);
+
+    EXPECT_EQ(v.kind(), mora::Value::Kind::Keyword);
+    EXPECT_EQ(v.as_keyword(), name);
+}
+
+TEST(ValueKeyword, EqualityAndHash) {
+    mora::StringPool pool;
+    auto a = mora::Value::make_keyword(pool.intern("GoldValue"));
+    auto b = mora::Value::make_keyword(pool.intern("GoldValue"));
+    auto c = mora::Value::make_keyword(pool.intern("Name"));
+
+    EXPECT_EQ(a, b);
+    EXPECT_NE(a, c);
+    EXPECT_EQ(a.hash(), b.hash());
+}
+
+TEST(ValueKeyword, DistinctFromString) {
+    mora::StringPool pool;
+    auto id = pool.intern("Name");
+    auto kw  = mora::Value::make_keyword(id);
+    auto str = mora::Value::make_string(id);
+
+    EXPECT_NE(kw, str)
+        << "keywords and strings must compare unequal even when the "
+           "interned text is identical";
 }

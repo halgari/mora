@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mora/eval/evaluator.h"
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_set.h"
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
@@ -32,28 +31,66 @@ protected:
         db.add_fact(pool.intern("has_keyword"), {mora::Value::make_formid(0x300), mora::Value::make_formid(0xBBB)});
         return db;
     }
+
+    // Count tuples in a skyrim/* relation where the first arg matches formid.
+    size_t count_for_formid(mora::FactDB& db, const char* rel_name, uint32_t formid) {
+        auto rel_id = pool.intern(rel_name);
+        const auto& tuples = db.get_relation(rel_id);
+        size_t count = 0;
+        for (const auto& t : tuples) {
+            if (!t.empty() && t[0].kind() == mora::Value::Kind::FormID &&
+                t[0].as_formid() == formid) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    // Find tuples in a relation for a given formid; returns value at col 2.
+    std::vector<mora::Value> values_for_formid(mora::FactDB& db, const char* rel_name, uint32_t formid) {
+        auto rel_id = pool.intern(rel_name);
+        const auto& tuples = db.get_relation(rel_id);
+        std::vector<mora::Value> result;
+        for (const auto& t : tuples) {
+            if (t.size() >= 3 && t[0].kind() == mora::Value::Kind::FormID &&
+                t[0].as_formid() == formid) {
+                result.push_back(t[2]);
+            }
+        }
+        return result;
+    }
 };
+
+// Updated to use current namespaced syntax: add form/keyword(...)
+// The old tests used pre-Plan bare syntax (add_keyword, add_item) that
+// only worked via the tuple fallback path. After M2 that path is deleted.
 
 TEST_F(EvaluatorTest, SimpleEffectRule) {
     auto mod = parse(
-        "add_kw(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :TestKeyword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :TestFaction)\n"
-        "    => add_keyword(NPC, :TestKeyword)\n"
     );
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
     auto db = make_test_db();
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("TestFaction"), 0xAAA);
     evaluator.set_symbol_formid(pool.intern("TestKeyword"), 0xCCC);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].field, mora::FieldId::Keywords);
-    EXPECT_EQ(patches[0].op, mora::FieldOp::Add);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xCCCu);
-    EXPECT_TRUE(resolved.get_patches_for(0x200).empty());
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
+
+    // add form/keyword -> skyrim/add relation, field "Keywords", value 0xCCC
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xCCCu);
+
+    // NPC 0x200 has no matching faction, nothing emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x200), 0u);
 }
 
 TEST_F(EvaluatorTest, DerivedRuleComposition) {
@@ -62,118 +99,147 @@ TEST_F(EvaluatorTest, DerivedRuleComposition) {
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
         "\n"
-        "tag_bandit(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :IsBandit):\n"
         "    bandit(NPC)\n"
-        "    => add_keyword(NPC, :IsBandit)\n"
     );
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
     auto db = make_test_db();
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("BanditFaction"), 0xAAA);
     evaluator.set_symbol_formid(pool.intern("IsBandit"), 0xDDD);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xDDDu);
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
+
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xDDDu);
 }
 
 TEST_F(EvaluatorTest, ConditionalEffect) {
     auto mod = parse(
-        "bandit_gear(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :SilverSword):\n"
         "    npc(NPC)\n"
         "    has_faction(NPC, :BanditFaction)\n"
         "    base_level(NPC, Level)\n"
-        "    Level >= 20 => add_item(NPC, :SilverSword)\n"
-        "    Level < 20 => add_item(NPC, :IronSword)\n"
+        "    Level >= 20\n"
+        "skyrim/add(NPC, :Keyword, :IronSword):\n"
+        "    npc(NPC)\n"
+        "    has_faction(NPC, :BanditFaction)\n"
+        "    base_level(NPC, Level)\n"
+        "    Level < 20\n"
     );
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
     auto db = make_test_db();
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("BanditFaction"), 0xAAA);
     evaluator.set_symbol_formid(pool.intern("SilverSword"), 0xE01);
     evaluator.set_symbol_formid(pool.intern("IronSword"), 0xE02);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    auto patches = resolved.get_patches_for(0x100);
-    ASSERT_EQ(patches.size(), 1u);
-    EXPECT_EQ(patches[0].value.as_formid(), 0xE01u);
-    EXPECT_TRUE(resolved.get_patches_for(0x200).empty());
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
+
+    // NPC 0x100 has level 25 >= 20 and is in BanditFaction -> SilverSword
+    auto vals = values_for_formid(db, "skyrim/add", 0x100);
+    ASSERT_EQ(vals.size(), 1u);
+    EXPECT_EQ(vals[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(vals[0].as_formid(), 0xE01u);
+
+    // NPC 0x200 is not in BanditFaction, nothing emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x200), 0u);
 }
 
 TEST_F(EvaluatorTest, NegationInBody) {
     auto mod = parse(
-        "non_silver(W):\n"
+        "skyrim/add(W, :Keyword, :NonSilver):\n"
         "    weapon(W)\n"
         "    not has_keyword(W, :Silver)\n"
-        "    => add_keyword(W, :NonSilver)\n"
     );
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
     auto db = make_test_db();
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Silver"), 0xBBB);
     evaluator.set_symbol_formid(pool.intern("NonSilver"), 0xFFF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    // Weapon 0x300 HAS keyword 0xBBB, so negation fails, no patch
-    EXPECT_TRUE(resolved.get_patches_for(0x300).empty());
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
+
+    // Weapon 0x300 HAS keyword 0xBBB, so negation fails, no effect emitted
+    EXPECT_EQ(count_for_formid(db, "skyrim/add", 0x300), 0u);
 }
 
 TEST_F(EvaluatorTest, RuleMatchCount) {
     auto mod = parse(
-        "tag_all(NPC):\n"
+        "skyrim/add(NPC, :Keyword, :Tagged):\n"
         "    npc(NPC)\n"
-        "    => add_keyword(NPC, :Tagged)\n"
     );
+    for (auto const& d : diags.all())
+        if (d.level == mora::DiagLevel::Error) ADD_FAILURE() << d.message;
+    ASSERT_FALSE(diags.has_errors());
+
     auto db = make_test_db();
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Tagged"), 0xFFF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
-    EXPECT_EQ(resolved.patch_count(), 2u); // 2 NPCs
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
+
+    // 2 NPCs each get one tuple in skyrim/add
+    auto rel_id = pool.intern("skyrim/add");
+    const auto& tuples = db.get_relation(rel_id);
+    EXPECT_EQ(tuples.size(), 2u);
 }
 
 // Test: KW in KWList where KWList is a list-typed Value from FactDB.
-// Programmatically constructs the rule AST to avoid needing to register
-// test_dist as a builtin in the parser's name resolver.
+// Programmatically constructs the rule AST.
 //
 // Rule (conceptually):
-//   test_rule(NPC):
-//       test_dist(_, "keyword", KWList)
-//       npc(NPC)
-//       has_keyword(NPC, KW)
-//       KW in KWList
-//       => add_keyword(NPC, :Result)
+//   test_rule(NPC, KW):
+//       kw_source(NPC, KWList)  — one row per NPC with a keyword list
+//       has_keyword(NPC, KW)    — shared join on NPC
+//       KW in KWList            — membership filter
+//       => add form/keyword(NPC, :Result)
+//
+// kw_source(NPC, KWList) joins with has_keyword(NPC, KW) on NPC —
+// no Cartesian join, so the vectorized planner accepts the rule.
 TEST_F(EvaluatorTest, ElementInListVar) {
     // Build FactDB
     mora::FactDB db(pool);
 
-    // test_dist(1, "keyword", [:kw_formid_A, :kw_formid_B])
+    // kw_source(0x100, [0xA01, 0xA02]) — NPC 1's allowed keyword set
     mora::Value kw_list = mora::Value::make_list({
         mora::Value::make_formid(0xA01),
         mora::Value::make_formid(0xA02),
     });
-    db.add_fact(pool.intern("test_dist"), {
-        mora::Value::make_int(1),
-        mora::Value::make_string(pool.intern("keyword")),
+    db.add_fact(pool.intern("kw_source"), {
+        mora::Value::make_formid(0x100),
+        kw_list,
+    });
+    db.add_fact(pool.intern("kw_source"), {
+        mora::Value::make_formid(0x200),
         kw_list,
     });
 
-    // has_keyword(0x100, kw_formid_A)  — NPC 1 has keyword A
+    // has_keyword(0x100, 0xA01)  — NPC 1 has keyword A (in list → match)
     db.add_fact(pool.intern("has_keyword"), {
         mora::Value::make_formid(0x100),
         mora::Value::make_formid(0xA01),
     });
-    // has_keyword(0x200, kw_formid_B)  — NPC 2 has keyword B
+    // has_keyword(0x200, 0xA02)  — NPC 2 has keyword B (in list → match)
     db.add_fact(pool.intern("has_keyword"), {
         mora::Value::make_formid(0x200),
         mora::Value::make_formid(0xA02),
     });
-
-    // npc(0x100), npc(0x200)
-    db.add_fact(pool.intern("npc"), {mora::Value::make_formid(0x100)});
-    db.add_fact(pool.intern("npc"), {mora::Value::make_formid(0x200)});
 
     // Build Rule AST programmatically
     // Variables: NPC, KWList, KW
@@ -182,35 +248,27 @@ TEST_F(EvaluatorTest, ElementInListVar) {
     mora::StringId v_kw     = pool.intern("KW");
 
     auto var_expr = [](mora::StringId name) -> mora::Expr {
-        return mora::Expr{mora::VariableExpr{name, {}, {}}, {}};
-    };
-    auto str_expr = [&](const std::string& s) -> mora::Expr {
-        return mora::Expr{mora::StringLiteral{pool.intern(s), {}}, {}};
+        return mora::Expr{mora::VariableExpr{name, {}}, {}};
     };
 
+    // Qualified head: skyrim/add(NPC, :Keyword, :Result)
     mora::Rule rule;
-    rule.name = pool.intern("test_rule");
+    rule.qualifier = pool.intern("skyrim");
+    rule.name      = pool.intern("add");
     rule.head_args.push_back(var_expr(v_npc));
+    rule.head_args.push_back(mora::Expr{mora::KeywordLiteral{pool.intern("Keyword"), {}}, {}});
+    rule.head_args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}}, {}});
 
-    // Clause 1: test_dist(_, "keyword", KWList)
+    // Clause 1: kw_source(NPC, KWList)
     {
         mora::FactPattern fp;
-        fp.name = pool.intern("test_dist");
-        fp.args.push_back(mora::Expr{mora::DiscardExpr{{}}, {}});
-        fp.args.push_back(str_expr("keyword"));
+        fp.name = pool.intern("kw_source");
+        fp.args.push_back(var_expr(v_npc));
         fp.args.push_back(var_expr(v_kwlist));
         rule.body.push_back(mora::Clause{std::move(fp), {}});
     }
 
-    // Clause 2: npc(NPC)
-    {
-        mora::FactPattern fp;
-        fp.name = pool.intern("npc");
-        fp.args.push_back(var_expr(v_npc));
-        rule.body.push_back(mora::Clause{std::move(fp), {}});
-    }
-
-    // Clause 3: has_keyword(NPC, KW)
+    // Clause 2: has_keyword(NPC, KW) — joins on NPC
     {
         mora::FactPattern fp;
         fp.name = pool.intern("has_keyword");
@@ -219,22 +277,12 @@ TEST_F(EvaluatorTest, ElementInListVar) {
         rule.body.push_back(mora::Clause{std::move(fp), {}});
     }
 
-    // Clause 4: KW in KWList
+    // Clause 3: KW in KWList — membership filter
     {
         mora::InClause ic;
         ic.variable = std::make_unique<mora::Expr>(var_expr(v_kw));
         ic.values.push_back(var_expr(v_kwlist));
         rule.body.push_back(mora::Clause{std::move(ic), {}});
-    }
-
-    // Effect: add_keyword(NPC, :Result)
-    {
-        mora::Effect eff;
-        eff.name = pool.intern("add_keyword");
-        eff.args.push_back(var_expr(v_npc));
-        // :Result as a symbol expr — evaluator resolves it via set_symbol_formid
-        eff.args.push_back(mora::Expr{mora::SymbolExpr{pool.intern("Result"), {}, {}}, {}});
-        rule.effects.push_back(std::move(eff));
     }
 
     mora::Module mod;
@@ -243,15 +291,16 @@ TEST_F(EvaluatorTest, ElementInListVar) {
     mora::Evaluator evaluator(pool, diags, db);
     evaluator.set_symbol_formid(pool.intern("Result"), 0xBEEF);
 
-    auto patch_set = evaluator.evaluate_static(mod);
-    auto resolved = patch_set.resolve();
+    evaluator.evaluate_module(mod, db);
+    EXPECT_FALSE(diags.has_errors()) << "evaluator emitted unexpected error";
 
-    // Both NPCs should receive :Result
-    EXPECT_EQ(resolved.patch_count(), 2u);
-    auto p1 = resolved.get_patches_for(0x100);
-    auto p2 = resolved.get_patches_for(0x200);
-    ASSERT_EQ(p1.size(), 1u);
-    ASSERT_EQ(p2.size(), 1u);
-    EXPECT_EQ(p1[0].value.as_formid(), 0xBEEFu);
-    EXPECT_EQ(p2[0].value.as_formid(), 0xBEEFu);
+    // Both NPCs should receive :Result in skyrim/add
+    auto v1 = values_for_formid(db, "skyrim/add", 0x100);
+    auto v2 = values_for_formid(db, "skyrim/add", 0x200);
+    ASSERT_EQ(v1.size(), 1u);
+    ASSERT_EQ(v2.size(), 1u);
+    EXPECT_EQ(v1[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(v1[0].as_formid(), 0xBEEFu);
+    EXPECT_EQ(v2[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(v2[0].as_formid(), 0xBEEFu);
 }

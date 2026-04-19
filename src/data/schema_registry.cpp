@@ -1,5 +1,4 @@
 #include "mora/data/schema_registry.h"
-#include "mora/data/action_names.h"
 #include "mora/data/form_model.h"
 #include "mora/eval/fact_db.h"
 #include "mora/model/relations.h"
@@ -67,13 +66,13 @@ ReadType value_type_to_read_type(mora::model::ValueType vt) {
     return ReadType::Int32;
 }
 
-MoraType value_type_to_mora_type(mora::model::ValueType vt) {
+const Type* value_type_to_type_ptr(mora::model::ValueType vt) {
     using VT = mora::model::ValueType;
     switch (vt) {
-        case VT::Float32:       return MoraType::make(TypeKind::Float);
-        case VT::BSFixedString: return MoraType::make(TypeKind::String);
-        case VT::FormRef:       return MoraType::make(TypeKind::FormID);
-        default:                return MoraType::make(TypeKind::Int);
+        case VT::Float32:       return mora::types::get("Float64");
+        case VT::BSFixedString: return mora::types::get("String");
+        case VT::FormRef:       return mora::types::get("FormID");
+        default:                return mora::types::get("Int64");
     }
 }
 
@@ -82,14 +81,14 @@ MoraType value_type_to_mora_type(mora::model::ValueType vt) {
 void SchemaRegistry::register_defaults() {
     namespace m = model;
     auto id = [&](const char* s) { return pool_.intern(s); };
-    auto formid_type = MoraType::make(TypeKind::FormID);
+    auto formid_type = mora::types::get("FormID");
 
     // ── Existence relations from modifiable form types ──────────────────
     for (size_t i = 0; i < m::kFormTypeCount; i++) {
         auto& ft = *m::kFormTypes[i];
         RelationSchema s;
         s.name = id(ft.relation_name);
-        s.column_types = {MoraType::make(ft.type_kind)};
+        s.column_types = {mora::types::get(ft.type_name)};
         s.indexed_columns = {0};
         s.esp_sources.push_back(EspSource{
             ft.record_tag, "", EspSource::Kind::Existence, 0, 0, ReadType::FormID});
@@ -101,7 +100,7 @@ void SchemaRegistry::register_defaults() {
         auto& eo = m::kExistenceOnly[i];
         RelationSchema s;
         s.name = id(eo.relation_name);
-        s.column_types = {MoraType::make(eo.type_kind)};
+        s.column_types = {mora::types::get(eo.type_name)};
         s.indexed_columns = {0};
         s.esp_sources.push_back(EspSource{
             eo.record_tag, "", EspSource::Kind::Existence, 0, 0, ReadType::FormID});
@@ -128,7 +127,7 @@ void SchemaRegistry::register_defaults() {
             RelationSchema s;
             s.name = id(field.relation_name);
             auto& member = m::kComponents[field.component_idx].members[field.member_idx];
-            s.column_types = {formid_type, value_type_to_mora_type(member.value_type)};
+            s.column_types = {formid_type, value_type_to_type_ptr(member.value_type)};
             s.indexed_columns = {0};
             s.esp_sources.push_back(EspSource{
                 esp.record_tag, esp.subrecord_tag,
@@ -145,17 +144,17 @@ void SchemaRegistry::register_defaults() {
 
         RelationSchema s;
         s.name = id(fa.relation_name);
-        s.column_types = {formid_type, MoraType::make(TypeKind::FormID)};
+        s.column_types = {formid_type, mora::types::get("FormID")};
 
         // Set column type for the value based on field ID
         if (fa.field_id == FieldId::Keywords)
-            s.column_types[1] = MoraType::make(TypeKind::KeywordID);
+            s.column_types[1] = mora::types::get("KeywordID");
         else if (fa.field_id == FieldId::Spells)
-            s.column_types[1] = MoraType::make(TypeKind::SpellID);
+            s.column_types[1] = mora::types::get("SpellID");
         else if (fa.field_id == FieldId::Perks)
-            s.column_types[1] = MoraType::make(TypeKind::PerkID);
+            s.column_types[1] = mora::types::get("PerkID");
         else if (fa.field_id == FieldId::Factions)
-            s.column_types[1] = MoraType::make(TypeKind::FactionID);
+            s.column_types[1] = mora::types::get("FactionID");
 
         s.indexed_columns = {0, 1};
 
@@ -184,7 +183,7 @@ void SchemaRegistry::register_defaults() {
     {
         RelationSchema s;
         s.name = id("editor_id");
-        s.column_types = {formid_type, MoraType::make(TypeKind::String)};
+        s.column_types = {formid_type, mora::types::get("String")};
         s.indexed_columns = {0};
         for (size_t i = 0; i < m::kEditorIdRecordCount; i++) {
             s.esp_sources.push_back(EspSource{
@@ -198,7 +197,7 @@ void SchemaRegistry::register_defaults() {
     {
         RelationSchema s;
         s.name = id("name");
-        s.column_types = {formid_type, MoraType::make(TypeKind::String)};
+        s.column_types = {formid_type, mora::types::get("String")};
         s.indexed_columns = {0};
         for (size_t i = 0; i < m::kFullNameRecordCount; i++) {
             s.esp_sources.push_back(EspSource{
@@ -208,11 +207,11 @@ void SchemaRegistry::register_defaults() {
         register_schema(std::move(s));
     }
 
-    // npc_flags(FormID, Int) — ACBS flags at offset 0
+    // npc_flags(FormID, Int64) — ACBS flags at offset 0
     {
         RelationSchema s;
         s.name = id("npc_flags");
-        s.column_types = {formid_type, MoraType::make(TypeKind::Int)};
+        s.column_types = {formid_type, mora::types::get("Int64")};
         s.indexed_columns = {0};
         s.esp_sources.push_back(EspSource{
             "NPC_", "ACBS", EspSource::Kind::PackedField, 0, 0, ReadType::UInt32});
@@ -223,7 +222,7 @@ void SchemaRegistry::register_defaults() {
     {
         RelationSchema s;
         s.name = id("race_of");
-        s.column_types = {formid_type, MoraType::make(TypeKind::RaceID)};
+        s.column_types = {formid_type, mora::types::get("RaceID")};
         s.indexed_columns = {0, 1};
         s.esp_sources.push_back(EspSource{
             "NPC_", "RNAM", EspSource::Kind::Subrecord, 0, 0, ReadType::FormID});
@@ -239,9 +238,9 @@ void SchemaRegistry::register_defaults() {
     // ── Plugin-level relations (populated from LoadOrder, not from ESP
     //    scanning). Schemas declared here so rules can type-check
     //    against them; rows are pushed by populate_plugin_facts().
-    auto string_type = MoraType::make(TypeKind::String);
-    auto int_type    = MoraType::make(TypeKind::Int);
-    auto float_type  = MoraType::make(TypeKind::Float);
+    auto string_type = mora::types::get("String");
+    auto int_type    = mora::types::get("Int64");
+    auto float_type  = mora::types::get("Float64");
     auto reg_unary = [&](const char* n) {
         RelationSchema s;
         s.name = id(n);
@@ -249,7 +248,7 @@ void SchemaRegistry::register_defaults() {
         s.indexed_columns = {0};
         register_schema(std::move(s));
     };
-    auto reg_pair = [&](const char* n, MoraType second) {
+    auto reg_pair = [&](const char* n, const Type* second) {
         RelationSchema s;
         s.name = id(n);
         s.column_types   = {string_type, second};
@@ -267,17 +266,17 @@ void SchemaRegistry::register_defaults() {
 
 namespace {
 
-MoraType elem_to_mora_type(mora::model::ElemType e) {
+const Type* elem_to_type_ptr(mora::model::ElemType e) {
     using E = mora::model::ElemType;
     switch (e) {
-        case E::Int:     return MoraType::make(TypeKind::Int);
-        case E::Float:   return MoraType::make(TypeKind::Float);
-        case E::String:  return MoraType::make(TypeKind::String);
-        case E::FormRef: return MoraType::make(TypeKind::FormID);
-        case E::Keyword: return MoraType::make(TypeKind::KeywordID);
-        case E::RefId:   return MoraType::make(TypeKind::FormID);
+        case E::Int:     return mora::types::get("Int64");
+        case E::Float:   return mora::types::get("Float64");
+        case E::String:  return mora::types::get("String");
+        case E::FormRef: return mora::types::get("FormID");
+        case E::Keyword: return mora::types::get("KeywordID");
+        case E::RefId:   return mora::types::get("FormID");
     }
-    return MoraType::make(TypeKind::Int);
+    return mora::types::get("Int64");
 }
 
 ReadType esp_read_to_read_type(mora::model::EspReadType r) {
@@ -331,7 +330,7 @@ void SchemaRegistry::register_yaml_relations() {
         s.name = name_id;
         // Column types from the declared args.
         for (uint8_t c = 0; c < r.arg_count; ++c) {
-            s.column_types.push_back(elem_to_mora_type(r.args[c].type));
+            s.column_types.push_back(elem_to_type_ptr(r.args[c].type));
         }
         // Predicates are unary; everything else has a FormID-keyed primary.
         if (r.arg_count > 0) s.indexed_columns.push_back(0);

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "mora/eval/fact_db.h"
 #include "mora/core/string_pool.h"
+#include "mora/core/type.h"
 
 class FactDBTest : public ::testing::Test {
 protected:
@@ -73,4 +74,32 @@ TEST_F(FactDBTest, FactCount) {
     db.add_fact(npc, {mora::Value::make_formid(0x200)});
     EXPECT_EQ(db.fact_count(npc), 2u);
     EXPECT_EQ(db.fact_count(),    2u);
+}
+
+TEST(FactDBMergeFromPreservesColumnTypes, MergesSchemaOnNewRelation) {
+    mora::StringPool pool;
+    auto const* formid = mora::TypeRegistry::instance().register_nominal(
+        "FormID", mora::types::int32(), mora::Value::Kind::FormID);
+
+    // Source DB has a typed relation.
+    mora::FactDB src(pool);
+    auto rel_id = pool.intern("typed_rel");
+    src.configure_relation(rel_id, {formid, mora::types::int64()}, /*indexed*/ {0});
+    src.add_fact(rel_id, {mora::Value::make_formid(0x100),
+                           mora::Value::make_int(42)});
+
+    // Destination is empty; merge should vivify with the source's types.
+    mora::FactDB dst(pool);
+    dst.merge_from(src);
+
+    auto const* merged = dst.get_relation_columnar(rel_id);
+    ASSERT_NE(merged, nullptr);
+    ASSERT_EQ(merged->arity(), 2u);
+    EXPECT_EQ(merged->column(0).type(), formid);
+    EXPECT_EQ(merged->column(1).type(), mora::types::int64());
+    // Round-trip: the FormID decode should yield Kind::FormID.
+    auto const row = merged->row_at(0);
+    EXPECT_EQ(row[0].kind(), mora::Value::Kind::FormID);
+    EXPECT_EQ(row[0].as_formid(), 0x100u);
+    EXPECT_EQ(row[1].as_int(), 42);
 }

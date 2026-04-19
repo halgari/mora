@@ -10,7 +10,6 @@
 namespace mora {
 struct Module;
 class NameResolver;
-class TypeChecker;
 }
 
 namespace mora::lsp {
@@ -39,7 +38,6 @@ public:
     // Build the index by walking a fully-resolved Module.
     void build(const mora::Module& mod,
                const mora::NameResolver& resolver,
-               const mora::TypeChecker& tc,
                const mora::StringPool& pool);
 
     // Find the entry whose span contains (line, col). Returns nullptr if

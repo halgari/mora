@@ -139,6 +139,26 @@ else
 end
 add_requires("nlohmann_json")
 
+-- Local xmake-repo override: Apache Arrow 7.0.0 pulls in xsimd as a
+-- bundled dep whose upstream `cmake_minimum_required(VERSION 3.1)` is
+-- rejected by CMake 4.x. scripts/xmake-repo/ ships a patched arrow
+-- recipe that disables SIMD (ARROW_SIMD_LEVEL=NONE + RUNTIME variant).
+-- The override repo must be registered before any matching
+-- add_requires() below.
+--
+-- Arrow is Linux/macOS only in v3: the xmake recipe's on_install has
+-- no Windows handler, and cross-compiling the full Arrow+Parquet stack
+-- via xwin+clang-cl is a non-trivial port. The SKSE runtime DLL
+-- (M2) will read a simpler flat-binary runtime snapshot emitted by a
+-- separate sink on the compile-time host.
+if not is_plat("windows") then
+    add_repositories("mora-local scripts/xmake-repo")
+    add_requires("arrow 7.0.0", {
+        configs = { parquet = true, csv = false, jemalloc = false, mimalloc = false,
+                    engine = false, dataset = false }
+    })
+end
+
 -- Vendored zlib (extern/zlib submodule, v1.3.1). Only included on
 -- windows to avoid the xrepo-zlib + static-CRT + lld-link collision
 -- (see "zlib" add_requires block above for details). On linux the
@@ -159,15 +179,12 @@ target("mora_lib")
     add_includedirs("include", {public = true})
     add_files("src/core/*.cpp", "src/lexer/*.cpp", "src/ast/*.cpp",
               "src/parser/*.cpp", "src/sema/*.cpp", "src/diag/*.cpp",
-              "src/cli/*.cpp", "src/eval/*.cpp", "src/emit/*.cpp",
-              "src/data/*.cpp", "src/esp/*.cpp",
-              "src/codegen/*.cpp", "src/rt/*.cpp", "src/rt/handlers/*.cpp",
-              "src/harness/*.cpp",
-              "src/model/*.cpp", "src/dag/*.cpp",
+              "src/cli/*.cpp", "src/eval/*.cpp", "src/ext/*.cpp",
+              "src/data/columnar_relation.cpp",
+              "src/data/schema_registry.cpp",
+              "src/data/value.cpp", "src/data/vector.cpp", "src/data/column.cpp",
+              "src/model/*.cpp",
               "src/lsp/*.cpp", "src/lsp/handlers/*.cpp")
-    -- Runtime files that touch CommonLibSSE-NG guard their bodies on
-    -- MORA_WITH_COMMONLIB. The CLI doesn't link CommonLib, so leave
-    -- that undefined here — guarded blocks compile as empty stubs.
     if is_plat("windows") then
         add_deps("zlib")
         add_packages("fmt", "nlohmann_json", {public = true})
@@ -204,22 +221,41 @@ target("mora_lib")
     end)
 target_end()
 
--- CLI executable
-target("mora")
-    set_kind("binary")
-    add_files("src/main.cpp")
-    add_deps("mora_lib")
-    -- CLI11 is header-only; bring in its multi-file include tree.
-    -- Submodule pinned at v2.6.2 under extern/CLI11.
-    add_includedirs("extern/CLI11/include")
-    -- Keep the compile-time banner in sync with xmake's version —
-    -- the previous hardcoded "0.1.0" string drifted over four
-    -- bumps. Projected into main.cpp via MORA_VERSION.
-    on_load(function (target)
-        import("core.project.project")
-        target:add("defines", "MORA_VERSION=\"" .. project.version() .. "\"")
-    end)
-target_end()
+-- ══════════════════════════════════════════════════════════════
+-- Extensions. Linux/macOS build the full set; Windows builds only
+-- those used by the SKSE runtime DLL (M2) — parquet and the
+-- skyrim_runtime C++ reader aren't needed in the DLL (it reads a
+-- simpler flat-binary snapshot), and skyrim_compile bundles ESP
+-- parsing that only runs at compile time on the host.
+-- ══════════════════════════════════════════════════════════════
+if not is_plat("windows") then
+    includes("extensions/parquet/xmake.lua")
+    includes("extensions/skyrim_compile/xmake.lua")
+    includes("extensions/synthetic/xmake.lua")
+end
+-- skyrim_runtime contributes mora_runtime DLL + harness DLLs on
+-- Windows; each target inside is individually platform-gated.
+includes("extensions/skyrim_runtime/xmake.lua")
+
+-- CLI executable (Linux/macOS only — the Windows build produces
+-- only the SKSE DLLs; the compile step runs on the host).
+if not is_plat("windows") then
+    target("mora")
+        set_kind("binary")
+        add_files("src/main.cpp")
+        add_deps("mora_lib", "mora_skyrim_compile", "mora_parquet", "mora_skyrim_runtime")
+        -- CLI11 is header-only; bring in its multi-file include tree.
+        -- Submodule pinned at v2.6.2 under extern/CLI11.
+        add_includedirs("extern/CLI11/include")
+        -- Keep the compile-time banner in sync with xmake's version —
+        -- the previous hardcoded "0.1.0" string drifted over four
+        -- bumps. Projected into main.cpp via MORA_VERSION.
+        on_load(function (target)
+            import("core.project.project")
+            target:add("defines", "MORA_VERSION=\"" .. project.version() .. "\"")
+        end)
+    target_end()
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- Tests (Linux only — rely on POSIX-specific gtest setup)
@@ -242,16 +278,43 @@ for _, testfile in ipairs(os.files("tests/*_test.cpp")) do
     target_end()
 end
 
--- Tests under subdirectories (tests/<group>/test_*.cpp)
+-- Tests under subdirectories (tests/<group>/test_*.cpp).
+-- Parquet-dependent tests (tests/cli/test_cli_parquet_*.cpp) are excluded
+-- here and declared below with their own deps because they need arrow +
+-- mora_parquet + mora_skyrim_compile in a specific link order that the
+-- generic per-file loop can't produce via override.
 for _, testfile in ipairs(os.files("tests/**/test_*.cpp")) do
+    local basename = path.basename(testfile)
+    -- Exclude parquet-specific tests (handled below with dedicated deps).
+    if not basename:startswith("test_cli_parquet_") then
+        local name = basename
+        target(name)
+            set_kind("binary")
+            set_default(false)
+            add_files(testfile)
+            add_includedirs("tests")
+            add_deps("mora_lib")
+            add_packages("gtest")
+            add_syslinks("gtest_main")
+            add_tests(name)
+        target_end()
+    end
+end
+
+-- Dedicated target loop for parquet-dependent tests. Deps are declared
+-- in link-order sensitive sequence: mora_skyrim_compile and mora_parquet
+-- come BEFORE mora_lib so that GNU ld's left-to-right archive resolution
+-- finds their backward references into mora_lib's symbols (SchemaRegistry
+-- et al.).
+for _, testfile in ipairs(os.files("tests/cli/test_cli_parquet_*.cpp")) do
     local name = path.basename(testfile)
     target(name)
         set_kind("binary")
         set_default(false)
         add_files(testfile)
         add_includedirs("tests")
-        add_deps("mora_lib")
-        add_packages("gtest")
+        add_deps("mora_skyrim_compile", "mora_parquet", "mora_lib")
+        add_packages("gtest", "arrow")
         add_syslinks("gtest_main")
         add_tests(name)
     target_end()
@@ -260,40 +323,32 @@ end
 end -- not windows
 
 -- ══════════════════════════════════════════════════════════════
--- Windows: SKSE Runtime DLL + test harness (cross-compile)
+-- Windows-only: CommonLibSSE-NG + spdlog static libs
 --
--- We can't `includes("extern/CommonLibSSE-NG")` to reuse its xmake
+-- Can't `includes("extern/CommonLibSSE-NG")` to reuse its xmake
 -- target: the upstream pulls spdlog/directxmath/directxtk via the
 -- xmake package manager, and those packages' on_install uses
 -- `package.tools.cmake` which hardcodes the "Visual Studio"
--- generator on windows (xmake/.../modules/package/tools/cmake.lua
--- line 754-756 — no hook to override from the consumer side). That
--- generator needs a real MSVC install, which defeats our goal of a
--- wine-free cross-compile from Linux.
+-- generator on windows — that generator needs a real MSVC install,
+-- defeating our wine-free cross-compile from Linux.
 --
--- Instead: compile CommonLibSSE-NG's sources in-tree with our own
--- target. We bring our own spdlog/fmt via `extern/spdlog-shim`
--- (symlinks to system-installed /usr/include/{spdlog,fmt} on dev
--- boxes; materialized from upstream clones in CI). DirectXMath.h
--- comes from the xwin Windows SDK; DirectXTK's SimpleMath is
--- replaced by a POD shim in `extern/simplemath-shim` since Mora
--- never actually calls its methods.
+-- Compile CommonLibSSE-NG's sources in-tree with our own target.
+-- Bring spdlog/fmt via `extern/spdlog-shim`, DirectXMath.h from the
+-- xwin Windows SDK, and DirectXTK::SimpleMath via the POD shim at
+-- `extern/simplemath-shim` (Mora doesn't call its methods).
 -- ══════════════════════════════════════════════════════════════
 if is_plat("windows") then
 
 target("commonlibsse_ng")
     set_kind("static")
     set_languages("c++23")
-    -- Required for SSE intrinsics (_mm_set_ps1, _mm_shuffle_ps, etc.)
-    -- to inline rather than emit undefined external references — the
-    -- upstream release build assumes /O2 semantics, and without any
-    -- optimization clang-cl falls back to expecting CRT-provided bodies
-    -- for the SSE shims that don't exist.
+    -- /O2 semantics required for SSE intrinsics (_mm_set_ps1,
+    -- _mm_shuffle_ps, etc.) to inline rather than emit undefined
+    -- external references.
     set_optimize("fastest")
 
     add_files("extern/CommonLibSSE-NG/src/**.cpp")
 
-    -- These flow to every target that add_deps("commonlibsse_ng")
     add_includedirs("extern/CommonLibSSE-NG/include",
                     "extern/spdlog-shim",
                     "extern/simplemath-shim",
@@ -304,34 +359,23 @@ target("commonlibsse_ng")
                 {public = true})
     add_defines("WIN32", "_WINDOWS", "NOMINMAX")
 
-    -- Force-include the PCH header rather than /Yu'ing a precompiled
-    -- binary. clang-cl + /Yu truncates some header bodies inside the
-    -- PCH — in particular, SSE intrinsic inline definitions get lost,
-    -- leaving unresolved externs like _mm_set_ps1 at link time. /FI
-    -- re-parses the header per TU (slower, but a clean 14s full build
-    -- is already fast enough) and keeps all inlines visible.
+    -- /FI re-parses PCH.h per TU (clean build ~14s) rather than
+    -- /Yu'ing a binary PCH — clang-cl + /Yu truncates SSE intrinsic
+    -- inline bodies, leaving unresolved _mm_set_ps1 etc. at link.
     add_cxflags("/FISKSE/Impl/PCH.h", {force = true})
 
-    -- Upstream code triggers a mountain of warnings under clang-cl.
-    -- We're treating the SKSE submodule as third-party binary-input:
-    -- turn all warnings off for this TU only (our own code below
-    -- still inherits project-level /WX).
-    add_cxflags("/w",
-                "/bigobj",
-                "/utf-8",
-                "/permissive-",
-                "/Zc:preprocessor",
-                {force = true})
+    -- Third-party code: suppress all warnings for this TU only.
+    add_cxflags("/w", "/bigobj", "/utf-8", "/permissive-",
+                "/Zc:preprocessor", {force = true})
 
     add_syslinks("advapi32", "bcrypt", "d3d11", "d3dcompiler",
                  "dbghelp", "dxgi", "ole32", "shell32", "user32",
                  "version")
 target_end()
 
--- spdlog compiled-library TUs from the shim. Splitting these out
--- keeps the heavy PCH off their compile and makes the intent clear:
--- these two files exist solely to satisfy SPDLOG_COMPILED_LIB's
--- one-definition-rule needs.
+-- spdlog compiled-library TUs from the shim. Split out to keep the
+-- CommonLib PCH off their compile; these two files exist solely to
+-- satisfy SPDLOG_COMPILED_LIB's ODR needs.
 target("spdlog_rt")
     set_kind("static")
     set_languages("c++23")
@@ -341,98 +385,6 @@ target("spdlog_rt")
     add_defines("SPDLOG_COMPILED_LIB", "SPDLOG_FMT_EXTERNAL",
                 {public = true})
     add_cxflags("/w", "/utf-8", {force = true})
-target_end()
-
-target("mora_runtime")
-    set_kind("shared")
-    set_filename("MoraRuntime.dll")
-    set_languages("c++23")
-    add_deps("commonlibsse_ng", "spdlog_rt")
-
-    -- mora_runtime TUs transitively include CommonLibSSE-NG headers,
-    -- which trip a number of clang-cl warnings (noreturn returning,
-    -- tautological compare, etc.) that upstream knowingly builds with
-    -- suppressed. Our project default is /W3 /WX — relax it for this
-    -- target so we don't fight third-party idioms.
-    set_warnings("none")
-
-    -- Shared Mora core code (subset — no ESP parser, no CLI, no lexer/parser).
-    -- Exclusions, matching the legacy build_rt_lib.sh:
-    --   * form_model_verify.cpp: compile-time offset sanity check using
-    --     constexpr reinterpret_cast, which the standard disallows.
-    --   * diag/renderer.cpp: pulls in CLI/terminal-rendering code the DLL
-    --     doesn't need.
-    add_files("src/core/*.cpp", "src/data/*.cpp",
-              "src/diag/*.cpp|renderer.cpp",
-              "src/eval/*.cpp", "src/emit/*.cpp")
-    add_files("src/rt/*.cpp|form_model_verify.cpp", "src/rt/handlers/*.cpp")
-    add_files("src/dag/*.cpp", "src/model/*.cpp")
-    add_includedirs("include", {public = true})
-
-    add_defines("SKYRIMSE", "MORA_WITH_COMMONLIB")
-    add_defines("WIN32", "_WINDOWS", "NOMINMAX")
-    -- /FI force-includes CommonLib's PCH into every TU — upstream's
-    -- headers assume the PCH has already pulled in <bit>/<cstdint>/etc.
-    -- /Zc:preprocessor is MSVC-only; clang-cl's preprocessor is already
-    -- standard-conforming.
-    add_cxflags("/utf-8", "/FISKSE/Impl/PCH.h", {force = true})
-
-    -- SKSE plugin entry points are exported via a .def file: the
-    -- 0x350-byte SKSEPlugin_Version struct + SKSEPlugin_Load + DllMain.
-    -- /wholearchive isn't needed because mora_runtime compiles its
-    -- sources directly into the DLL (no separate static trampoline).
-    --
-    -- /ENTRY:_DllMainCRTStartup is load-bearing: our `plugin_entry.cpp`
-    -- defines a user-DllMain, and lld-link's default behavior under
-    -- clang-cl is to use that as the DLL entry point directly. That
-    -- skips the vcruntime CRT init chain (_initterm), so `.CRT$XCU`
-    -- static constructors never run — which leaves
-    -- CommonLibSSE-NG's `static inline std::mutex REL::Module::_initLock`
-    -- with a zero-initialized internal SRWLock pointer. The first
-    -- call to `Module::get()` then AVs at 0xC0000005 inside MSVCP140's
-    -- mutex lock code, trying to dereference that null pointer.
-    -- Pinning the entry point to the CRT wrapper routes startup through
-    -- _initterm → every static ctor → our DllMain.
-    add_shflags("/def:" .. path.join(os.projectdir(), "scripts/MoraRuntime.def"),
-                -- /ENTRY:_DllMainCRTStartup routes DLL load through the
-                -- vcruntime CRT wrapper, which runs C++ static
-                -- constructors (the `_initterm(__xc_a, __xc_z)` walk
-                -- over the `.CRT$XCU` function-pointer array) before
-                -- calling our user DllMain. Without it, lld-link would
-                -- pick our own `DllMain` as the entry point and skip
-                -- CRT init entirely.
-                "/ENTRY:_DllMainCRTStartup",
-                {force = true})
-target_end()
-
--- ─────────────────────────────────────────────────────────────
--- MoraTestHarness.dll — standalone SKSE plugin for integration
--- testing (weapon/NPC dumpers + TCP listener). Uses its own
--- set of CommonLib hooks, independent from mora_runtime.
--- ─────────────────────────────────────────────────────────────
-target("mora_test_harness")
-    set_kind("shared")
-    set_filename("MoraTestHarness.dll")
-    set_languages("c++23")
-    add_deps("commonlibsse_ng", "spdlog_rt")
-    set_warnings("none")
-
-    add_files("src/harness/*.cpp",
-              "src/codegen/address_library.cpp",
-              -- Harness handlers call into mora::rt form-iteration
-              -- helpers (for_each_form_of_type, lookup_form_by_id),
-              -- which live in form_ops.cpp. Compile it in directly
-              -- rather than linking the mora_runtime DLL — the harness
-              -- is a standalone SKSE plugin with its own lifecycle.
-              "src/rt/form_ops.cpp")
-    add_includedirs("include")
-
-    add_defines("SKYRIMSE", "MORA_WITH_COMMONLIB")
-    add_defines("WIN32", "_WINDOWS", "NOMINMAX")
-    add_cxflags("/utf-8", "/FISKSE/Impl/PCH.h", {force = true})
-
-    -- tcp_listener.cpp uses Winsock
-    add_syslinks("ws2_32")
 target_end()
 
 end -- windows

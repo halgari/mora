@@ -1,64 +1,71 @@
 #pragma once
-#include "mora/data/chunk.h"
-#include "mora/data/chunk_pool.h"
+
+#include "mora/core/type.h"
+#include "mora/data/column.h"
+#include "mora/data/value.h"
+
 #include <cstdint>
-#include <vector>
+#include <memory>
 #include <unordered_map>
-#include <initializer_list>
+#include <vector>
 
 namespace mora {
 
-enum class ColType : uint8_t { U32, I64, F64 };
-
-struct RowRef {
-    uint32_t chunk_idx;
-    uint16_t row_idx;
-};
-
+// A relation stored as N Columns (one per arg) plus optional hash
+// indexes on selected columns. Append-only — rows are added, never
+// updated in place.
+//
+// Plan 11 introduces this class alongside IndexedRelation. Plan 11 M2
+// switches FactDB to use it and deletes IndexedRelation.
 class ColumnarRelation {
 public:
-    ColumnarRelation(size_t arity, std::vector<ColType> types, ChunkPool& pool);
+    // `column_types[i]` drives the ith Column's Type (and thus its
+    // typed chunk allocation). `indexed_columns` names columns that
+    // get a hash-map index alongside the Column.
+    ColumnarRelation(std::vector<const Type*> column_types,
+                     std::vector<size_t>       indexed_columns);
 
-    // Append a single row. Values passed as uint64_t, cast per column type.
-    void append_row(const uint64_t* values);
-    // Convenience overload
-    void append_row(std::initializer_list<uint64_t> values);
+    size_t arity()     const { return columns_.size(); }
+    size_t row_count() const;
 
-    // Build a hash index on a column (for U32 columns — FormIDs, StringIds)
-    void build_index(size_t col);
+    // Append one tuple. The tuple's arity must match `arity()`.
+    // Values are routed to columns via `Column::append(Value)`.
+    void append(const Tuple& t);
 
-    // Lookup rows where U32 column col == value. Returns empty if no index or no match.
-    const std::vector<RowRef>& lookup(size_t col, uint32_t value) const;
+    // Bulk-move append: move tuples from `incoming` and rebuild
+    // indexes for the newly-appended range only.
+    void absorb(std::vector<Tuple>&& incoming);
 
-    size_t row_count() const { return total_rows_; }
-    size_t chunk_count() const;
-    size_t arity() const { return arity_; }
-    const std::vector<ColType>& col_types() const { return col_types_; }
+    // Read a column by index. Callers that know the physical type
+    // may downcast into the typed vector chunks.
+    const Column& column(size_t i) const { return *columns_[i]; }
 
-    // Direct chunk access (const and non-const)
-    U32Chunk* u32_chunk(size_t col, size_t chunk_idx);
-    I64Chunk* i64_chunk(size_t col, size_t chunk_idx);
-    F64Chunk* f64_chunk(size_t col, size_t chunk_idx);
-    const U32Chunk* u32_chunk(size_t col, size_t chunk_idx) const;
-    const I64Chunk* i64_chunk(size_t col, size_t chunk_idx) const;
-    const F64Chunk* f64_chunk(size_t col, size_t chunk_idx) const;
+    // Build a materialized Tuple for row `row`. O(arity) Column::at
+    // calls. The slow path — Plan 12's vectorized evaluator avoids
+    // this entirely.
+    Tuple row_at(size_t row) const;
+
+    // Pattern-matching query. Returns matching tuples by value.
+    // Uses the best available index; falls back to full scan.
+    std::vector<Tuple> query(const Tuple& pattern) const;
+
+    bool contains(const Tuple& values) const;
+
+    // Full materialization — rebuilds a Tuple per row. Used by the
+    // FactDB tuple-based shim. Plan 12 callers should read columns
+    // directly instead.
+    std::vector<Tuple> materialize() const;
 
 private:
-    void ensure_current_chunk();
+    std::vector<std::unique_ptr<Column>> columns_;
+    std::vector<size_t>                   indexed_columns_;
+    // One hash map per indexed-column entry. Maps Value::hash() to
+    // the row indices whose cell in that column hashes to this value.
+    std::vector<std::unordered_map<uint64_t, std::vector<uint32_t>>> indexes_;
 
-    size_t arity_;
-    std::vector<ColType> col_types_;
-    ChunkPool& pool_;
-    size_t total_rows_ = 0;
-    size_t current_chunk_row_ = 0; // position within current (last) chunk
-
-    // col_chunks_[col_index] = vector of chunk pointers for that column
-    std::vector<std::vector<ChunkBase*>> col_chunks_;
-
-    // indexes_[col_index] = hash map of value → vector<RowRef>
-    // Only populated for columns where build_index() was called.
-    std::vector<std::unordered_map<uint32_t, std::vector<RowRef>>> indexes_;
-    static const std::vector<RowRef> empty_refs_;
+    int find_index_slot(size_t column) const;
+    std::vector<uint32_t> lookup(size_t column, const Value& key) const;
+    void index_row(uint32_t row);
 };
 
 } // namespace mora

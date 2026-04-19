@@ -2,7 +2,6 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
 #include "mora/diag/diagnostic.h"
 #include "mora/diag/renderer.h"
 #include "mora/cli/terminal.h"
@@ -10,21 +9,21 @@
 #include "mora/cli/log.h"
 #include "mora/core/string_pool.h"
 #include "mora/eval/fact_db.h"
-#include "mora/eval/patch_buffer.h"
 #include "mora/eval/phase_classifier.h"
 #include "mora/eval/evaluator.h"
-#include "mora/eval/patch_set.h"
-#include "mora/emit/patch_table.h"
-#include "mora/emit/arrangement_emit.h"
-#include "mora/dag/compile.h"
-#include "mora/dag/bytecode.h"
 #include "mora/model/relations.h"
-#include "mora/core/digest.h"
 #include <algorithm>
+#include <unordered_map>
 #include "mora/core/string_utils.h"
-#include "mora/esp/load_order.h"
-#include "mora/esp/esp_reader.h"
-#include "mora/data/plugin_facts.h"
+#include "mora/ext/extension.h"
+#include "mora_skyrim_compile/register.h"
+#include "mora_parquet/register.h"
+#include "mora_skyrim_runtime/runtime.h"
+#include "mora_skyrim_runtime/runtime_snapshot.h"
+#include "mora_skyrim_runtime/game_api.h"
+#include "mora_skyrim_runtime/register.h"
+#include "mora_skyrim_compile/esp/load_order.h"
+#include "mora_skyrim_compile/esp/esp_reader.h"
 #include "mora/data/schema_registry.h"
 
 #include <CLI/CLI.hpp>
@@ -33,8 +32,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <future>
-#include <thread>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -146,83 +143,56 @@ static std::vector<fs::path> find_mora_files(const fs::path& dir) {
     return files;
 }
 
-static std::string format_bytes(std::uintmax_t bytes) {
-    if (bytes < 1024) return fmt::format("{} bytes", bytes);
-    if (bytes < std::uintmax_t{1024} * 1024) return fmt::format("{:.1f} KB", double(bytes) / 1024.0);
-    return fmt::format("{:.1f} MB", double(bytes) / (1024.0 * 1024.0));
-}
-
 // (address library lookup removed — no longer needed without LLVM codegen)
 
-static std::string field_name(mora::FieldId id) {
-    switch (id) {
-        case mora::FieldId::Name:            return "Name";
-        case mora::FieldId::Damage:          return "Damage";
-        case mora::FieldId::ArmorRating:     return "ArmorRating";
-        case mora::FieldId::GoldValue:       return "GoldValue";
-        case mora::FieldId::Weight:          return "Weight";
-        case mora::FieldId::Keywords:        return "Keywords";
-        case mora::FieldId::Factions:        return "Factions";
-        case mora::FieldId::Perks:           return "Perks";
-        case mora::FieldId::Spells:          return "Spells";
-        case mora::FieldId::Items:           return "Items";
-        case mora::FieldId::Level:           return "Level";
-        case mora::FieldId::Race:            return "Race";
-        case mora::FieldId::EditorId:        return "EditorId";
-        case mora::FieldId::Shouts:          return "Shouts";
-        case mora::FieldId::LevSpells:       return "LevSpells";
-        case mora::FieldId::Speed:           return "Speed";
-        case mora::FieldId::Reach:           return "Reach";
-        case mora::FieldId::Stagger:         return "Stagger";
-        case mora::FieldId::RangeMin:        return "RangeMin";
-        case mora::FieldId::RangeMax:        return "RangeMax";
-        case mora::FieldId::CritDamage:      return "CritDamage";
-        case mora::FieldId::CritPercent:     return "CritPercent";
-        case mora::FieldId::Health:          return "Health";
-        case mora::FieldId::CalcLevelMin:    return "CalcLevelMin";
-        case mora::FieldId::CalcLevelMax:    return "CalcLevelMax";
-        case mora::FieldId::SpeedMult:       return "SpeedMult";
-        case mora::FieldId::RaceForm:        return "Race(form)";
-        case mora::FieldId::ClassForm:       return "Class";
-        case mora::FieldId::SkinForm:        return "Skin";
-        case mora::FieldId::OutfitForm:      return "Outfit";
-        case mora::FieldId::EnchantmentForm: return "Enchantment";
-        case mora::FieldId::VoiceTypeForm:   return "VoiceType";
-        case mora::FieldId::LeveledEntries:  return "LeveledEntries";
-        case mora::FieldId::ClearAll:        return "ClearAll";
-        case mora::FieldId::AutoCalcStats:   return "AutoCalcStats";
-        case mora::FieldId::Essential:       return "Essential";
-        case mora::FieldId::Protected:       return "Protected";
-        default:                             return fmt::format("Field({})", static_cast<uint16_t>(id));
-    }
-}
-
-static std::string op_prefix(mora::FieldOp op) {
-    switch (op) {
-        case mora::FieldOp::Set:      return "set";
-        case mora::FieldOp::Add:      return "+";
-        case mora::FieldOp::Remove:   return "-";
-        case mora::FieldOp::Multiply: return "*";
-        default:                      return "?";
-    }
-}
-
-static std::string format_value(const mora::Value& v) {
+static std::string format_value(const mora::Value& v, const mora::StringPool& pool) {
     switch (v.kind()) {
         case mora::Value::Kind::FormID: return fmt::format("0x{:08X}", v.as_formid());
         case mora::Value::Kind::Int:    return fmt::format("{}", v.as_int());
         case mora::Value::Kind::Float:  return fmt::format("{}", v.as_float());
         case mora::Value::Kind::Bool:   return v.as_bool() ? "true" : "false";
-        case mora::Value::Kind::String: return "\"str\"";
-        case mora::Value::Kind::Var:    return "?";
-        default:                        return "<unknown>";
+        case mora::Value::Kind::String:  return fmt::format("\"{}\"", pool.get(v.as_string()));
+        case mora::Value::Kind::Keyword: return fmt::format(":{}",    pool.get(v.as_keyword()));
+        case mora::Value::Kind::Var:     return "?";
+        default:                         return "<unknown>";
     }
 }
 
-// Collect all relation names referenced by rules (for lazy ESP loading)
+// Collect all relation names referenced by rules (for lazy ESP loading).
+//
+// v3 removed the verb-keyword grammar (Plan 16), so effects no longer
+// carry an explicit relation name like master's `add form/keyword(...)`.
+// Instead, `skyrim/add(N, :Keyword, @ActorTypeNPC)` embeds the field
+// (`Keyword`) as a keyword literal and the target (`@ActorTypeNPC`) as
+// an EditorIdExpr. We infer the needed ESP relation from the field name
+// so the ESP loader builds the EditorID→FormID table for that form type.
 static std::unordered_set<uint32_t> collect_used_relations(
-    const std::vector<mora::Module>& modules) {
+    const std::vector<mora::Module>& modules,
+    mora::StringPool&                pool)
+{
+    // Field keyword → ESP relation name. When rules reference a field
+    // like ":Keyword" in an effect head, we need the ESP loader to
+    // populate that form-type's EditorID table.
+    static const std::unordered_map<std::string_view, std::string_view>
+        kFieldToRelation = {
+            {"Keyword",      "keyword"},
+            {"Spell",        "spell"},
+            {"Perk",         "perk"},
+            {"Faction",      "faction"},
+            {"Shout",        "shout"},
+            {"Race",         "race"},
+            {"VoiceType",    "voice_type"},
+            {"Outfit",       "outfit"},
+            {"Skin",         "armor"},
+            {"Class",        "class"},
+            {"Enchantment",  "enchantment"},
+        };
+
     std::unordered_set<uint32_t> used;
+    auto add_relation = [&](std::string_view name) {
+        used.insert(pool.intern(std::string(name)).index);
+    };
+
     for (auto& mod : modules) {
         for (auto& rule : mod.rules) {
             // Body clauses
@@ -235,12 +205,18 @@ static std::unordered_set<uint32_t> collect_used_relations(
                     }
                 }
             }
-            // Effects (actions map to relations too)
-            for (auto& eff : rule.effects) {
-                used.insert(eff.name.index);
-            }
-            for (auto& ce : rule.conditional_effects) {
-                used.insert(ce.effect.name.index);
+            // Qualified rule heads may embed a field keyword (arg index 1
+            // by convention) whose name implies the ESP relation to load.
+            // Example: `skyrim/add(N, :Keyword, @KW)` → needs "keyword"
+            // loaded so @KW resolves at compile time.
+            for (auto& ha : rule.head_args) {
+                if (auto const* kl = std::get_if<mora::KeywordLiteral>(&ha.data)) {
+                    auto name = pool.get(kl->value);
+                    auto it = kFieldToRelation.find(name);
+                    if (it != kFieldToRelation.end()) {
+                        add_relation(it->second);
+                    }
+                }
             }
         }
     }
@@ -315,14 +291,6 @@ static bool run_check_pipeline(
     }
     out.phase_done(fmt::format("Resolving {} rules", result.rule_count));
 
-    // Type check
-    out.phase_start("Type checking");
-    mora::TypeChecker checker(result.pool, result.diags, resolver);
-    for (auto& mod : result.modules) {
-        checker.check(mod);
-    }
-    out.phase_done(fmt::format("Type checking {} rules", result.rule_count));
-
     // Render diagnostics if any
     if (!result.diags.all().empty()) {
         mora::DiagRenderer const renderer(use_color);
@@ -367,313 +335,13 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
     }
 }
 
-// Load ESP plugin data into the FactDB in three phases so we can
-// apply Skyrim's whole-record override semantics without scanning
-// each plugin's GRUPs twice:
-//
-//   (1) Parse every plugin's TES4 header + record index in parallel,
-//       caching MmapFile + PluginInfo.
-//   (2) Walk the cached PluginInfos sequentially in load order,
-//       upserting `OverrideFilter::winning[gfid] = load_idx`.
-//   (3) Extract facts in parallel, with each reader gated by the
-//       filter — records whose global FormID lost the override race
-//       emit nothing, matching what Skyrim's engine would present.
-static void load_esp_data(
-    CheckResult& cr, mora::FactDB& db, mora::Evaluator& evaluator,
-    const std::string& data_dir, const std::string& plugins_txt,
-    mora::Output& out,
-    mora::EditorIdMap& editor_id_map, mora::PluginSet& loaded_plugins)
-{
-    out.phase_start("Loading ESPs");
-
-    mora::SchemaRegistry schema(cr.pool);
-    schema.register_defaults();
-    schema.configure_fact_db(db);
-
-    mora::LoadOrder lo = !plugins_txt.empty()
-        ? mora::LoadOrder::from_plugins_txt(plugins_txt, data_dir)
-        : mora::LoadOrder::from_directory(data_dir);
-    for (auto& p : lo.plugins) {
-        loaded_plugins.insert(p.filename().string());
-    }
-    if (!plugins_txt.empty()) {
-        mora::log::info("  Load order:    {} ({} plugins)\n", plugins_txt, lo.plugins.size());
-    }
-
-    // Surface any plugins.txt entries that weren't found on disk —
-    // otherwise a `requires mod("X")` failure downstream would blame
-    // the missing mod when the real cause is a typo / deleted file.
-    for (auto& name : lo.missing) {
-        cr.diags.warning(
-            "plugin-missing",
-            fmt::format("plugins.txt entry \"{}\" has no matching file under {} "
-                        "— skipped (case-insensitive search tried)",
-                        name, data_dir),
-            mora::SourceSpan{}, "");
-    }
-    if (!lo.missing.empty()) {
-        mora::log::warn("  {} plugin(s) in plugins.txt couldn't be resolved on disk; see warnings\n",
-            lo.missing.size());
-    }
-
-    auto runtime_index = lo.runtime_index_map();
-    auto needed = collect_used_relations(cr.modules);
-
-    // ── Phase 1: parallel parse ────────────────────────────────────
-    // Cache (MmapFile, PluginInfo) for every plugin so Phase 3 can
-    // emit facts without re-walking GRUPs.
-    struct Parsed {
-        mora::MmapFile file;
-        mora::PluginInfo info;
-        uint32_t load_idx = 0;  // scalar synthetic idx for the filter
-    };
-    auto parse_one = [](const std::filesystem::path& path) {
-        mora::MmapFile f(path.string());
-        auto info = mora::build_plugin_index(f, path.filename().string());
-        return Parsed{std::move(f), std::move(info), 0};
-    };
-    std::vector<std::future<Parsed>> parse_futures;
-    parse_futures.reserve(lo.plugins.size());
-    for (auto& p : lo.plugins) {
-        parse_futures.push_back(std::async(std::launch::async, parse_one, p));
-    }
-    std::vector<Parsed> parsed;
-    parsed.reserve(lo.plugins.size());
-    for (auto& fut : parse_futures) {
-        parsed.push_back(fut.get());
-    }
-    // Assign a scalar load idx per plugin. We hand the override
-    // filter a monotonic index (position in lo.plugins) rather than
-    // the rtmap high-byte because two light plugins can share a high
-    // byte (0xFE) and we still need to order them against each other.
-    for (size_t i = 0; i < parsed.size(); i++) {
-        parsed[i].load_idx = static_cast<uint32_t>(i);
-    }
-
-    // ── Phase 2: override filter ───────────────────────────────────
-    std::vector<mora::PluginInfo> infos;
-    std::vector<uint32_t> load_idxs;
-    infos.reserve(parsed.size());
-    load_idxs.reserve(parsed.size());
-    for (auto& p : parsed) {
-        infos.push_back(p.info);
-        load_idxs.push_back(p.load_idx);
-    }
-    auto override_filter = mora::OverrideFilter::build(infos, runtime_index, load_idxs);
-
-    // Plugin-level facts (exists/load_index/is_master/is_light/
-    // master_of/version/extension) land in the shared FactDB before
-    // the per-plugin fact extraction kicks off. They're shared
-    // across rules regardless of which mods a rule touches.
-    mora::populate_plugin_facts(db, cr.pool, lo, infos, runtime_index);
-
-    // ── Phase 3: parallel fact extraction ──────────────────────────
-    auto hw = std::max(1U, std::thread::hardware_concurrency());
-    size_t const batch_size = (parsed.size() + hw - 1) / hw;
-
-    struct BatchResult {
-        mora::FactDB local_db;
-        std::unordered_map<std::string, uint32_t> editor_ids;
-        BatchResult(mora::StringPool& p) : local_db(p) {}
-    };
-
-    std::vector<std::future<BatchResult>> extract_futures;
-    for (size_t i = 0; i < parsed.size(); i += batch_size) {
-        size_t const end = std::min(i + batch_size, parsed.size());
-        extract_futures.push_back(std::async(std::launch::async,
-            [&, i, end]() -> BatchResult {
-                BatchResult result(cr.pool);
-                schema.configure_fact_db(result.local_db);
-                for (size_t k = i; k < end; k++) {
-                    mora::EspReader reader(cr.pool, cr.diags, schema);
-                    reader.set_needed_relations(needed);
-                    reader.set_runtime_index_map(&runtime_index);
-                    reader.set_override_filter(&override_filter, parsed[k].load_idx);
-                    reader.extract_from(parsed[k].file, parsed[k].info, result.local_db);
-                    for (auto& [edid, fid] : reader.editor_id_map()) {
-                        result.editor_ids[edid] = fid;
-                    }
-                }
-                return result;
-            }));
-    }
-
-    for (auto& fut : extract_futures) {
-        auto result = fut.get();
-        db.merge_from(result.local_db);
-        for (auto& [edid, formid] : result.editor_ids) {
-            editor_id_map[edid] = formid;
-        }
-    }
-
-    for (auto& [edid, formid] : editor_id_map) {
-        evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
-    }
-
-    out.phase_done(fmt::format("{} plugins, {} relations \xe2\x86\x92 {} facts",
-        parsed.size(), needed.size(), db.fact_count()));
-}
-
-// Evaluate .mora rules via Datalog and merge results into PatchBuffer.
-// Also produces a StringTable section (for String-valued patches) that the
-// caller must pass to serialize_patch_table.
-static void evaluate_mora_rules(
-    CheckResult& cr, mora::Evaluator& evaluator,
-    mora::PatchBuffer& patch_buf, std::vector<uint8_t>& string_table_out,
-    mora::Output& out)
-{
-    string_table_out.clear();
-    if (cr.modules.empty()) return;
-
-    out.phase_start("Evaluating (.mora rules)");
-    auto eval_progress = [&](size_t current, size_t total, [[maybe_unused]] std::string_view name) {
-        out.progress_update(fmt::format("Evaluating rule {} / {} ...", current, total));
-    };
-
-    mora::PatchSet all_patches;
-    for (auto& mod : cr.modules) {
-        auto mod_patches = evaluator.evaluate_static(mod, eval_progress);
-        auto resolved = mod_patches.resolve();
-        for (auto& rp : resolved.all_patches_sorted()) {
-            for (auto& fp : rp.fields) {
-                all_patches.add_patch(rp.target_formid, fp.field, fp.op, fp.value, fp.source_mod, fp.priority);
-            }
-        }
-    }
-    out.progress_clear();
-    out.phase_done("done");
-
-    auto mora_resolved = all_patches.resolve();
-    std::vector<mora::PatchEntry> entries;
-    string_table_out = mora::build_patch_entries_and_string_table(
-        mora_resolved, cr.pool, entries);
-    for (const auto& e : entries) {
-        patch_buf.emit(e.formid, e.field_id, e.op, e.value_type, e.value);
-    }
-    patch_buf.sort_and_dedup();
-}
-
-// Build arrangements section from FactDB for Static Set-valued relations.
-// Plan 2: hard-coded mapping for form/keyword and form/faction.
-static std::vector<uint8_t> build_static_arrangements_section(
-    const mora::FactDB& facts, mora::StringPool& pool) {
-
-    struct Mapping {
-        std::string_view ns;
-        std::string_view name;
-        std::string_view factdb_key;
-    };
-    constexpr Mapping kMappings[] = {
-        {"form", "keyword", "has_keyword"},
-        {"form", "faction", "has_faction"},
-    };
-
-    std::vector<std::vector<uint8_t>> arrangements;
-    for (size_t i = 0; i < mora::model::kRelationCount; ++i) {
-        const auto& r = mora::model::kRelations[i];
-        if (r.source != mora::model::RelationSourceKind::Static) continue;
-        if (r.type.ctor != mora::model::TypeCtor::List) continue;
-
-        std::string_view fdb_key;
-        for (const auto& m : kMappings) {
-            if (r.namespace_ == m.ns && r.name == m.name) {
-                fdb_key = m.factdb_key;
-                break;
-            }
-        }
-        if (fdb_key.empty()) continue;
-
-        auto rel_id = pool.intern(std::string{fdb_key});
-        const auto& tuples = facts.get_relation(rel_id);
-        if (tuples.empty()) continue;
-
-        std::vector<std::array<uint32_t, 2>> rows;
-        rows.reserve(tuples.size());
-        for (const auto& t : tuples) {
-            if (t.size() < 2) continue;
-            uint32_t c0 = 0;
-            uint32_t c1 = 0;
-            if (t[0].kind() == mora::Value::Kind::FormID) c0 = t[0].as_formid();
-            else if (t[0].kind() == mora::Value::Kind::Int) c0 = static_cast<uint32_t>(t[0].as_int());
-            if (t[1].kind() == mora::Value::Kind::FormID) c1 = t[1].as_formid();
-            else if (t[1].kind() == mora::Value::Kind::Int) c1 = static_cast<uint32_t>(t[1].as_int());
-            rows.push_back({c0, c1});
-        }
-        if (rows.empty()) continue;
-
-        arrangements.push_back(mora::emit::build_u32_arrangement(
-            static_cast<uint32_t>(i), rows, /*key_col*/ 0));
-        arrangements.push_back(mora::emit::build_u32_arrangement(
-            static_cast<uint32_t>(i), rows, /*key_col*/ 1));
-    }
-
-    if (arrangements.empty()) return {};
-    return mora::emit::build_arrangements_section(arrangements);
-}
-
-// Write serialized patch table to a binary file
-static int write_patch_file(
-    mora::PatchBuffer& patch_buf, const std::vector<uint8_t>& string_table,
-    const std::string& target_path,
-    const std::string& output_dir, mora::Output& out,
-    const mora::PluginSet& loaded_plugins,
-    const mora::FactDB& facts, mora::StringPool& pool,
-    const std::vector<mora::Module>& modules)
-{
-    fs::path out_path(output_dir);
-    if (out_path.is_relative()) {
-        fs::path base = fs::path(target_path);
-        if (fs::is_regular_file(base)) base = base.parent_path();
-        out_path = base / out_path;
-    }
-    fs::create_directories(out_path);
-
-    // Build a manifest string from the loaded plugin set and hash it so the
-    // runtime can detect when the user swaps plugins. PluginSet is an
-    // unordered set of filenames; sort for a stable digest.
-    std::vector<std::string> plugin_names(loaded_plugins.begin(), loaded_plugins.end());
-    std::sort(plugin_names.begin(), plugin_names.end());
-    std::string manifest;
-    for (const auto& name : plugin_names) {
-        manifest += name;
-        manifest += '\n';
-    }
-    auto digest = mora::compute_digest(manifest);
-
-    auto arrangements_section = build_static_arrangements_section(facts, pool);
-
-    // Compile dynamic rules to an operator DAG and emit as DagBytecode section.
-    mora::dag::DagGraph dag_graph;
-    for (const auto& m : modules) {
-        mora::dag::compile_dynamic_rules(m, pool, dag_graph);
-    }
-    std::vector<uint8_t> dag_payload;
-    if (dag_graph.node_count() > 0) {
-        dag_payload = mora::dag::serialize_dag(dag_graph);
-    }
-
-    out.phase_start("Serializing patches");
-    auto patch_data = mora::serialize_patch_table(
-        patch_buf.entries(), digest, arrangements_section, dag_payload, string_table);
-    out.phase_done(fmt::format("{} patches \xe2\x86\x92 {}",
-        patch_buf.size(), format_bytes(patch_data.size())));
-
-    auto patch_file = out_path / "mora_patches.bin";
-    std::ofstream ofs(patch_file, std::ios::binary);
-    if (!ofs) {
-        out.failure(fmt::format("Failed to open {} for writing", patch_file.string()));
-        return 1;
-    }
-    ofs.write(reinterpret_cast<const char*>(patch_data.data()), patch_data.size());
-    ofs.close();
-
-    mora::log::info("  \xe2\x9c\x93 Wrote {}\n", patch_file.string());
-    return 0;
-}
+// (ESP loading is now handled by mora_skyrim_compile::SkyrimEspDataSource
+//  via ExtensionContext::load_required — see cmd_compile below.)
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir, const std::string& plugins_txt,
-                        mora::Output& out, bool use_color) {
+                        mora::Output& out, bool use_color,
+                        const std::unordered_map<std::string, std::string>& sink_configs) {
     auto start = std::chrono::steady_clock::now();
     out.print_header(MORA_VERSION);
 
@@ -710,8 +378,33 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::EditorIdMap editor_id_map;
     mora::PluginSet loaded_plugins;
 
+    // Registration is cheap (one unique_ptr per extension); dispatch is
+    // gated below on --data-dir (load_required) and --sink (sinks loop).
+    // Hoisted out of the data_dir branch so ext_ctx stays in scope for
+    // the post-evaluation sink-dispatch loop.
+    mora::ext::ExtensionContext ext_ctx;
+    mora_skyrim_compile::register_skyrim(ext_ctx);
+    mora_parquet::register_parquet(ext_ctx);
+    mora_skyrim_runtime::register_skyrim_runtime(ext_ctx);
+
     if (!data_dir.empty()) {
-        load_esp_data(cr, db, evaluator, data_dir, plugins_txt, out, editor_id_map, loaded_plugins);
+        mora::ext::LoadCtx load_ctx{
+            cr.pool,
+            cr.diags,
+            /*data_dir*/          fs::path(data_dir),
+            /*plugins_txt*/       fs::path(plugins_txt),
+            /*needed_relations*/  collect_used_relations(cr.modules, cr.pool),
+            /*editor_ids_out*/    &editor_id_map,
+            /*loaded_plugins_out*/&loaded_plugins,
+        };
+
+        ext_ctx.load_required(load_ctx, db);
+
+        // Feed editor IDs accumulated by SkyrimEspDataSource into the
+        // evaluator so symbol literals in .mora files resolve to FormIDs.
+        for (auto& [edid, formid] : editor_id_map) {
+            evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
+        }
     }
 
     // Enforce `requires mod("X")` — a module whose declared
@@ -755,27 +448,50 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         }
     }
 
-    mora::PatchBuffer patch_buf;
-    std::vector<uint8_t> string_table;
-    evaluate_mora_rules(cr, evaluator, patch_buf, string_table, out);
+    if (!cr.modules.empty()) {
+        out.phase_start("Evaluating (.mora rules)");
+        auto eval_progress = [&](size_t current, size_t total,
+                                 [[maybe_unused]] std::string_view name) {
+            out.progress_update(fmt::format("Evaluating rule {} / {} ...",
+                                             current, total));
+        };
+        for (auto& mod : cr.modules) {
+            evaluator.evaluate_module(mod, db, eval_progress);
+        }
+        out.progress_clear();
+        out.phase_done("done");
+    }
 
-    out.phase_done(fmt::format("{} total patches", patch_buf.size()));
-
-    // Write patch file
-    int const write_rc = write_patch_file(patch_buf, string_table, target_path, output_dir, out, loaded_plugins, db, cr.pool, cr.modules);
-    if (write_rc != 0) return write_rc;
+    // Dispatch configured sinks (e.g. --sink parquet.snapshot=./out).
+    // Snapshot errors per-sink so a failure reports against the sink
+    // that emitted it rather than against "some sink". First failing
+    // sink short-circuits later sinks.
+    for (const auto& sink : ext_ctx.sinks()) {
+        auto it = sink_configs.find(std::string(sink->name()));
+        if (it == sink_configs.end()) continue;
+        const auto errors_before_sink = cr.diags.error_count();
+        mora::ext::EmitCtx emit_ctx{cr.pool, cr.diags, it->second, &ext_ctx};
+        sink->emit(emit_ctx, db);
+        if (cr.diags.error_count() > errors_before_sink) {
+            mora::log::error("  sink '{}' emitted {} error(s); aborting\n",
+                sink->name(),
+                cr.diags.error_count() - errors_before_sink);
+            mora::DiagRenderer const renderer(use_color);
+            mora::log::info("\n{}", renderer.render_all(cr.diags));
+            return 1;
+        }
+    }
 
     // Summary
-    auto patch_path = fs::path(target_path);
-    if (fs::is_regular_file(patch_path)) patch_path = patch_path.parent_path();
-    patch_path = patch_path / output_dir / "mora_patches.bin";
-    auto patch_size = fs::exists(patch_path) ? fs::file_size(patch_path) : 0;
+    size_t effect_count = 0;
+    for (const char* rel : {"skyrim/set", "skyrim/add",
+                             "skyrim/remove", "skyrim/multiply"}) {
+        effect_count += db.fact_count(cr.pool.intern(rel));
+    }
 
     std::vector<mora::TableRow> summary;
     summary.push_back({"Frozen:", fmt::format("{} rules", static_count),
-        fmt::format("\xe2\x86\x92 mora_patches.bin ({})", format_bytes(patch_size))});
-    summary.push_back({"", fmt::format("{} patches baked into native code", patch_buf.size()), ""});
-    summary.push_back({"", "Estimated runtime: <15ms", ""});
+        fmt::format("\xe2\x86\x92 {} effect fact(s)", effect_count)});
     if (dynamic_count > 0) {
         summary.push_back({"Dynamic:", fmt::format("{} rules", dynamic_count), "(deferred to runtime)"});
     }
@@ -796,6 +512,37 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         msg += fmt::format(" ({} warnings)", cr.diags.warning_count());
     }
     out.success(msg);
+    return 0;
+}
+
+static int cmd_apply(const std::string& input_dir) {
+    namespace fs = std::filesystem;
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    mora_skyrim_runtime::MockGameAPI api;
+    size_t count = 0;
+
+    fs::path const dir(input_dir);
+    fs::path const snap_path = dir / "mora_runtime.bin";
+
+    if (fs::exists(snap_path)) {
+        // Flat-binary snapshot — what the SKSE runtime DLL reads.
+        auto snap = mora_skyrim_runtime::read_snapshot(snap_path, diags);
+        if (snap) {
+            count = mora_skyrim_runtime::apply_snapshot(*snap, api, pool);
+        }
+    } else {
+        // Parquet-directory fallback — what `mora apply` originally read.
+        count = mora_skyrim_runtime::runtime_apply(dir, api, pool, diags);
+    }
+
+    if (diags.has_errors()) {
+        mora::DiagRenderer renderer(/*use_color*/true);
+        mora::log::info("\n{}", renderer.render_all(diags));
+        return 1;
+    }
+    mora::log::info("  Applied {} effect fact(s) via MockGameAPI\n", count);
+    mora::log::info("  (Mock — no game state was modified)\n");
     return 0;
 }
 
@@ -830,53 +577,55 @@ static int cmd_inspect(const std::string& target_path, bool show_conflicts,
     mora::NameResolver resolver(pool, diags);
     for (auto& mod : modules) resolver.resolve(mod);
 
-    mora::TypeChecker checker(pool, diags, resolver);
-    for (auto& mod : modules) checker.check(mod);
-
     if (diags.has_errors()) {
         mora::DiagRenderer const renderer(use_color);
         mora::log::info("{}", renderer.render_all(diags));
         return 1;
     }
 
-    mora::FactDB const db(pool);
+    mora::FactDB db(pool);
     mora::Evaluator evaluator(pool, diags, db);
-    mora::PatchSet all_patches;
     for (auto& mod : modules) {
-        auto mod_patches = evaluator.evaluate_static(mod);
-        auto resolved = mod_patches.resolve();
-        for (auto& rp : resolved.all_patches_sorted()) {
-            for (auto& fp : rp.fields) {
-                all_patches.add_patch(rp.target_formid, fp.field, fp.op, fp.value, fp.source_mod, fp.priority);
-            }
-        }
+        evaluator.evaluate_module(mod, db);
     }
 
-    auto final_resolved = all_patches.resolve();
+    (void)show_conflicts;  // --show-conflicts is no longer meaningful
 
-    if (show_conflicts) {
-        const auto& conflicts = final_resolved.get_conflicts();
-        if (conflicts.empty()) {
-            mora::log::info("  no conflicts\n");
-        } else {
-            mora::log::info("  {} conflict(s)\n", conflicts.size());
-        }
+    struct EffectRel { const char* rel_name; const char* op_str; };
+    constexpr EffectRel kEffectRels[] = {
+        {"skyrim/set",      "="},
+        {"skyrim/add",      "+="},
+        {"skyrim/remove",   "-="},
+        {"skyrim/multiply", "*="},
+    };
+
+    size_t total = 0;
+    for (const auto& er : kEffectRels) {
+        total += db.fact_count(pool.intern(er.rel_name));
+    }
+
+    mora::log::info("  mora inspect \xe2\x80\x94 {} effect fact(s) (from {} files)\n\n",
+                     total, files.size());
+
+    if (total == 0) {
+        mora::log::info("  (no effect facts)\n");
         return 0;
     }
 
-    mora::log::info("  mora inspect \xe2\x80\x94 {} patches (from {} files)\n\n",
-        final_resolved.patch_count(), files.size());
-
-    auto all_sorted = final_resolved.all_patches_sorted();
-    if (all_sorted.empty()) {
-        mora::log::info("  (no patches)\n");
-    } else {
-        for (auto& rp : all_sorted) {
-            mora::log::info("  0x{:08X}:\n", rp.target_formid);
-            for (auto& fp : rp.fields) {
-                mora::log::info("    {}: {} {}\n", field_name(fp.field), op_prefix(fp.op), format_value(fp.value));
-            }
-            mora::log::info("\n");
+    for (const auto& er : kEffectRels) {
+        auto rel_id = pool.intern(er.rel_name);
+        const auto& tuples = db.get_relation(rel_id);
+        if (tuples.empty()) continue;
+        for (const auto& t : tuples) {
+            if (t.size() < 3) continue;
+            auto const formid = t[0].kind() == mora::Value::Kind::FormID
+                                  ? t[0].as_formid() : 0u;
+            auto const field_kw = t[1].kind() == mora::Value::Kind::Keyword
+                                    ? pool.get(t[1].as_keyword())
+                                    : std::string_view{"?"};
+            mora::log::info("  0x{:08X}: {} {} {}\n",
+                             formid, field_kw, er.op_str,
+                             format_value(t[2], pool));
         }
     }
 
@@ -909,16 +658,6 @@ static int cmd_info(const std::string& target_path, const std::string& data_dir)
     }
 
     mora::log::info("  Mora rules:    {} across {} files\n", rule_count, files.size());
-
-    fs::path const cache_dir = base / "MoraCache";
-    fs::path const dll_path = cache_dir / "MoraRuntime.dll";
-
-    if (!fs::exists(cache_dir) || !fs::exists(dll_path)) {
-        mora::log::info("  Cache status:  no DLL (run mora compile)\n");
-    } else {
-        auto dll_size = fs::file_size(dll_path);
-        mora::log::info("  Cache status:  MoraRuntime.dll ({})\n", format_bytes(dll_size));
-    }
 
     if (!data_dir.empty()) {
         mora::LoadOrder const lo = mora::LoadOrder::from_directory(data_dir);
@@ -968,8 +707,9 @@ int main(int argc, char* argv[]) try {
     std::string comp_output;
     std::string comp_data_dir;
     std::string comp_plugins_txt;
+    std::vector<std::string> comp_sinks;
     auto* c_compile = app.add_subcommand("compile",
-                                         "Compile .mora files into mora_patches.bin");
+                                         "Compile .mora files and write effect facts to configured sinks");
     c_compile->fallthrough();
     c_compile->add_option("path", comp_target,
                           "File or directory containing .mora sources")
@@ -980,6 +720,10 @@ int main(int argc, char* argv[]) try {
                           "Skyrim Data/ directory for ESP loading (auto-detected if omitted)");
     c_compile->add_option("--plugins-txt", comp_plugins_txt,
                           "Path to Plugins.txt (authoritative load-order; auto-detected if omitted)");
+    c_compile->add_option("--sink", comp_sinks,
+        "Sink to invoke after evaluation. Repeatable. Format: "
+        "<sink-name>=<config-string>, e.g. --sink parquet.snapshot=./out")
+        ->expected(0, -1);
 
     // `inspect`
     std::string insp_target = ".";
@@ -992,6 +736,15 @@ int main(int argc, char* argv[]) try {
              ->default_val(".");
     c_inspect->add_flag("--conflicts", show_conflicts,
                         "Show only conflict info");
+
+    // `apply`
+    std::string apply_parquet_dir;
+    auto* c_apply = app.add_subcommand("apply",
+                                       "Apply a parquet snapshot via MockGameAPI");
+    c_apply->fallthrough();
+    c_apply->add_option("parquet-dir", apply_parquet_dir,
+                        "Directory containing skyrim/{set,add,remove,multiply}.parquet")
+           ->required();
 
     // `info`
     std::string info_target = ".";
@@ -1038,7 +791,7 @@ int main(int argc, char* argv[]) try {
             comp_plugins_txt = detect_plugins_txt(comp_data_dir);
         }
 
-        // Zero-arg DX: land mora_patches.bin straight into <Data>/SKSE/Plugins
+        // Zero-arg DX: auto-derive output dir from data_dir
         // so the runtime picks it up on next game launch without a copy step.
         // Only fires when data_dir points at a real install (Skyrim.esm present)
         // — a bogus explicit --data-dir would otherwise cause a permission-
@@ -1064,11 +817,36 @@ int main(int argc, char* argv[]) try {
             comp_plugins_txt.empty() ? "<none>" : comp_plugins_txt, tag(explicit_plugins_txt));
         mora::log::info("  output:      {}{}\n", comp_output, tag(explicit_output));
 
+        // Parse --sink entries into a map keyed by sink name. Duplicate
+        // names (e.g. `--sink parquet.snapshot=a --sink parquet.snapshot=b`)
+        // are a configuration mistake — warn and keep the last value.
+        std::unordered_map<std::string, std::string> sink_configs;
+        for (const auto& entry : comp_sinks) {
+            auto eq = entry.find('=');
+            if (eq == std::string::npos) {
+                mora::log::error(
+                    "--sink '{}' has no '='; expected <sink-name>=<config>\n",
+                    entry);
+                return 2;
+            }
+            auto name   = entry.substr(0, eq);
+            auto config = entry.substr(eq + 1);
+            if (auto prior = sink_configs.find(name); prior != sink_configs.end()) {
+                mora::log::warn(
+                    "--sink '{}' specified more than once; keeping last value '{}' (previous: '{}')\n",
+                    name, config, prior->second);
+            }
+            sink_configs[name] = config;
+        }
+
         return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
-                           out, use_color);
+                           out, use_color, sink_configs);
     }
     if (*c_inspect) {
         return cmd_inspect(insp_target, show_conflicts, use_color);
+    }
+    if (*c_apply) {
+        return cmd_apply(apply_parquet_dir);
     }
     if (*c_info) {
         if (info_data_dir.empty()) info_data_dir = detect_skyrim_data_dir();

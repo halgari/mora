@@ -1,146 +1,134 @@
 #include "mora/data/columnar_relation.h"
+
 #include <cassert>
-#include <cstring>
+#include <stdexcept>
+#include <utility>
 
 namespace mora {
 
-const std::vector<RowRef> ColumnarRelation::empty_refs_;
-
-ColumnarRelation::ColumnarRelation(size_t arity, std::vector<ColType> types, ChunkPool& pool)
-    : arity_(arity), col_types_(std::move(types)), pool_(pool)
+ColumnarRelation::ColumnarRelation(std::vector<const Type*> column_types,
+                                     std::vector<size_t>       indexed_columns)
+    : indexed_columns_(std::move(indexed_columns))
+    , indexes_(indexed_columns_.size())
 {
-    assert(col_types_.size() == arity_);
-    col_chunks_.resize(arity_);
-    indexes_.resize(arity_);
-    // Start with current_chunk_row_ == CHUNK_SIZE so the first append triggers
-    // ensure_current_chunk().
-    current_chunk_row_ = CHUNK_SIZE;
-}
-
-void ColumnarRelation::ensure_current_chunk() {
-    for (size_t col = 0; col < arity_; ++col) {
-        ChunkBase* chunk = nullptr;
-        switch (col_types_[col]) {
-            case ColType::U32: chunk = pool_.acquire_u32(); break;
-            case ColType::I64: chunk = pool_.acquire_i64(); break;
-            case ColType::F64: chunk = pool_.acquire_f64(); break;
-        }
-        col_chunks_[col].push_back(chunk);
+    columns_.reserve(column_types.size());
+    for (const Type* t : column_types) {
+        assert(t != nullptr && "ColumnarRelation: column type must not be nullptr");
+        columns_.push_back(std::make_unique<Column>(t));
     }
-    current_chunk_row_ = 0;
 }
 
-void ColumnarRelation::append_row(const uint64_t* values) {
-    if (current_chunk_row_ == CHUNK_SIZE) {
-        ensure_current_chunk();
+size_t ColumnarRelation::row_count() const {
+    return columns_.empty() ? 0 : columns_.front()->row_count();
+}
+
+void ColumnarRelation::index_row(uint32_t row) {
+    for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
+        size_t const col = indexed_columns_[slot];
+        Value const v = columns_[col]->at(row);
+        uint64_t const h = v.hash();
+        indexes_[slot][h].push_back(row);
     }
+}
 
-    for (size_t col = 0; col < arity_; ++col) {
-        ChunkBase* base = col_chunks_[col].back();
-        switch (col_types_[col]) {
-            case ColType::U32: {
-                auto* chunk = static_cast<U32Chunk*>(base);
-                chunk->data[current_chunk_row_] = static_cast<uint32_t>(values[col]);
-                break;
-            }
-            case ColType::I64: {
-                auto* chunk = static_cast<I64Chunk*>(base);
-                chunk->data[current_chunk_row_] = static_cast<int64_t>(values[col]);
-                break;
-            }
-            case ColType::F64: {
-                auto* chunk = static_cast<F64Chunk*>(base);
-                double d{};
-                std::memcpy(&d, &values[col], sizeof(double));
-                chunk->data[current_chunk_row_] = d;
-                break;
-            }
-        }
-        base->count++;
+void ColumnarRelation::append(const Tuple& t) {
+    if (t.size() != columns_.size()) {
+        throw std::runtime_error("ColumnarRelation::append: tuple arity mismatch");
     }
-
-    ++current_chunk_row_;
-    ++total_rows_;
+    auto const row = static_cast<uint32_t>(row_count());
+    for (size_t i = 0; i < t.size(); ++i) {
+        columns_[i]->append(t[i]);
+    }
+    index_row(row);
 }
 
-void ColumnarRelation::append_row(std::initializer_list<uint64_t> values) {
-    assert(values.size() == arity_);
-    // Copy to a local buffer so we can pass a pointer.
-    // Stack allocation is fine; arity is small.
-    const uint64_t* ptr = values.begin();
-    append_row(ptr);
+void ColumnarRelation::absorb(std::vector<Tuple>&& incoming) {
+    auto local = std::move(incoming);
+    for (auto& t : local) append(t);
 }
 
-size_t ColumnarRelation::chunk_count() const {
-    if (arity_ == 0 || col_chunks_.empty()) return 0;
-    return col_chunks_[0].size();
+Tuple ColumnarRelation::row_at(size_t row) const {
+    Tuple t;
+    t.reserve(columns_.size());
+    for (auto const& c : columns_) t.push_back(c->at(row));
+    return t;
 }
 
-void ColumnarRelation::build_index(size_t col) {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::U32 && "build_index only supported for U32 columns");
-
-    auto& idx = indexes_[col];
-    idx.clear();
-
-    const size_t n_chunks = col_chunks_[col].size();
-    for (size_t ci = 0; ci < n_chunks; ++ci) {
-        const auto* chunk = static_cast<const U32Chunk*>(col_chunks_[col][ci]);
-        for (size_t ri = 0; ri < chunk->count; ++ri) {
-            uint32_t const val = chunk->data[ri];
-            idx[val].push_back(RowRef{
-                static_cast<uint32_t>(ci),
-                static_cast<uint16_t>(ri)
-            });
+int ColumnarRelation::find_index_slot(size_t column) const {
+    for (size_t slot = 0; slot < indexed_columns_.size(); ++slot) {
+        if (indexed_columns_[slot] == column) {
+            return static_cast<int>(slot);
         }
     }
+    return -1;
 }
 
-const std::vector<RowRef>& ColumnarRelation::lookup(size_t col, uint32_t value) const {
-    assert(col < arity_);
-    const auto& idx = indexes_[col];
-    if (idx.empty()) return empty_refs_;
-    auto it = idx.find(value);
-    if (it == idx.end()) return empty_refs_;
-    return it->second;
+std::vector<uint32_t> ColumnarRelation::lookup(size_t column,
+                                                 const Value& key) const {
+    int const slot = find_index_slot(column);
+    if (slot < 0) return {};
+    uint64_t const h = key.hash();
+    auto it = indexes_[static_cast<size_t>(slot)].find(h);
+    if (it == indexes_[static_cast<size_t>(slot)].end()) return {};
+    // Verify each candidate against the key to filter hash collisions.
+    std::vector<uint32_t> result;
+    result.reserve(it->second.size());
+    for (uint32_t const row : it->second) {
+        if (columns_[column]->at(row) == key) {
+            result.push_back(row);
+        }
+    }
+    return result;
 }
 
-// --- chunk accessors ---
+std::vector<Tuple> ColumnarRelation::query(const Tuple& pattern) const {
+    // Find the first concrete column with a hash index.
+    int best_slot = -1;
+    size_t best_col = 0;
+    for (size_t col = 0; col < pattern.size(); ++col) {
+        if (!pattern[col].is_var()) {
+            int const slot = find_index_slot(col);
+            if (slot >= 0) {
+                best_slot = slot;
+                best_col = col;
+                break;
+            }
+        }
+    }
 
-U32Chunk* ColumnarRelation::u32_chunk(size_t col, size_t chunk_idx) {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::U32);
-    return static_cast<U32Chunk*>(col_chunks_[col][chunk_idx]);
+    std::vector<uint32_t> candidates;
+    if (best_slot >= 0) {
+        candidates = lookup(best_col, pattern[best_col]);
+    } else {
+        candidates.reserve(row_count());
+        for (uint32_t i = 0; i < row_count(); ++i) candidates.push_back(i);
+    }
+
+    std::vector<Tuple> result;
+    result.reserve(candidates.size());
+    for (uint32_t const row : candidates) {
+        Tuple t = row_at(row);
+        bool ok = true;
+        for (size_t col = 0; col < pattern.size(); ++col) {
+            if (!pattern[col].matches(t[col])) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) result.push_back(std::move(t));
+    }
+    return result;
 }
 
-I64Chunk* ColumnarRelation::i64_chunk(size_t col, size_t chunk_idx) {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::I64);
-    return static_cast<I64Chunk*>(col_chunks_[col][chunk_idx]);
+bool ColumnarRelation::contains(const Tuple& values) const {
+    return !query(values).empty();
 }
 
-F64Chunk* ColumnarRelation::f64_chunk(size_t col, size_t chunk_idx) {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::F64);
-    return static_cast<F64Chunk*>(col_chunks_[col][chunk_idx]);
-}
-
-const U32Chunk* ColumnarRelation::u32_chunk(size_t col, size_t chunk_idx) const {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::U32);
-    return static_cast<const U32Chunk*>(col_chunks_[col][chunk_idx]);
-}
-
-const I64Chunk* ColumnarRelation::i64_chunk(size_t col, size_t chunk_idx) const {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::I64);
-    return static_cast<const I64Chunk*>(col_chunks_[col][chunk_idx]);
-}
-
-const F64Chunk* ColumnarRelation::f64_chunk(size_t col, size_t chunk_idx) const {
-    assert(col < arity_);
-    assert(col_types_[col] == ColType::F64);
-    return static_cast<const F64Chunk*>(col_chunks_[col][chunk_idx]);
+std::vector<Tuple> ColumnarRelation::materialize() const {
+    std::vector<Tuple> out;
+    out.reserve(row_count());
+    for (uint32_t i = 0; i < row_count(); ++i) out.push_back(row_at(i));
+    return out;
 }
 
 } // namespace mora

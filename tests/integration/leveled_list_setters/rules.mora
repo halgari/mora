@@ -4,7 +4,6 @@ requires mod("Skyrim.esm")
 
 # Set the chance-of-nothing percent on a well-known populated LVLI
 # (LItemEnchWeaponBowBlacksmith, FormID 0x00000EDE).
-modify_leveled_list(L):
+skyrim/set(L, :ChanceNone, 42):
     form/leveled_list(L)
     L == @LItemEnchWeaponBowBlacksmith
-    => set form/chance_none(L, 42)

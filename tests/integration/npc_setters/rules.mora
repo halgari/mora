@@ -4,21 +4,39 @@ requires mod("Skyrim.esm")
 
 # Every in-scope NPC setter verb applied to Nazeem (EditorID `Nazeem`,
 # FormID 0x00013BBF). Counterpart to tests/getters/test_npc_getters.cpp.
-#
-# Out of scope today (runtime-only setters — no declared NPC_ relation or
-# surface-level verb):
-#   • set_race / set_class / set_voice_type / set_skin / set_outfit
-#   • set_essential / set_protected / set_auto_calc_stats
-#   • add_shout (no form/shout relation)
-modify_nazeem(N):
+
+skyrim/set(N, :Name, "Modified Nazeem"):
     form/npc(N)
     N == @Nazeem
-    => set form/name(N, "Modified Nazeem")
-    => set form/base_level(N, 42)
-    => set form/calc_level_min(N, 10)
-    => set form/calc_level_max(N, 60)
-    => set form/speed_mult(N, 150)
-    => add form/keyword(N, @ActorTypeNPC)
-    => add form/spell(N, @Flames)
-    => add form/perk(N, @Juggernaut00)
-    => add form/faction(N, @PlayerFaction)
+
+skyrim/set(N, :BaseLevel, 42):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :CalcLevelMin, 10):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :CalcLevelMax, 60):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/set(N, :SpeedMult, 150):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Keyword, @ActorTypeNPC):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Spell, @Flames):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Perk, @Juggernaut00):
+    form/npc(N)
+    N == @Nazeem
+
+skyrim/add(N, :Faction, @PlayerFaction):
+    form/npc(N)
+    N == @Nazeem

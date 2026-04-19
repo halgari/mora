@@ -8,26 +8,22 @@ bandit(NPC):
     form/faction(NPC, @BanditFaction)
 
 # Tag all bandits with a keyword
-tag_bandits(NPC):
+skyrim/add(NPC, :Keyword, @ActorTypeNPC):
     bandit(NPC)
-    => add form/keyword(NPC, @ActorTypeNPC)
 
-# Silver weapons (not greatswords) get extra damage
-silver_weapons(Weapon):
+# Silver weapons (not greatswords) get extra keyword
+skyrim/add(Weapon, :Keyword, @WeapMaterialSilver):
     form/weapon(Weapon)
     form/keyword(Weapon, @WeapMaterialSilver)
     not form/keyword(Weapon, @WeapTypeGreatsword)
-    => add form/keyword(Weapon, @WeapMaterialSilver)
 
 # All iron weapons
-iron_weapons(Weapon):
+skyrim/add(Weapon, :Keyword, @WeapMaterialIron):
     form/weapon(Weapon)
     form/keyword(Weapon, @WeapMaterialIron)
-    => add form/keyword(Weapon, @WeapMaterialIron)
 
 # High-level bandits (level 20+)
-elite_bandits(NPC):
+skyrim/add(NPC, :Keyword, @ActorTypeNPC):
     bandit(NPC)
     form/base_level(NPC, Level)
     Level >= 20
-    => add form/keyword(NPC, @ActorTypeNPC)

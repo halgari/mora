@@ -1,5 +1,4 @@
 #pragma once
-#include "mora/ast/types.h"
 #include "mora/core/source_location.h"
 #include "mora/core/string_pool.h"
 #include <memory>
@@ -14,16 +13,16 @@ namespace mora {
 struct Expr;
 
 enum class RuleKind : uint8_t { Static, Maintain, On };
-enum class VerbKind : uint8_t { Set, Add, Sub, Remove };
 
 // ── Expressions ──
-struct VariableExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
-struct SymbolExpr   { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
-struct EditorIdExpr { StringId name; MoraType resolved_type = MoraType::make(TypeKind::Unknown); SourceSpan span; };
+struct VariableExpr { StringId name; SourceSpan span; };
+struct SymbolExpr   { StringId name; SourceSpan span; };
+struct EditorIdExpr { StringId name; SourceSpan span; };
 struct IntLiteral   { int64_t value; SourceSpan span; };
 struct FloatLiteral { double value;  SourceSpan span; };
-struct StringLiteral{ StringId value; SourceSpan span; };
-struct DiscardExpr  { SourceSpan span; };
+struct StringLiteral { StringId value; SourceSpan span; };
+struct KeywordLiteral{ StringId value; SourceSpan span; };
+struct DiscardExpr   { SourceSpan span; };
 
 struct BinaryExpr {
     enum class Op { Add, Sub, Mul, Div, Eq, Neq, Lt, Gt, LtEq, GtEq };
@@ -37,13 +36,12 @@ struct BinaryExpr {
 struct CallExpr {
     StringId name;
     std::vector<Expr> args;
-    MoraType resolved_type = MoraType::make(TypeKind::Unknown);
     SourceSpan span;
 };
 
 struct Expr {
     std::variant<VariableExpr, SymbolExpr, EditorIdExpr, IntLiteral, FloatLiteral,
-                 StringLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
+                 StringLiteral, KeywordLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
     SourceSpan span;
 };
 
@@ -74,33 +72,18 @@ struct InClause {
     SourceSpan span;
 };
 
-struct Effect {
-    VerbKind  verb = VerbKind::Set;
-    StringId  namespace_;   // e.g. "form"
-    StringId  name;         // e.g. "keyword"
-    std::vector<Expr> args;
-    SourceSpan span;
-};
-
-struct ConditionalEffect {
-    std::unique_ptr<Expr> guard;
-    Effect effect;
-    SourceSpan span;
-};
-
 struct Clause {
-    std::variant<FactPattern, GuardClause, OrClause, InClause, Effect, ConditionalEffect> data;
+    std::variant<FactPattern, GuardClause, OrClause, InClause> data;
     SourceSpan span;
 };
 
 // ── Top-level declarations ──
 struct Rule {
     RuleKind kind = RuleKind::Static;
-    StringId name;
+    StringId qualifier;   // "skyrim", "form", or empty for user rules
+    StringId name;        // "set", "add", "bandit", "tag_bandits", ...
     std::vector<Expr> head_args;
     std::vector<Clause> body;
-    std::vector<Effect> effects;
-    std::vector<ConditionalEffect> conditional_effects;
     SourceSpan span;
     std::optional<std::string> doc_comment; // leading # comments above the rule head
 };
@@ -114,7 +97,7 @@ struct UseDecl        {
     SourceSpan span;
 };
 struct ImportIniDecl  { enum class Kind { Spid, Kid }; Kind kind; StringId path; SourceSpan span; };
-struct FactDecl       { StringId name; std::vector<MoraType> param_types; SourceSpan span; };
+struct FactDecl       { StringId name; SourceSpan span; };
 
 // ── Module (one .mora file) ──
 struct Module {

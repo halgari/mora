@@ -7,4 +7,7 @@ namespace test.dynamic
 faction_tag(NPC):
     form/npc(NPC)
     form/faction(NPC, @SomeFaction)
-    => add form/keyword(NPC, @RegionalGoodsTag)
+
+skyrim/add(NPC, :Keyword, @RegionalGoodsTag):
+    form/npc(NPC)
+    form/faction(NPC, @SomeFaction)

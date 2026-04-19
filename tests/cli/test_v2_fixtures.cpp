@@ -1,7 +1,7 @@
 #include "mora/parser/parser.h"
 #include "mora/lexer/lexer.h"
 #include "mora/sema/name_resolver.h"
-#include "mora/sema/type_checker.h"
+// type_checker.h excluded in M2; deleted in M3
 #include "mora/diag/diagnostic.h"
 #include <gtest/gtest.h>
 #include <filesystem>
@@ -19,8 +19,10 @@ static std::string read_file(const std::filesystem::path& p) {
 
 // Fixtures that are intentionally broken (used as negative test inputs
 // elsewhere). They must parse, but they are expected to produce
-// name-resolution / type-checking errors.
+// name-resolution errors. Type-checking errors are not caught in M2
+// (TypeChecker removed; deleted in M3).
 static bool is_negative_fixture(const std::string& stem) {
+    // "errors" fixture contains name-resolution errors (unknown fact).
     return stem == "errors";
 }
 
@@ -64,8 +66,7 @@ TEST(V2Fixtures, AllTestDataMoraFilesTypecheck) {
 
         NameResolver nr(pool, diags);
         nr.resolve(mod);
-        TypeChecker tc(pool, diags, nr);
-        tc.check(mod);
+        // TypeChecker removed in M2; type errors are runtime in later plan
 
         const std::string stem = entry.path().stem().string();
         if (is_negative_fixture(stem)) {

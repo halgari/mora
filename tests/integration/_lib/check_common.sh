@@ -168,12 +168,12 @@ stash_runtime_logs() {
       cp "$f" "$LOG_DIR/${tag}__$(basename "$f")" 2>/dev/null || true
     done
   fi
-  # Staged mora_patches.bin — size + presence tells us if the runtime
+  # Staged mora_runtime.bin — size + presence tells us if the runtime
   # even had patches to apply.
-  local patches="$SKYRIM_ROOT/Data/SKSE/Plugins/mora_patches.bin"
+  local patches="$SKYRIM_ROOT/Data/SKSE/Plugins/mora_runtime.bin"
   if [[ -f "$patches" ]]; then
-    cp "$patches" "$LOG_DIR/mora_patches.bin" 2>/dev/null || true
-    _log "stashed mora_patches.bin ($(stat -c %s "$patches") bytes)"
+    cp "$patches" "$LOG_DIR/mora_runtime.bin" 2>/dev/null || true
+    _log "stashed mora_runtime.bin ($(stat -c %s "$patches") bytes)"
   fi
   # Runtime-generated Plugins.txt / loadorder.txt. These are the
   # engine's authoritative load-order source; without them we have

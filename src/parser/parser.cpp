@@ -237,7 +237,7 @@ UseDecl Parser::parse_use() {
     // Handle v2 :as / :refer clauses.  The lexer emits `:foo` as a single
     // Symbol token whose string_id holds "foo", so we inspect the text to
     // dispatch between :as and :refer.
-    while (check(TokenKind::Symbol)) {
+    while (check(TokenKind::Keyword)) {
         Token const sym = peek();
         std::string_view const text = pool_.get(sym.string_id);
         if (text == "as") {
@@ -307,9 +307,18 @@ Rule Parser::parse_rule() {
         rule.kind = RuleKind::On;
     }
 
-    Token const name_tok = expect(TokenKind::Identifier, "expected rule name");
-    rule.name = name_tok.string_id;
-    rule.span = name_tok.span;
+    Token const first_name_tok = expect(TokenKind::Identifier, "expected rule name");
+    rule.span = first_name_tok.span;
+
+    // Support qualified rule heads: ns/name(args)
+    if (check(TokenKind::Slash)) {
+        advance(); // consume '/'
+        Token const name_tok = expect(TokenKind::Identifier, "expected rule name after '/' in qualified head");
+        rule.qualifier = first_name_tok.string_id;
+        rule.name = name_tok.string_id;
+    } else {
+        rule.name = first_name_tok.string_id;
+    }
 
     expect(TokenKind::LParen, "expected '(' after rule name");
     rule.head_args = parse_arg_list();
@@ -331,14 +340,6 @@ Rule Parser::parse_rule() {
     while (!check(TokenKind::Dedent) && !check(TokenKind::Eof)) {
         if (check(TokenKind::Newline)) {
             advance();
-            continue;
-        }
-
-        // => effect (bare effect)
-        if (check(TokenKind::Arrow)) {
-            advance(); // consume '=>'
-            rule.effects.push_back(parse_effect());
-            skip_newlines();
             continue;
         }
 
@@ -402,29 +403,16 @@ Rule Parser::parse_rule() {
             }
         }
 
-        // Variable -> could be a guard clause or conditional effect
+        // Variable -> guard clause
         if (check(TokenKind::Variable)) {
             Expr expr = parse_expr();
-
-            // Check if followed by '=>' -> conditional effect
-            if (check(TokenKind::Arrow)) {
-                advance(); // consume '=>'
-                Effect eff = parse_effect();
-                ConditionalEffect ce;
-                ce.guard = std::make_unique<Expr>(std::move(expr));
-                ce.effect = std::move(eff);
-                ce.span = ce.guard->span;
-                rule.conditional_effects.push_back(std::move(ce));
-            } else {
-                // Just a guard clause
-                GuardClause gc;
-                gc.span = expr.span;
-                gc.expr = std::make_unique<Expr>(std::move(expr));
-                Clause clause;
-                clause.span = gc.span;
-                clause.data = std::move(gc);
-                rule.body.push_back(std::move(clause));
-            }
+            GuardClause gc;
+            gc.span = expr.span;
+            gc.expr = std::make_unique<Expr>(std::move(expr));
+            Clause clause;
+            clause.span = gc.span;
+            clause.data = std::move(gc);
+            rule.body.push_back(std::move(clause));
             skip_newlines();
             continue;
         }
@@ -471,41 +459,6 @@ FactPattern Parser::parse_fact_pattern(bool negated) {
     return fp;
 }
 
-Effect Parser::parse_effect() {
-    Effect eff;
-
-    // Expect a verb keyword: set | add | sub | remove
-    VerbKind verb = VerbKind::Set;
-    SourceSpan const start_span = peek().span;
-    switch (peek().kind) {
-        case TokenKind::KwSet:    verb = VerbKind::Set;    advance(); break;
-        case TokenKind::KwAdd:    verb = VerbKind::Add;    advance(); break;
-        case TokenKind::KwSub:    verb = VerbKind::Sub;    advance(); break;
-        case TokenKind::KwRemove: verb = VerbKind::Remove; advance(); break;
-        default:
-            diags_.error("P0007",
-                "expected verb (set/add/sub/remove) after '=>'",
-                peek().span, "");
-            break;
-    }
-    eff.verb = verb;
-
-    // Parse namespaced name: identifier '/' identifier
-    Token const ns_tok = expect(TokenKind::Identifier, "expected namespace identifier");
-    expect(TokenKind::Slash, "expected '/' after effect namespace");
-    Token const name_tok = expect(TokenKind::Identifier, "expected effect name after '/'");
-
-    eff.namespace_ = ns_tok.string_id;
-    eff.name = name_tok.string_id;
-
-    expect(TokenKind::LParen, "expected '(' after effect name");
-    eff.args = parse_arg_list();
-    Token const rparen = peek();
-    expect(TokenKind::RParen, "expected ')' in effect");
-
-    eff.span = merge_spans(start_span, rparen.span);
-    return eff;
-}
 
 // ── Expression parsing ──
 
@@ -610,15 +563,15 @@ Expr Parser::parse_primary() {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = VariableExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = VariableExpr{tok.string_id, tok.span};
         return e;
     }
 
-    if (tok.kind == TokenKind::Symbol) {
+    if (tok.kind == TokenKind::Keyword) {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = SymbolExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = KeywordLiteral{tok.string_id, tok.span};
         return e;
     }
 
@@ -626,7 +579,7 @@ Expr Parser::parse_primary() {
         advance();
         Expr e;
         e.span = tok.span;
-        e.data = EditorIdExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = EditorIdExpr{tok.string_id, tok.span};
         return e;
     }
 
@@ -697,7 +650,7 @@ Expr Parser::parse_primary() {
         }
         Expr e;
         e.span = tok.span;
-        e.data = VariableExpr{tok.string_id, MoraType::make(TypeKind::Unknown), tok.span};
+        e.data = VariableExpr{tok.string_id, tok.span};
         return e;
     }
 
