@@ -19,6 +19,54 @@ std::string to_lower(std::string_view s) {
     return r;
 }
 
+// Case-insensitive shell-style glob match. Supports '*' (zero or more
+// chars) and '?' (exactly one). Iterative backtracker — simpler than
+// converting to std::regex and avoids regex's pathological worst-case
+// on patterns like `*a*b*c*`.
+bool glob_match_ci(std::string_view pat, std::string_view text) {
+    size_t i = 0, j = 0;
+    size_t star = std::string_view::npos;
+    size_t match = 0;
+    while (j < text.size()) {
+        if (i < pat.size() &&
+            (pat[i] == '?' ||
+             std::tolower(static_cast<unsigned char>(pat[i])) ==
+                 std::tolower(static_cast<unsigned char>(text[j])))) {
+            ++i; ++j;
+        } else if (i < pat.size() && pat[i] == '*') {
+            star = i++;
+            match = j;
+        } else if (star != std::string_view::npos) {
+            i = star + 1;
+            j = ++match;
+        } else {
+            return false;
+        }
+    }
+    while (i < pat.size() && pat[i] == '*') ++i;
+    return i == pat.size();
+}
+
+// Enumerate EditorIDs matching `pattern` in the given map. Linear scan
+// — the map is typically 50k-500k entries; one pass per wildcard is
+// acceptable (each takes ~a millisecond on commodity hardware).
+// Returns {} for degenerate `*` / empty patterns; caller treats that
+// as a diagnostic, not a silent success.
+std::vector<uint32_t> expand_glob(
+    std::string_view pattern,
+    const std::unordered_map<std::string, uint32_t>& editor_ids) {
+    std::vector<uint32_t> out;
+    if (pattern.empty()) return out;
+    // `*` alone would expand to every EditorID — almost always a bug.
+    // Reject here; the caller emits kid-wildcard-all.
+    if (pattern.size() == 1 && pattern[0] == '*') return out;
+    out.reserve(16);
+    for (const auto& [edid, fid] : editor_ids) {
+        if (glob_match_ci(pattern, edid)) out.push_back(fid);
+    }
+    return out;
+}
+
 enum class ResolveError {
     None,
     MissingEditorId,
@@ -138,6 +186,47 @@ std::vector<KidFactEmission> resolve_kid_file(
         for (const auto& group : line.filter) {
             ResolvedGroup rg;
             for (const auto& ref : group.values) {
+                if (ref.wildcard) {
+                    // Wildcards weaken AND-group semantics — expanding
+                    // `*Iron` inside `*Iron+ArmorHeavy` would mean "any
+                    // weapon whose EditorID matches *Iron AND has
+                    // ArmorHeavy", which v2 can't represent (the glob
+                    // match happens pre-join, so once expanded the
+                    // group becomes "has ANY of {IronSword, IronAxe,
+                    // ...} AND ArmorHeavy" — wrong intent). Drop
+                    // wildcards that appear inside multi-member AND
+                    // groups and warn. Wildcards in solo-OR groups
+                    // (the common case: `*Iron,*Gold`) expand cleanly.
+                    if (group.values.size() > 1) {
+                        emit_diag(diags, "kid-wildcard-in-and",
+                            fmt::format("KID line {}: wildcard \"{}\" inside an AND-group is not supported; value dropped",
+                                        line.source_line, ref.editor_id),
+                            file, line.source_line);
+                        continue;
+                    }
+                    auto matches = expand_glob(ref.editor_id, editor_ids);
+                    if (matches.empty()) {
+                        const char* code = (ref.editor_id == "*")
+                            ? "kid-wildcard-all" : "kid-wildcard-empty";
+                        emit_diag(diags, code,
+                            fmt::format("KID line {}: wildcard \"{}\" matched no EditorIDs; value dropped",
+                                        line.source_line, ref.editor_id),
+                            file, line.source_line);
+                        continue;
+                    }
+                    // Every glob match becomes its own OR-value in
+                    // this group. Fan-out warning at a large
+                    // threshold — too-broad wildcards degrade build
+                    // time and almost always indicate a typo.
+                    if (matches.size() > 1000) {
+                        emit_diag(diags, "kid-wildcard-fanout",
+                            fmt::format("KID line {}: wildcard \"{}\" expanded to {} matches",
+                                        line.source_line, ref.editor_id, matches.size()),
+                            file, line.source_line);
+                    }
+                    for (uint32_t fid : matches) rg.values.push_back(fid);
+                    continue;
+                }
                 uint32_t fid = 0;
                 auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index, fid);
                 if (ferr == ResolveError::None) rg.values.push_back(fid);

@@ -39,7 +39,7 @@ TargetKeyword | ItemType | FilterStrings | Traits | Chance
 |---|---|
 | `TargetKeyword` | EditorID (e.g. `MyKeyword`) or `0xFFFFFF~Mod.esp`. Both are resolved against the load order. ESL/light refs use the `0xFE00xxxx` encoding automatically. Unknown plugins produce `kid-missing-plugin`. |
 | `ItemType` | One of the 19 KID item types: `Weapon`, `Armor`, `Ammo`, `MagicEffect`, `Potion`, `Scroll`, `Location`, `Ingredient`, `Book`, `MiscItem`, `Key`, `SoulGem`, `Spell`, `Activator`, `Flora`, `Furniture`, `Race`, `TalkingActivator`, `Enchantment`. Case-insensitive; spaces allowed (`Magic Effect`). |
-| `FilterStrings` | Comma-separated OR-groups, with `+` joining an AND-group inside a group. `A+B,C` matches items that have *both* A and B, *or* C. Each group becomes a distinct `(RuleID, GroupID)` in `ini/kid_filter`; stdlib wiring rules join via negation-as-failure. |
+| `FilterStrings` | Comma-separated OR-groups, with `+` joining an AND-group inside a group. `A+B,C` matches items that have *both* A and B, *or* C. Each group becomes a distinct `(RuleID, GroupID)` in `ini/kid_filter`; stdlib wiring rules join via negation-as-failure. Glob patterns (`*Iron`, `Iron?`) expand against the EditorID map at resolve time; wildcards inside an AND-group are dropped with a warning. |
 | `Traits` | Parsed but not consumed in v1. `E` / `-E` hit `ini/kid_trait` but no wiring rule reads them yet. |
 | `Chance` | `100` or blank = always apply. Anything below 100 emits a `kid-chance-ignored` warning and applies the keyword unconditionally at compile time. |
 
@@ -53,13 +53,18 @@ Comments start with `;`. Bracketed section headers (`[Keywords]`) are accepted a
 | `kid-unresolved` | An EditorID didn't match the ESP load order. Targets drop the line; filter values narrow the filter. |
 | `kid-formid-unsupported` | `0xFFF~Mod.esp` reference but the caller didn't wire `plugin_runtime_index_out`. Library usage only; `mora compile` always sets it. |
 | `kid-missing-plugin` | `0xFFF~Unknown.esp` references a plugin not in the resolved load order. Line dropped. |
+| `kid-wildcard-empty` | A wildcard filter (`*Iron`) matched zero EditorIDs. Value dropped; other filter values on the line survive. |
+| `kid-wildcard-all` | A filter value was the degenerate `*` pattern. Rejected; use an empty / no-filter line if the intent is "all items of the type". |
+| `kid-wildcard-in-and` | A wildcard appeared inside a `+` AND-group (e.g. `*Iron+Heavy`). v2 can't express this cleanly; the wildcard is dropped and the AND-group proceeds without it. |
+| `kid-wildcard-fanout` | A wildcard expanded to more than 1000 matches — usually a typo. Expansion proceeds but build times suffer; consider narrowing. |
 | `kid-chance-ignored` | `Chance < 100`. Line kept, applied unconditionally. |
 | `kid-no-editor-ids` | No ESPs were loaded, so nothing resolves. Usually means `--data-dir` is wrong or the ESPs are missing. |
 | `stdlib-missing` | Mora couldn't find its stdlib and won't activate the wiring rules. Pass `--stdlib-dir` or set `$MORA_STDLIB`. |
 
 ## Limitations
 
-- **Wildcard item matching** (`*Iron`) isn't supported.
+- **Wildcards inside AND-groups** — `*Iron+Heavy` can't express "EditorID matches `*Iron` AND has Heavy keyword" because expansion happens before the AND-join. The wildcard is dropped with `kid-wildcard-in-and`. Wildcards in plain OR positions (`*Iron,*Gold`) expand cleanly.
+- **FULL name (display name) wildcards** — matching against item display names rather than EditorIDs isn't implemented.
 - **Trait filters** (`E`, `-E`, `HEAVY`, `LIGHT`, `AR(min,max)`, body slots) are parsed but not honored. Wiring needs `form/is_enchanted`, `form/armor_rating`, etc. — tracked as follow-up work.
 - **Runtime chance rolls** are not simulated: `Chance < 100` applies unconditionally and produces a diagnostic so you can see where the fidelity gap is.
 - **SPID** (Spell Perk Item Distributor) is not yet integrated. The schema leaves room for it (`spid_*` facts are stubbed in the legacy sema table) but the datasource/stdlib don't exist yet.

@@ -107,6 +107,22 @@ TEST(KidParserTest, TalkingActivatorMaps) {
     EXPECT_EQ(line.item_type, "talking_activator");
 }
 
+TEST(KidParserTest, WildcardFlagSet) {
+    auto line = parse_one("Target|Weapon|*Iron,Iron*,*Iron*,Steel|NONE|100");
+    ASSERT_EQ(line.filter.size(), 4u);
+    EXPECT_TRUE (line.filter[0].values[0].wildcard);
+    EXPECT_EQ   (line.filter[0].values[0].editor_id, "*Iron");
+    EXPECT_TRUE (line.filter[1].values[0].wildcard);
+    EXPECT_TRUE (line.filter[2].values[0].wildcard);
+    EXPECT_FALSE(line.filter[3].values[0].wildcard);  // plain literal
+}
+
+TEST(KidParserTest, QuestionMarkWildcard) {
+    auto line = parse_one("Target|Weapon|Iron?|NONE|100");
+    ASSERT_EQ(line.filter.size(), 1u);
+    EXPECT_TRUE(line.filter[0].values[0].wildcard);
+}
+
 TEST(KidParserTest, ParseFileRoundtrip) {
     auto path = std::filesystem::temp_directory_path() / "mora_kid_parser_test_KID.ini";
     {

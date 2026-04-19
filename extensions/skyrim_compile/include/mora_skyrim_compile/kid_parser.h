@@ -18,8 +18,12 @@ namespace mora_skyrim_compile {
 // the EditorID map.
 struct KidRef {
     // If `editor_id` is non-empty this is an EditorID reference and
-    // `formid` / `mod_file` are unset.
+    // `formid` / `mod_file` are unset. When `wildcard` is true the
+    // `editor_id` string holds a glob pattern (containing '*' or '?')
+    // rather than a literal EditorID; the resolver expands it against
+    // the full EditorID map at resolve time.
     std::string editor_id;
+    bool        wildcard = false;
 
     // For FormID references, `formid` holds the parsed hex value and
     // `mod_file` the plugin filename (with extension, case as written).

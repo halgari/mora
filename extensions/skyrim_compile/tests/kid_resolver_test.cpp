@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include "mora_skyrim_compile/kid_resolver.h"
 #include "mora_skyrim_compile/kid_parser.h"
 
@@ -30,6 +31,13 @@ KidLine mk_line(KidRef target, std::string_view item_type,
 }
 
 KidRef edid(std::string s) { KidRef r; r.editor_id = std::move(s); return r; }
+
+KidRef wild(std::string pat) {
+    KidRef r;
+    r.editor_id = std::move(pat);
+    r.wildcard  = true;
+    return r;
+}
 
 KidRef fid_ref(uint32_t id, std::string mod) {
     KidRef r; r.formid = id; r.mod_file = std::move(mod); return r;
@@ -286,6 +294,104 @@ TEST(KidResolverTest, FormidRefMissingPluginDiagnosed) {
     EXPECT_TRUE(out.empty());
     ASSERT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-missing-plugin");
+}
+
+TEST(KidResolverTest, WildcardExpandsAgainstEditorIds) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {
+        {"Target",     0x10u},
+        {"IronSword",  0x20u},
+        {"IronAxe",    0x21u},
+        {"SteelSword", 0x22u},
+    };
+
+    KidFile f;
+    f.lines.push_back(mk_line(edid("Target"), "weapon",
+                              {{wild("Iron*")}}));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    // 1 dist + 2 filter rows (IronSword, IronAxe); SteelSword doesn't match.
+    ASSERT_EQ(out.size(), 3u);
+
+    std::vector<uint32_t> matched;
+    for (size_t i = 1; i < out.size(); ++i) {
+        matched.push_back(out[i].values[3].as_formid());
+    }
+    std::sort(matched.begin(), matched.end());
+    EXPECT_EQ(matched[0], 0x20u);
+    EXPECT_EQ(matched[1], 0x21u);
+}
+
+TEST(KidResolverTest, WildcardNoMatchWarnsAndSkips) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {
+        {"Target", 0x10u},
+        {"Steel",  0x22u},
+    };
+
+    KidFile f;
+    // Non-matching wildcard plus a literal. Line should keep the literal.
+    f.lines.push_back(mk_line(edid("Target"), "weapon",
+                              {{wild("Iron*")}, {edid("Steel")}}));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    // dist + 1 filter (Steel).
+    ASSERT_EQ(out.size(), 2u);
+    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);
+    bool saw_empty = false;
+    for (auto& d : diags.all()) if (d.code == "kid-wildcard-empty") saw_empty = true;
+    EXPECT_TRUE(saw_empty);
+}
+
+TEST(KidResolverTest, WildcardStarAloneRejected) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {
+        {"Target", 0x10u},
+        {"A",      0x20u},
+        {"B",      0x21u},
+    };
+
+    KidFile f;
+    f.lines.push_back(mk_line(edid("Target"), "weapon",
+                              {{wild("*")}}));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    // No survivors → line dropped.
+    EXPECT_TRUE(out.empty());
+    bool saw_all = false;
+    for (auto& d : diags.all()) if (d.code == "kid-wildcard-all") saw_all = true;
+    EXPECT_TRUE(saw_all);
+}
+
+TEST(KidResolverTest, WildcardInsideAndGroupDropped) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {
+        {"Target",    0x10u},
+        {"IronSword", 0x20u},
+        {"Heavy",     0x30u},
+    };
+
+    KidFile f;
+    // `*Iron + Heavy` — wildcard inside an AND-group. Wildcard dropped
+    // with a diagnostic; the group keeps only the literal Heavy.
+    f.lines.push_back(mk_line(edid("Target"), "weapon",
+                              {{wild("*Iron"), edid("Heavy")}}));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    // dist + 1 filter row for Heavy (group 0). Wildcard not expanded.
+    ASSERT_EQ(out.size(), 2u);
+    EXPECT_EQ(out[1].values[3].as_formid(), 0x30u);
+    bool saw_in_and = false;
+    for (auto& d : diags.all()) if (d.code == "kid-wildcard-in-and") saw_in_and = true;
+    EXPECT_TRUE(saw_in_and);
 }
 
 TEST(KidResolverTest, LowChanceDiagnosedButLineKept) {

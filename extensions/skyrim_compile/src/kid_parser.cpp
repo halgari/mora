@@ -78,10 +78,12 @@ bool parse_ref(std::string_view tok, KidRef& out, std::string& err) {
 
     auto tilde = tok.find('~');
     if (tilde == std::string_view::npos) {
-        // EditorID — must be non-empty, identifier-ish. KID allows a
-        // broad char set (names in ESP records can contain anything),
-        // so we don't validate beyond non-emptiness.
+        // EditorID (possibly a glob). KID allows a broad char set in
+        // EditorIDs, so we don't validate beyond non-emptiness. If the
+        // token contains '*' or '?', flag it for the resolver to
+        // expand against the EditorID map.
         out.editor_id = std::string(tok);
+        out.wildcard  = tok.find_first_of("*?") != std::string_view::npos;
         return true;
     }
 
