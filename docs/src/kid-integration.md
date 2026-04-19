@@ -40,7 +40,7 @@ TargetKeyword | ItemType | FilterStrings | Traits | Chance
 | `TargetKeyword` | EditorID (e.g. `MyKeyword`) or `0xFFFFFF~Mod.esp`. Both are resolved against the load order. ESL/light refs use the `0xFE00xxxx` encoding automatically. Unknown plugins produce `kid-missing-plugin`. |
 | `ItemType` | One of the 19 KID item types: `Weapon`, `Armor`, `Ammo`, `MagicEffect`, `Potion`, `Scroll`, `Location`, `Ingredient`, `Book`, `MiscItem`, `Key`, `SoulGem`, `Spell`, `Activator`, `Flora`, `Furniture`, `Race`, `TalkingActivator`, `Enchantment`. Case-insensitive; spaces allowed (`Magic Effect`). |
 | `FilterStrings` | Comma-separated OR-groups, with `+` joining an AND-group inside a group. `A+B,C` matches items that have *both* A and B, *or* C. Each group becomes a distinct `(RuleID, GroupID)` in `ini/kid_filter`; stdlib wiring rules join via negation-as-failure. Glob patterns (`*Iron`, `Iron?`) expand against the EditorID map at resolve time; wildcards inside an AND-group are dropped with a warning. |
-| `Traits` | Parsed but not consumed in v1. `E` / `-E` hit `ini/kid_trait` but no wiring rule reads them yet. |
+| `Traits` | `E` / `-E` (enchanted / non-enchanted) are wired for weapon, armor, ammo. Other traits (`HEAVY`, `LIGHT`, `AR(min,max)`, body slots, spell/magic-effect flags) are parsed into `ini/kid_trait` but not yet consumed. |
 | `Chance` | `100` or blank = always apply. Anything below 100 emits a `kid-chance-ignored` warning and applies the keyword unconditionally at compile time. |
 
 Comments start with `;`. Bracketed section headers (`[Keywords]`) are accepted and ignored.
@@ -65,6 +65,6 @@ Comments start with `;`. Bracketed section headers (`[Keywords]`) are accepted a
 
 - **Wildcards inside AND-groups** — `*Iron+Heavy` can't express "EditorID matches `*Iron` AND has Heavy keyword" because expansion happens before the AND-join. The wildcard is dropped with `kid-wildcard-in-and`. Wildcards in plain OR positions (`*Iron,*Gold`) expand cleanly.
 - **FULL name (display name) wildcards** — matching against item display names rather than EditorIDs isn't implemented.
-- **Trait filters** (`E`, `-E`, `HEAVY`, `LIGHT`, `AR(min,max)`, body slots) are parsed but not honored. Wiring needs `form/is_enchanted`, `form/armor_rating`, etc. — tracked as follow-up work.
+- **Trait filters**: `E` / `-E` are honored (weapon, armor, ammo). `HEAVY` / `LIGHT` / `CLOTHING`, `AR(min,max)`, `W(min,max)`, body slots, spell/magic-effect flags are parsed into `ini/kid_trait` but no wiring rule reads them. Tracked in `docs/specs/2026-04-18-kid-v2-deferred-features.md` waves 2-3.
 - **Runtime chance rolls** are not simulated: `Chance < 100` applies unconditionally and produces a diagnostic so you can see where the fidelity gap is.
 - **SPID** (Spell Perk Item Distributor) is not yet integrated. The schema leaves room for it (`spid_*` facts are stubbed in the legacy sema table) but the datasource/stdlib don't exist yet.

@@ -218,6 +218,22 @@ void SchemaRegistry::register_defaults() {
         register_schema(std::move(s));
     }
 
+    // enchanted_with(Item, Enchantment) — EITM subrecord. Only fires
+    // when the record actually has an EITM (i.e. the item IS
+    // enchanted), so kid.mora's `E` / `-E` trait wiring can use
+    // `form/enchanted_with(X, _)` as a presence check.
+    {
+        RelationSchema s;
+        s.name = id("enchanted_with");
+        s.column_types = {formid_type, mora::types::get("FormID")};
+        s.indexed_columns = {0};
+        for (const char* rt : {"WEAP", "ARMO", "AMMO"}) {
+            s.esp_sources.push_back(EspSource{
+                rt, "EITM", EspSource::Kind::Subrecord, 0, 0, ReadType::FormID});
+        }
+        register_schema(std::move(s));
+    }
+
     // race_of(FormID, RaceID) — RNAM subrecord
     {
         RelationSchema s;

@@ -143,6 +143,7 @@ void NameResolver::register_builtins() {
     reg("race_of",       2);
     reg("name",          2);
     reg("editor_id",     2);
+    reg("enchanted_with", 2);
     reg("gold_value",    2);
     reg("weight",        2);
     reg("damage",        2);
