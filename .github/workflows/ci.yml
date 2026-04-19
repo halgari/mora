@@ -160,8 +160,12 @@ jobs:
         # toolchain selection inside xmake.lua sidesteps both.
         run: xmake f -p windows -a x64 -m release -y
 
-      - name: Build mora.exe
-        run: xmake build -y mora
+      - name: Build SKSE DLLs (MoraRuntime + MoraTestHarness)
+        # v3 architecture: mora.exe (the CLI compiler) is Linux-native;
+        # the Windows side is the SKSE runtime DLL that loads the
+        # parquet-derived snapshot at game DataLoaded, plus a harness
+        # DLL used by the integration-test pipeline.
+        run: xmake build -y mora_runtime mora_test_harness
 
       - name: List built binaries
         run: ls -lh build/windows/x64/release/
@@ -184,12 +188,16 @@ jobs:
           fi
           echo "Release version: $version"
           stage="$proj/dist/Mora-$version-windows"
-          # Single Data/-rooted layout so MO2 / Vortex auto-detect the
-          # archive as a Skyrim mod. v3 ships the CLI + the VS Code
-          # extension only; runtime patching has been retired pending
-          # the parquet-snapshot-based runtime architecture.
-          mkdir -p "$stage/Data/tools/Mora"
-          cp "$proj/build/windows/x64/release/mora.exe" "$stage/Data/tools/Mora/mora.exe"
+          # Data/-rooted layout so MO2 / Vortex auto-detect the archive
+          # as a Skyrim mod. v3 ships:
+          #   • Data/SKSE/Plugins/MoraRuntime.dll     — applies snapshots at DataLoaded
+          #   • Data/SKSE/Plugins/MoraTestHarness.dll — TCP form introspection (CI)
+          #   • Data/tools/Mora/mora-vscode-*.vsix   — VS Code extension
+          # The CLI compiler (mora.exe) is Linux-native in v3; the Linux
+          # artifact is uploaded separately from the `linux` job.
+          mkdir -p "$stage/Data/SKSE/Plugins" "$stage/Data/tools/Mora"
+          cp "$proj/build/windows/x64/release/MoraRuntime.dll" "$stage/Data/SKSE/Plugins/"
+          cp "$proj/build/windows/x64/release/MoraTestHarness.dll" "$stage/Data/SKSE/Plugins/"
           vsix=$(ls "$proj/dist/vsix"/mora-vscode-*.vsix | head -1)
           if [[ -z "$vsix" ]]; then
             echo "::error::VS Code .vsix not found in dist/vsix"
@@ -234,8 +242,12 @@ jobs:
 
             Archive layout (extract into your Skyrim SE install root,
             or install via MO2 / Vortex with data-dir = Data/):
-              • Data/tools/Mora/mora.exe           — CLI compiler / LSP
-              • Data/tools/Mora/mora-vscode-*.vsix  — VS Code extension (sideload)
+              • Data/SKSE/Plugins/MoraRuntime.dll     — loads the compile-time snapshot at DataLoaded
+              • Data/SKSE/Plugins/MoraTestHarness.dll — TCP form introspection (optional; CI)
+              • Data/tools/Mora/mora-vscode-*.vsix   — VS Code extension (sideload)
+
+            The CLI compiler (`mora`) is Linux-native in v3 and uploaded
+            separately as a Linux artifact.
 
             Built by GitHub Actions from commit ${{ github.sha }}
             (cross-compiled on Ubuntu with clang-cl + xwin).
