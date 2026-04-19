@@ -164,8 +164,11 @@ jobs:
         # v3 architecture: mora.exe (the CLI compiler) is Linux-native;
         # the Windows side is the SKSE runtime DLL that loads the
         # parquet-derived snapshot at game DataLoaded, plus a harness
-        # DLL used by the integration-test pipeline.
-        run: xmake build -y mora_runtime mora_test_harness
+        # DLL used by the integration-test pipeline. xmake accepts
+        # one target per build invocation — split into two steps.
+        run: |
+          xmake build -y mora_runtime
+          xmake build -y mora_test_harness
 
       - name: List built binaries
         run: ls -lh build/windows/x64/release/
