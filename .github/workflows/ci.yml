@@ -66,6 +66,17 @@ jobs:
       - name: Run tests
         run: xmake test -v
 
+      # Reused by the skyrim-integration job (see `needs:` below) so it
+      # doesn't have to rebuild the native linux mora on the Skyrim
+      # runner pool. v3 compiles natively on Linux and emits a flat
+      # binary (mora_runtime.bin) that MoraRuntime.dll reads in-game.
+      - name: Upload native linux mora
+        uses: actions/upload-artifact@v4
+        with:
+          name: mora-linux
+          path: build/linux/x86_64/releasedbg/mora
+          if-no-files-found: error
+
   extension:
     name: VS Code extension (.vsix)
     runs-on: [self-hosted, linux]
@@ -254,3 +265,195 @@ jobs:
 
             Built by GitHub Actions from commit ${{ github.sha }}
             (cross-compiled on Ubuntu with clang-cl + xwin).
+
+  skyrim-integration:
+    name: Skyrim integration (${{ matrix.case }})
+    needs: [linux, windows-xcompile]
+    # Fork PRs must never reach the skyrim-runner pool — they can
+    # execute arbitrary code in the runner container. Same guard
+    # pattern as skyrim-runner/examples/pr-test.yml.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, unraid, skyrim]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - weapon_damage
+          - nazeem
+          - weapon_setters
+          - armor_setters
+          - npc_setters
+          - leveled_list_setters
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Mora-windows
+          path: dist/
+
+      # ── mora compiler: reuse the artifact built by the `linux` job ──
+      # In v3 the compiler is Linux-native; Windows ships only the
+      # SKSE DLLs. Running mora natively (rather than mora.exe under
+      # Proton/wine) sidesteps the Proton stdout quagmire and wine64
+      # segfaults seen on this container.
+      - name: Download native linux mora
+        uses: actions/download-artifact@v4
+        with:
+          name: mora-linux
+          path: bin
+
+      - name: Make mora executable
+        run: chmod +x bin/mora
+
+      - name: Stage mod-under-test and compile mora rules (native linux)
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          set -euo pipefail
+
+          # Unpack the Windows release zip. v3's archive layout (see the
+          # windows-xcompile packaging step above):
+          #   Data/SKSE/Plugins/MoraRuntime.dll
+          #   Data/SKSE/Plugins/MoraTestHarness.dll
+          #   Data/tools/Mora/mora-vscode-*.vsix
+          unzip -q dist/Mora-*-windows.zip -d artifacts/
+          RELEASE_DIR=artifacts
+
+          # Stage the mod-dir that run-skyrim-test.sh will overlay onto
+          # /skyrim-base + /skyrim-baseline. MoraRuntime.dll reads
+          # mora_runtime.bin from its own directory (see
+          # extensions/skyrim_runtime/src/rt/plugin_entry.cpp: it
+          # resolves `<DLL-dir>/mora_runtime.bin`), so the snapshot
+          # must sit next to the DLL.
+          STAGE="$GITHUB_WORKSPACE/mod-under-test"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/Data/SKSE/Plugins"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
+          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
+             "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
+
+          # Synthesize a plugins.txt matching a clean GOG AE install's
+          # runtime load order — the runner image doesn't ship a real
+          # Plugins.txt in any standard location, and mora's directory-
+          # walk fallback mis-orders CC content so compile-time FormIDs
+          # diverge from runtime. Order mirrors engine behavior for a
+          # user with an empty Plugins.txt:
+          #   1. Bethesda hardcoded base masters, canonical order.
+          #   2. Creation Club plugins listed in Skyrim.ccc.
+          #   3. Anything else in Data/ alphabetically.
+          GEN_TXT="$GITHUB_WORKSPACE/plugins.gen.txt"
+          : > "$GEN_TXT"
+
+          for p in Skyrim.esm Update.esm Dawnguard.esm HearthFires.esm Dragonborn.esm; do
+            [[ -f "/skyrim-base/Data/$p" ]] && echo "*$p" >> "$GEN_TXT"
+          done
+
+          CCC_FILE=""
+          for cand in /skyrim-base/Skyrim.ccc /skyrim-base/skyrim.ccc; do
+            [[ -f "$cand" ]] && CCC_FILE="$cand" && break
+          done
+
+          if [[ -n "$CCC_FILE" ]]; then
+            echo "Found CC manifest: $CCC_FILE ($(wc -l < "$CCC_FILE") entries)"
+            awk '{sub(/\r$/,""); gsub(/^[[:space:]]+|[[:space:]]+$/,""); if (length) print "*" $0}' \
+              "$CCC_FILE" >> "$GEN_TXT"
+          else
+            echo "::warning::No Skyrim.ccc on runner — CC load order may mismatch runtime"
+          fi
+
+          # Dedup + append any remaining Data/ plugins. Skyrim.ccc's
+          # casing occasionally drifts from on-disk (e.g.
+          # ccMTYSSE001-KnightsoftheNine.esl vs ...OfTheNine.esl).
+          # Wine at runtime is case-insensitive; a compile-time case-
+          # sensitive check would silently drop mismatched entries and
+          # throw off ESL indices for every subsequent light plugin.
+          # Map filenames via a case-insensitive index to the on-disk
+          # casing.
+          python3 - "$GEN_TXT" /skyrim-base/Data <<'PY'
+          import os, sys
+          gen = sys.argv[1]
+          data_dir = sys.argv[2]
+          try:
+              disk_files = os.listdir(data_dir)
+          except FileNotFoundError:
+              disk_files = []
+          by_lower = {f.lower(): f for f in disk_files}
+
+          seen_lower = set()
+          with open(gen) as f:
+              lines = [ln.rstrip("\n") for ln in f if ln.strip()]
+          out = []
+          for ln in lines:
+              name = ln.lstrip("*").strip()
+              key = name.lower()
+              if key in seen_lower:
+                  continue
+              actual = by_lower.get(key)
+              if not actual:
+                  continue
+              seen_lower.add(key)
+              out.append("*" + actual)
+
+          for entry in sorted(disk_files, key=str.lower):
+              if not entry.lower().endswith((".esm", ".esp", ".esl")):
+                  continue
+              if entry.lower() in seen_lower:
+                  continue
+              seen_lower.add(entry.lower())
+              out.append("*" + entry)
+          with open(gen, "w") as f:
+              f.write("\n".join(out) + "\n")
+          PY
+
+          echo "Generated plugins.txt ($(wc -l < "$GEN_TXT") entries):"
+          head -20 "$GEN_TXT"
+          echo "  ..."
+          tail -5 "$GEN_TXT"
+          PLUGINS_ARG=(--plugins-txt "$GEN_TXT")
+
+          MORA_BIN="$GITHUB_WORKSPACE/bin/mora"
+
+          # v3: emit the flat-binary snapshot that MoraRuntime.dll reads
+          # directly. The parquet sink is additionally available
+          # (`--sink parquet.snapshot=...`) for external tooling but
+          # isn't needed by the runtime.
+          "$MORA_BIN" compile \
+            "tests/integration/${CASE}/rules.mora" \
+            --data-dir /skyrim-base/Data \
+            "${PLUGINS_ARG[@]}" \
+            --output "$STAGE/Data/SKSE/Plugins" \
+            --sink "skyrim_runtime.snapshot=$STAGE/Data/SKSE/Plugins"
+
+          # Sanity: mora_runtime.bin must exist AND contain at least one
+          # row. The v3 header is 16 bytes when empty (magic + version +
+          # num_rows=0 + string_pool_size=0); anything > 16 means the
+          # compile step emitted at least one effect fact. Narrow target-
+          # specific rules (the *_setters cases scope to a single
+          # FormID) bottom out in the low 100s of bytes; broadcast rules
+          # (nazeem, weapon_damage) end up in the hundreds of KB.
+          BIN="$STAGE/Data/SKSE/Plugins/mora_runtime.bin"
+          test -s "$BIN"
+          bin_size=$(stat -c %s "$BIN")
+          echo "mora_runtime.bin size: $bin_size bytes"
+          if (( bin_size <= 16 )); then
+            echo "::error::mora_runtime.bin is $bin_size bytes — compiler emitted no effect facts"
+            exit 1
+          fi
+          ls -la "$STAGE/Data/SKSE/Plugins"
+
+      - name: Run Skyrim integration test
+        env:
+          TEST_HOOK:    ${{ github.workspace }}/tests/integration/${{ matrix.case }}/check.sh
+          TEST_TIMEOUT: "600"
+          LOG_DIR:      /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}
+        run: /usr/local/bin/run-skyrim-test.sh "$GITHUB_WORKSPACE/mod-under-test"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyrim-logs-${{ matrix.case }}-${{ github.run_attempt }}
+          path: /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}/
+          if-no-files-found: warn
