@@ -277,8 +277,21 @@ void SchemaRegistry::register_defaults() {
         s.indexed_columns = std::move(idx);
         register_schema(std::move(s));
     };
+    auto reg_four = [&](const char* n,
+                        const Type* c0, const Type* c1,
+                        const Type* c2, const Type* c3,
+                        std::vector<size_t> idx) {
+        RelationSchema s;
+        s.name = id(n);
+        s.column_types   = {c0, c1, c2, c3};
+        s.indexed_columns = std::move(idx);
+        register_schema(std::move(s));
+    };
     reg_three("ini/kid_dist",    int_type, formid_type, string_type, {0, 2});
-    reg_three("ini/kid_filter",  int_type, string_type, formid_type, {0, 1});
+    // ini/kid_filter gains a GroupID column (col 1) so KID's `+` (AND)
+    // operator can be expressed as "all rows with the same (RuleID,
+    // GroupID) must match" while `,` (OR) emits distinct groups.
+    reg_four ("ini/kid_filter",  int_type, int_type, string_type, formid_type, {0, 1, 2});
     reg_three("ini/kid_exclude", int_type, string_type, formid_type, {0, 1});
     {
         RelationSchema s;

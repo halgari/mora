@@ -11,3 +11,6 @@ requires mod("Skyrim.esm")
 # would treat KID as unreferenced and skip loading entirely.
 sample_kid_touchpoint(RuleID):
     ini/kid_dist(RuleID, _, _)
+
+sample_kid_filter_touchpoint(RuleID, GroupID):
+    ini/kid_filter(RuleID, GroupID, _, _)

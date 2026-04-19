@@ -62,10 +62,11 @@ TEST(KidResolverTest, BasicLineEmitsDistAndFilter) {
     EXPECT_EQ(pool.get(out[0].values[2].as_string()), "weapon");
 
     EXPECT_EQ(out[1].relation, "ini/kid_filter");
-    ASSERT_EQ(out[1].values.size(), 3u);
-    EXPECT_EQ(out[1].values[0].as_int(),    1);
-    EXPECT_EQ(pool.get(out[1].values[1].as_string()), "keyword");
-    EXPECT_EQ(out[1].values[2].as_formid(), 0x10000200u);
+    ASSERT_EQ(out[1].values.size(), 4u);
+    EXPECT_EQ(out[1].values[0].as_int(),    1);       // RuleID
+    EXPECT_EQ(out[1].values[1].as_int(),    0);       // GroupID (first OR-group)
+    EXPECT_EQ(pool.get(out[1].values[2].as_string()), "keyword");
+    EXPECT_EQ(out[1].values[3].as_formid(), 0x10000200u);
 
     EXPECT_EQ(next, 2u);
 }
@@ -119,11 +120,44 @@ TEST(KidResolverTest, PartialFilterResolutionKeepsLine) {
 
     uint32_t next = 1;
     auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // dist + one filter row for A. B is dropped with warning.
+    // dist + one filter row for A. B is dropped with warning. The
+    // empty B group is omitted entirely, so A keeps GroupID=0 (its
+    // original position) and the B group isn't emitted at all.
     ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[1].values[2].as_formid(), 0x22u);
+    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);
     EXPECT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-unresolved");
+}
+
+TEST(KidResolverTest, AndOfOrsEmitsGroupIds) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {
+        {"Target", 0x11u},
+        {"A",      0x22u},
+        {"B",      0x33u},
+        {"C",      0x44u},
+    };
+
+    KidFile f;
+    // Filter: (A AND B) OR C  ->  2 OR-groups, first has 2 AND-members.
+    f.lines.push_back(mk_line(edid("Target"), "weapon",
+                              {{edid("A"), edid("B")}, {edid("C")}}));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    // 1 kid_dist + 3 kid_filter rows (A, B in group 0; C in group 1).
+    ASSERT_EQ(out.size(), 4u);
+
+    EXPECT_EQ(out[1].relation, "ini/kid_filter");
+    EXPECT_EQ(out[1].values[1].as_int(), 0);  // group 0
+    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);  // A
+
+    EXPECT_EQ(out[2].values[1].as_int(), 0);  // group 0 still
+    EXPECT_EQ(out[2].values[3].as_formid(), 0x33u);  // B
+
+    EXPECT_EQ(out[3].values[1].as_int(), 1);  // group 1
+    EXPECT_EQ(out[3].values[3].as_formid(), 0x44u);  // C
 }
 
 TEST(KidResolverTest, AllFilterValuesUnresolvedDropsLine) {

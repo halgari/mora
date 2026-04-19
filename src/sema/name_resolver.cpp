@@ -171,8 +171,9 @@ void NameResolver::register_builtins() {
 
     // ── KID distribution facts ──
     reg("kid_dist",     3);
-    reg("kid_filter",   3);
+    reg("kid_filter",   4);  // RuleID, GroupID, Kind, Value
     reg("kid_exclude",  3);
+    reg("kid_trait",    2);
 
 }
 

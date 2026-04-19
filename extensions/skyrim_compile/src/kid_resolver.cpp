@@ -113,20 +113,44 @@ std::vector<KidFactEmission> resolve_kid_file(
             continue;
         }
 
-        // Gather resolved filter values. For v1 we flatten AND-groups
-        // (KID's '+' operator) into OR across rows — a narrower filter
-        // than KID would give in the AND case, but strictly a subset of
-        // its match set, so no false positives.
-        std::vector<uint32_t> filter_values;
+        // Gather resolved filter values per OR-group. KID's syntax is
+        // an AND-of-ORs: values joined by ','   are separate groups
+        // (OR'd); values joined by '+' within a group are AND'd. We
+        // preserve that structure on emission so the stdlib wiring
+        // rules can reconstruct "item satisfies ALL members of SOME
+        // group" via negation-as-failure.
+        //
+        // Per-group resolution policy:
+        //   - A group where EVERY value fails to resolve is dropped
+        //     entirely (keeping an empty AND-group is meaningless).
+        //   - A group where SOME values fail: the AND-conjunction is
+        //     weakened (fewer required keywords), not a strict subset
+        //     of original intent. Emit the survivors + a warning so
+        //     the author sees the degradation. Alternative (drop the
+        //     whole group) is stricter but usually wrong for
+        //     Wabbajack-scale inputs where one missing mod shouldn't
+        //     silently nuke an otherwise-fine rule.
+        struct ResolvedGroup {
+            std::vector<uint32_t> values;
+        };
+        std::vector<ResolvedGroup> resolved_groups;
         std::vector<std::string> dropped_filter;
         for (const auto& group : line.filter) {
+            ResolvedGroup rg;
             for (const auto& ref : group.values) {
                 uint32_t fid = 0;
                 auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index, fid);
-                if (ferr == ResolveError::None) filter_values.push_back(fid);
+                if (ferr == ResolveError::None) rg.values.push_back(fid);
                 else dropped_filter.push_back(ref_to_string(ref));
             }
+            if (!rg.values.empty()) resolved_groups.push_back(std::move(rg));
         }
+
+        // Drop the whole line iff the ORIGINAL filter had groups and
+        // we resolved NONE of them — the author wrote a filter that
+        // means nothing in this load order.
+        bool const had_filter = !line.filter.empty();
+        bool const all_dropped = had_filter && resolved_groups.empty();
         if (!dropped_filter.empty()) {
             std::string joined;
             for (size_t i = 0; i < dropped_filter.size(); ++i) {
@@ -139,13 +163,9 @@ std::vector<KidFactEmission> resolve_kid_file(
                 file, line.source_line);
         }
 
-        // Drop the whole line if its (positive) filter ended up empty
-        // only because every value was unresolvable. A legitimately
-        // empty filter (NONE) has line.filter.empty() — we don't drop
-        // those, they mean "all items of the type."
-        if (!line.filter.empty() && filter_values.empty()) {
+        if (all_dropped) {
             emit_diag(diags, "kid-unresolved",
-                fmt::format("KID filter for line {} lost all values; line dropped",
+                fmt::format("KID filter for line {} lost all groups; line dropped",
                             line.source_line),
                 file, line.source_line);
             continue;
@@ -163,15 +183,23 @@ std::vector<KidFactEmission> resolve_kid_file(
         };
         out.push_back(std::move(dist));
 
-        for (uint32_t fv : filter_values) {
-            KidFactEmission f;
-            f.relation = "ini/kid_filter";
-            f.values   = {
-                mora::Value::make_int(static_cast<int64_t>(rule_id)),
-                mora::Value::make_string(pool.intern("keyword")),
-                mora::Value::make_formid(fv),
-            };
-            out.push_back(std::move(f));
+        // Emit one row per (group, member). GroupID is the group's
+        // zero-based position within this line's filter — local to
+        // RuleID, not global. AND-semantics within a group are handled
+        // by the stdlib wiring rules via negation-as-failure (see
+        // data/stdlib/kid.mora `_kid_group_matches`).
+        for (size_t gi = 0; gi < resolved_groups.size(); ++gi) {
+            for (uint32_t fv : resolved_groups[gi].values) {
+                KidFactEmission f;
+                f.relation = "ini/kid_filter";
+                f.values   = {
+                    mora::Value::make_int(static_cast<int64_t>(rule_id)),
+                    mora::Value::make_int(static_cast<int64_t>(gi)),
+                    mora::Value::make_string(pool.intern("keyword")),
+                    mora::Value::make_formid(fv),
+                };
+                out.push_back(std::move(f));
+            }
         }
 
         for (const auto& trait : line.traits) {
