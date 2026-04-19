@@ -6,6 +6,8 @@ target("mora_skyrim_compile")
               "src/types.cpp",
               "src/plugin_facts.cpp",
               "src/esp_data_source.cpp",
+              "src/kid_parser.cpp",
+              "src/kid_resolver.cpp",
               "src/esp/*.cpp")
     if is_plat("windows") then
         add_deps("zlib")
