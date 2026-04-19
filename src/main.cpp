@@ -340,6 +340,7 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
 
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir, const std::string& plugins_txt,
+                        const std::string& kid_dir, bool no_kid,
                         mora::Output& out, bool use_color,
                         const std::unordered_map<std::string, std::string>& sink_configs) {
     auto start = std::chrono::steady_clock::now();
@@ -396,6 +397,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             /*needed_relations*/  collect_used_relations(cr.modules, cr.pool),
             /*editor_ids_out*/    &editor_id_map,
             /*loaded_plugins_out*/&loaded_plugins,
+            /*kid_enabled*/       !no_kid,
+            /*kid_dir*/           kid_dir.empty() ? fs::path{} : fs::path(kid_dir),
         };
 
         ext_ctx.load_required(load_ctx, db);
@@ -707,6 +710,8 @@ int main(int argc, char* argv[]) try {
     std::string comp_output;
     std::string comp_data_dir;
     std::string comp_plugins_txt;
+    std::string comp_kid_dir;
+    bool        comp_no_kid = false;
     std::vector<std::string> comp_sinks;
     auto* c_compile = app.add_subcommand("compile",
                                          "Compile .mora files and write effect facts to configured sinks");
@@ -724,6 +729,10 @@ int main(int argc, char* argv[]) try {
         "Sink to invoke after evaluation. Repeatable. Format: "
         "<sink-name>=<config-string>, e.g. --sink parquet.snapshot=./out")
         ->expected(0, -1);
+    c_compile->add_option("--kid-dir", comp_kid_dir,
+        "Directory to scan for *_KID.ini files (defaults to --data-dir)");
+    c_compile->add_flag("--no-kid", comp_no_kid,
+        "Skip loading *_KID.ini files (Keyword Item Distributor)");
 
     // `inspect`
     std::string insp_target = ".";
@@ -840,6 +849,7 @@ int main(int argc, char* argv[]) try {
         }
 
         return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
+                           comp_kid_dir, comp_no_kid,
                            out, use_color, sink_configs);
     }
     if (*c_inspect) {

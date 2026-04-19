@@ -1,5 +1,6 @@
 #include "mora_skyrim_compile/register.h"
 #include "mora_skyrim_compile/esp_data_source.h"
+#include "mora_skyrim_compile/kid_data_source.h"
 #include "mora_skyrim_compile/types.h"
 #include "mora/core/string_pool.h"
 #include "mora/data/schema_registry.h"
@@ -43,6 +44,9 @@ void register_skyrim(mora::ext::ExtensionContext& ctx) {
     register_all_nominal_types(ctx);
 
     ctx.register_data_source(std::make_unique<SkyrimEspDataSource>());
+    // KID must run after the ESP source so editor_ids_out is populated;
+    // load_required dispatches in registration order.
+    ctx.register_data_source(std::make_unique<KidDataSource>());
 
     // Bridge: enumerate the default Skyrim schemas via a throwaway
     // SchemaRegistry bound to a throwaway StringPool, then mirror each

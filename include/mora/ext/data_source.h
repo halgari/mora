@@ -52,6 +52,14 @@ struct LoadCtx {
     // load-order manifest for the patch-file digest and for
     // `requires mod(...)` validation. Null = caller doesn't need the set.
     std::unordered_set<std::string>* loaded_plugins_out = nullptr;
+
+    // KID (*_KID.ini) ingestion knobs, honored by mora_skyrim_compile's
+    // KidDataSource. Defaults: enabled, scan `data_dir`. A dedicated
+    // typed-opaque slot per extension is the long-term plan (see note
+    // at the top of this struct); these fields stay flat for v1 to
+    // avoid introducing a second plumbing layer ahead of need.
+    bool                         kid_enabled = true;
+    std::filesystem::path        kid_dir;  // empty = use data_dir
 };
 
 // A DataSource produces tuples into a FactDB. Loaders are registered
