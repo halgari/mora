@@ -54,3 +54,4 @@ nav:
   - Examples: examples.md
   - Cross-compile (Windows build): cross-compile-windows.md
   - Integration testing: integration-testing.md
+  - KID integration: kid-integration.md

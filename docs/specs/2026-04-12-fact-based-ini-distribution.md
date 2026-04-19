@@ -1,8 +1,14 @@
 # Fact-Based INI Distribution
 
-> **Status:** Historical design doc — in progress. `import_spid` and
-> `import_kid` keywords are reserved in the lexer (`src/lexer/lexer.cpp`)
-> but parser/sema/eval wiring has not landed. Paired plan:
+> **Status:** Historical design doc. KID landed via the
+> `feat/kid-integration` branch (see `docs/src/kid-integration.md`) but
+> with several deviations: ingestion is via a DataSource plugin rather
+> than the `import_kid` lexer keyword (still reserved, still unused);
+> filter values are stored as individual rows under
+> `ini/kid_filter(RuleID, Kind, Value)` rather than list-typed columns;
+> `form/*` existence predicates drive wiring instead of generic item-
+> type rules. SPID is **not** integrated yet; the schema proposed here
+> is still the right shape for that follow-up. Paired plan:
 > `docs/plans/2026-04-12-fact-based-ini-distribution.md`.
 
 ## Problem
