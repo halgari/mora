@@ -1,0 +1,292 @@
+namespace mora.stdlib.kid
+
+# Wiring rules that translate KID (Keyword Item Distributor) facts
+# produced by KidDataSource into skyrim/add effects.
+#
+# Fact schema recap:
+#   ini/kid_dist(RuleID, TargetKW, ItemType)   -- one per parsed KID line
+#   ini/kid_filter(RuleID, Kind, Value)        -- OR within kind across rows
+#   ini/kid_exclude(RuleID, Kind, Value)       -- negative filters
+#   ini/kid_trait(RuleID, Trait)               -- E / -E (not wired in v1)
+#
+# For each of KID's 19 item types we emit two rules:
+#   1. filtered:   join item -> form/keyword -> ini/kid_filter
+#   2. no-filter:  distribute to all items of the type when there's no
+#                  ini/kid_filter row for that RuleID.
+# Plus one shared derived rule `_kid_excluded` for exclude handling.
+#
+# Traits (E, -E, HEAVY, LIGHT, AR(...), W(...), body slots) are not
+# honored yet — KID _trait facts land in the DB but no rule consumes
+# them. Follow-up: add form/is_enchanted, form/armor_rating, etc. and
+# wire trait variants here.
+
+# ─── exclude helper ──────────────────────────────────────────────────
+_kid_excluded(X, RuleID):
+    ini/kid_exclude(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+
+# ─── weapon ──────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "weapon")
+    form/weapon(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "weapon")
+    form/weapon(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── armor ───────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "armor")
+    form/armor(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "armor")
+    form/armor(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── ammo ────────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "ammo")
+    form/ammo(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "ammo")
+    form/ammo(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── magic_effect ────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "magic_effect")
+    form/magic_effect(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "magic_effect")
+    form/magic_effect(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── potion ──────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "potion")
+    form/potion(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "potion")
+    form/potion(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── scroll ──────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "scroll")
+    form/scroll(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "scroll")
+    form/scroll(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── location ────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "location")
+    form/location(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "location")
+    form/location(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── ingredient ──────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "ingredient")
+    form/ingredient(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "ingredient")
+    form/ingredient(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── book ────────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "book")
+    form/book(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "book")
+    form/book(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── misc_item ───────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "misc_item")
+    form/misc_item(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "misc_item")
+    form/misc_item(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── key ─────────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "key")
+    form/key(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "key")
+    form/key(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── soul_gem ────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "soul_gem")
+    form/soul_gem(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "soul_gem")
+    form/soul_gem(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── spell ───────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "spell")
+    spell(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "spell")
+    spell(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── activator ───────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "activator")
+    form/activator(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "activator")
+    form/activator(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── flora ───────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "flora")
+    form/flora(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "flora")
+    form/flora(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── furniture ───────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "furniture")
+    form/furniture(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "furniture")
+    form/furniture(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── race ────────────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "race")
+    race(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "race")
+    race(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── talking_activator ───────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "talking_activator")
+    form/talking_activator(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "talking_activator")
+    form/talking_activator(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)
+
+# ─── enchantment ─────────────────────────────────────────────────────
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "enchantment")
+    form/enchantment(X)
+    ini/kid_filter(RuleID, "keyword", KW)
+    form/keyword(X, KW)
+    not _kid_excluded(X, RuleID)
+
+skyrim/add(X, :Keyword, TargetKW):
+    ini/kid_dist(RuleID, TargetKW, "enchantment")
+    form/enchantment(X)
+    not ini/kid_filter(RuleID, _, _)
+    not _kid_excluded(X, RuleID)

@@ -130,6 +130,7 @@ void NameResolver::register_builtins() {
     reg("location",     1);
     reg("key",          1);
     reg("furniture",    1);
+    reg("talking_activator", 1);
     reg("enchantment",  1);
 
     // ── Property facts (arity 2) ──

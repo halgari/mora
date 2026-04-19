@@ -567,20 +567,28 @@ struct ExistenceOnlyDef {
 };
 
 inline constexpr ExistenceOnlyDef kExistenceOnly[] = {
-    {"AMMO", "ammo",         "FormID"},
-    {"ALCH", "potion",       "FormID"},
-    {"INGR", "ingredient",   "FormID"},
-    {"BOOK", "book",         "FormID"},
-    {"SCRL", "scroll",       "FormID"},
-    {"ENCH", "enchantment",  "FormID"},
-    {"MGEF", "magic_effect", "FormID"},
-    {"MISC", "misc_item",    "FormID"},
-    {"SLGM", "soul_gem",     "FormID"},
-    {"SPEL", "spell",        "SpellID"},
-    {"PERK", "perk",         "PerkID"},
-    {"KYWD", "keyword",      "KeywordID"},
-    {"FACT", "faction",      "FactionID"},
-    {"RACE", "race",         "RaceID"},
+    {"AMMO", "ammo",              "FormID"},
+    {"ALCH", "potion",            "FormID"},
+    {"INGR", "ingredient",        "FormID"},
+    {"BOOK", "book",              "FormID"},
+    {"SCRL", "scroll",            "FormID"},
+    {"ENCH", "enchantment",       "FormID"},
+    {"MGEF", "magic_effect",      "FormID"},
+    {"MISC", "misc_item",         "FormID"},
+    {"SLGM", "soul_gem",          "FormID"},
+    {"SPEL", "spell",             "SpellID"},
+    {"PERK", "perk",              "PerkID"},
+    {"KYWD", "keyword",           "KeywordID"},
+    {"FACT", "faction",           "FactionID"},
+    {"RACE", "race",              "RaceID"},
+    // KID item types — keep existence-only (no modifiable components
+    // needed) so kid.mora wiring rules have a `form/<type>(X)` to join.
+    {"LCTN", "location",          "FormID"},
+    {"KEYM", "key",               "FormID"},
+    {"ACTI", "activator",         "FormID"},
+    {"FLOR", "flora",             "FormID"},
+    {"FURN", "furniture",         "FormID"},
+    {"TACT", "talking_activator", "FormID"},
 };
 
 inline constexpr size_t kExistenceOnlyCount =

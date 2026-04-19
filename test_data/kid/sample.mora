@@ -1,0 +1,13 @@
+namespace test.kid.sample
+
+# This module exists to trigger the needed_relations check so that
+# KidDataSource actually runs during `mora compile test_data/kid
+# --data-dir <Data> --kid-dir test_data/kid`. The stdlib kid.mora
+# wiring rules do the real work — this file is effectively a stub.
+requires mod("Skyrim.esm")
+
+# Touching ini/kid_dist forces load_required to dispatch the KID
+# source. Without any rule that references ini/kid_*, the compiler
+# would treat KID as unreferenced and skip loading entirely.
+sample_kid_touchpoint(RuleID):
+    ini/kid_dist(RuleID, _, _)

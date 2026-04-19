@@ -145,6 +145,7 @@ static std::vector<fs::path> find_mora_files(const fs::path& dir) {
 
 // (address library lookup removed — no longer needed without LLVM codegen)
 
+
 static std::string format_value(const mora::Value& v, const mora::StringPool& pool) {
     switch (v.kind()) {
         case mora::Value::Kind::FormID: return fmt::format("0x{:08X}", v.as_formid());
@@ -249,6 +250,56 @@ struct CheckResult {
     size_t rule_count = 0;
 };
 
+// Resolve the Mora stdlib directory via (1) explicit --stdlib-dir,
+// (2) $MORA_STDLIB, (3) `<cwd>/data/stdlib` for dev usage, (4) a walked-
+// up sibling for tests run from the build dir. Returns an empty path
+// when nothing resolves; the caller emits a warning once.
+static fs::path resolve_stdlib_dir(const std::string& explicit_override) {
+    auto try_path = [](fs::path p) -> fs::path {
+        std::error_code ec;
+        if (!p.empty() && fs::exists(p / "kid.mora", ec)) return p;
+        return {};
+    };
+    if (!explicit_override.empty()) {
+        if (auto p = try_path(fs::path(explicit_override)); !p.empty()) return p;
+    }
+    if (const char* env = std::getenv("MORA_STDLIB"); env && *env) {
+        if (auto p = try_path(fs::path(env)); !p.empty()) return p;
+    }
+    if (auto p = try_path(fs::current_path() / "data" / "stdlib"); !p.empty()) return p;
+    if (auto p = try_path(fs::current_path().parent_path() / "data" / "stdlib"); !p.empty()) return p;
+    return {};
+}
+
+// Parse + resolve the KID stdlib module and append it to `cr`. A
+// missing stdlib_dir surfaces as a one-shot warning so a user whose
+// KID rules never fire knows why.
+static bool load_kid_stdlib(CheckResult& cr, const fs::path& stdlib_dir) {
+    if (stdlib_dir.empty()) {
+        cr.diags.warning(
+            "stdlib-missing",
+            "Mora stdlib not found; KID wiring rules will not be active. "
+            "Set MORA_STDLIB, pass --stdlib-dir, or run from the repo root.",
+            mora::SourceSpan{}, "");
+        return false;
+    }
+    fs::path kid_path = stdlib_dir / "kid.mora";
+    std::string source = read_file(kid_path);
+    if (source.empty()) return false;
+
+    mora::Lexer lexer(source, kid_path.string(), cr.pool, cr.diags);
+    mora::Parser parser(lexer, cr.pool, cr.diags);
+    auto mod = parser.parse_module();
+    mod.filename = kid_path.string();
+    mod.source   = source;
+
+    mora::NameResolver resolver(cr.pool, cr.diags);
+    resolver.resolve(mod);
+    cr.rule_count += mod.rules.size();
+    cr.modules.push_back(std::move(mod));
+    return true;
+}
+
 static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
@@ -341,6 +392,7 @@ static int cmd_check(const std::string& target_path, mora::Output& out, bool use
 static int cmd_compile(const std::string& target_path, const std::string& output_dir,
                         const std::string& data_dir, const std::string& plugins_txt,
                         const std::string& kid_dir, bool no_kid,
+                        const std::string& stdlib_dir_override,
                         mora::Output& out, bool use_color,
                         const std::unordered_map<std::string, std::string>& sink_configs) {
     auto start = std::chrono::steady_clock::now();
@@ -348,6 +400,15 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     CheckResult cr;
     if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
+
+    // Bundled stdlib — wiring rules that consume fact-only datasources
+    // (KID today; SPID later). Auto-loaded whenever the user hasn't
+    // opted out of KID, so a plain `mora compile --data-dir …` picks
+    // up *_KID.ini without any extra flags.
+    if (!no_kid && !data_dir.empty()) {
+        fs::path const stdlib = resolve_stdlib_dir(stdlib_dir_override);
+        load_kid_stdlib(cr, stdlib);
+    }
 
     if (cr.diags.has_errors()) {
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -712,6 +773,7 @@ int main(int argc, char* argv[]) try {
     std::string comp_plugins_txt;
     std::string comp_kid_dir;
     bool        comp_no_kid = false;
+    std::string comp_stdlib_dir;
     std::vector<std::string> comp_sinks;
     auto* c_compile = app.add_subcommand("compile",
                                          "Compile .mora files and write effect facts to configured sinks");
@@ -733,6 +795,9 @@ int main(int argc, char* argv[]) try {
         "Directory to scan for *_KID.ini files (defaults to --data-dir)");
     c_compile->add_flag("--no-kid", comp_no_kid,
         "Skip loading *_KID.ini files (Keyword Item Distributor)");
+    c_compile->add_option("--stdlib-dir", comp_stdlib_dir,
+        "Override the Mora stdlib directory (defaults: $MORA_STDLIB, "
+        "<cwd>/data/stdlib, installed share/mora/stdlib)");
 
     // `inspect`
     std::string insp_target = ".";
@@ -849,7 +914,7 @@ int main(int argc, char* argv[]) try {
         }
 
         return cmd_compile(comp_target, comp_output, comp_data_dir, comp_plugins_txt,
-                           comp_kid_dir, comp_no_kid,
+                           comp_kid_dir, comp_no_kid, comp_stdlib_dir,
                            out, use_color, sink_configs);
     }
     if (*c_inspect) {
