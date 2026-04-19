@@ -10,6 +10,7 @@
 #include "mora/core/string_pool.h"
 #include "mora/data/schema_registry.h"
 #include "mora/eval/fact_db.h"
+#include "mora/ext/runtime_index.h"
 
 #include <algorithm>
 #include <fmt/format.h>
@@ -194,6 +195,21 @@ void SkyrimEspDataSource::load(mora::ext::LoadCtx& ctx, mora::FactDB& out) {
     if (ctx.editor_ids_out) {
         for (auto& [edid, formid] : editor_id_map) {
             (*ctx.editor_ids_out)[edid] = formid;
+        }
+    }
+
+    // Option B: expose the plugin runtime-index map in the packed
+    // descriptor format documented in mora/ext/runtime_index.h. KID /
+    // SPID resolvers consume this to translate `0xNNN~Plugin.ext`
+    // references; leaving it nullptr is fine for callers that don't
+    // need FormID-ref resolution.
+    if (ctx.plugin_runtime_index_out) {
+        for (auto& [name, idx] : runtime_index.index) {
+            uint32_t descriptor = idx;
+            if (runtime_index.light.contains(name)) {
+                descriptor |= mora::ext::kRuntimeIdxEsl;
+            }
+            (*ctx.plugin_runtime_index_out)[name] = descriptor;
         }
     }
 }

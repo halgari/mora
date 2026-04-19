@@ -439,6 +439,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     mora::Evaluator evaluator(cr.pool, cr.diags, db);
     mora::EditorIdMap editor_id_map;
     mora::PluginSet loaded_plugins;
+    std::unordered_map<std::string, uint32_t> plugin_runtime_index;
 
     // Registration is cheap (one unique_ptr per extension); dispatch is
     // gated below on --data-dir (load_required) and --sink (sinks loop).
@@ -456,10 +457,11 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             /*data_dir*/          fs::path(data_dir),
             /*plugins_txt*/       fs::path(plugins_txt),
             /*needed_relations*/  collect_used_relations(cr.modules, cr.pool),
-            /*editor_ids_out*/    &editor_id_map,
-            /*loaded_plugins_out*/&loaded_plugins,
-            /*kid_enabled*/       !no_kid,
-            /*kid_dir*/           kid_dir.empty() ? fs::path{} : fs::path(kid_dir),
+            /*editor_ids_out*/           &editor_id_map,
+            /*loaded_plugins_out*/       &loaded_plugins,
+            /*plugin_runtime_index_out*/ &plugin_runtime_index,
+            /*kid_enabled*/              !no_kid,
+            /*kid_dir*/                  kid_dir.empty() ? fs::path{} : fs::path(kid_dir),
         };
 
         ext_ctx.load_required(load_ctx, db);

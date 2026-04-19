@@ -53,6 +53,13 @@ struct LoadCtx {
     // `requires mod(...)` validation. Null = caller doesn't need the set.
     std::unordered_set<std::string>* loaded_plugins_out = nullptr;
 
+    // Option B output: if non-null, the ESP data source writes one
+    // entry per plugin with key = lowercase basename and value = the
+    // packed runtime-index descriptor (see mora/ext/runtime_index.h).
+    // Consumed by KID / SPID resolvers to turn `0xNNN~Plugin.ext`
+    // references into runtime FormIDs. Null = caller doesn't need it.
+    std::unordered_map<std::string, uint32_t>* plugin_runtime_index_out = nullptr;
+
     // KID (*_KID.ini) ingestion knobs, honored by mora_skyrim_compile's
     // KidDataSource. Defaults: enabled, scan `data_dir`. A dedicated
     // typed-opaque slot per extension is the long-term plan (see note

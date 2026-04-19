@@ -2,6 +2,7 @@
 
 #include "mora/core/source_location.h"
 #include "mora/diag/diagnostic.h"
+#include "mora/ext/runtime_index.h"
 
 #include <algorithm>
 #include <cctype>
@@ -18,36 +19,45 @@ std::string to_lower(std::string_view s) {
     return r;
 }
 
-// v1: EditorID lookup (case-insensitive). Misses and FormID references
-// both return std::nullopt with a diagnostic code the caller can
-// surface. Keeping the lookup in one place means we stay consistent
-// about casing and diag codes.
-enum class ResolveError { None, MissingEditorId, FormidUnsupported };
+enum class ResolveError {
+    None,
+    MissingEditorId,
+    FormidUnsupported,  // caller didn't wire plugin_runtime_index
+    MissingPlugin,      // plugin named in `0xNNN~Plugin.ext` isn't loaded
+};
 
 ResolveError resolve_ref(
     const KidRef&                                     ref,
     const std::unordered_map<std::string, uint32_t>&  editor_ids,
+    const std::unordered_map<std::string, uint32_t>*  plugin_runtime_index,
     uint32_t&                                         out_formid) {
-    if (!ref.is_editor_id()) {
-        return ResolveError::FormidUnsupported;
-    }
-    // Exact match first — ESP extraction preserves casing as-written.
-    auto it = editor_ids.find(ref.editor_id);
-    if (it != editor_ids.end()) {
-        out_formid = it->second;
-        return ResolveError::None;
-    }
-    // Case-insensitive fallback. KID users routinely mis-case EditorIDs
-    // and the game treats them case-insensitively at runtime, so Mora
-    // follows suit.
-    std::string lc = to_lower(ref.editor_id);
-    for (const auto& [k, v] : editor_ids) {
-        if (to_lower(k) == lc) {
-            out_formid = v;
+    if (ref.is_editor_id()) {
+        // Exact match first — ESP extraction preserves casing as-written.
+        auto it = editor_ids.find(ref.editor_id);
+        if (it != editor_ids.end()) {
+            out_formid = it->second;
             return ResolveError::None;
         }
+        // Case-insensitive fallback. KID users routinely mis-case
+        // EditorIDs and the game treats them case-insensitively at
+        // runtime, so Mora follows suit.
+        std::string lc = to_lower(ref.editor_id);
+        for (const auto& [k, v] : editor_ids) {
+            if (to_lower(k) == lc) {
+                out_formid = v;
+                return ResolveError::None;
+            }
+        }
+        return ResolveError::MissingEditorId;
     }
-    return ResolveError::MissingEditorId;
+
+    // FormID ref: `0xNNNN~Plugin.ext`.
+    if (!plugin_runtime_index) return ResolveError::FormidUnsupported;
+    std::string key = to_lower(ref.mod_file);
+    auto it = plugin_runtime_index->find(key);
+    if (it == plugin_runtime_index->end()) return ResolveError::MissingPlugin;
+    out_formid = mora::ext::globalize_formid(it->second, ref.formid);
+    return ResolveError::None;
 }
 
 std::string ref_to_string(const KidRef& ref) {
@@ -67,6 +77,7 @@ void emit_diag(mora::DiagBag& diags, const std::string& code,
 std::vector<KidFactEmission> resolve_kid_file(
     const KidFile&                                     file,
     const std::unordered_map<std::string, uint32_t>&   editor_ids,
+    const std::unordered_map<std::string, uint32_t>*   plugin_runtime_index,
     mora::StringPool&                                  pool,
     mora::DiagBag&                                     diags,
     uint32_t&                                          next_rule_id) {
@@ -80,14 +91,22 @@ std::vector<KidFactEmission> resolve_kid_file(
                   file, pd.line);
     }
 
+    auto err_code = [](ResolveError e) -> const char* {
+        switch (e) {
+            case ResolveError::FormidUnsupported: return "kid-formid-unsupported";
+            case ResolveError::MissingPlugin:     return "kid-missing-plugin";
+            case ResolveError::MissingEditorId:   return "kid-unresolved";
+            case ResolveError::None:              break;
+        }
+        return "kid-unresolved";
+    };
+
     for (const auto& line : file.lines) {
         // Resolve target keyword first — if this fails the whole line is dropped.
         uint32_t target_fid = 0;
-        auto err = resolve_ref(line.target, editor_ids, target_fid);
+        auto err = resolve_ref(line.target, editor_ids, plugin_runtime_index, target_fid);
         if (err != ResolveError::None) {
-            const char* code = (err == ResolveError::FormidUnsupported)
-                ? "kid-formid-unsupported" : "kid-unresolved";
-            emit_diag(diags, code,
+            emit_diag(diags, err_code(err),
                 fmt::format("KID target \"{}\" unresolved; line dropped",
                             ref_to_string(line.target)),
                 file, line.source_line);
@@ -98,13 +117,12 @@ std::vector<KidFactEmission> resolve_kid_file(
         // (KID's '+' operator) into OR across rows — a narrower filter
         // than KID would give in the AND case, but strictly a subset of
         // its match set, so no false positives.
-        struct ResolvedValue { uint32_t formid; bool dropped; };
         std::vector<uint32_t> filter_values;
         std::vector<std::string> dropped_filter;
         for (const auto& group : line.filter) {
             for (const auto& ref : group.values) {
                 uint32_t fid = 0;
-                auto ferr = resolve_ref(ref, editor_ids, fid);
+                auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index, fid);
                 if (ferr == ResolveError::None) filter_values.push_back(fid);
                 else dropped_filter.push_back(ref_to_string(ref));
             }

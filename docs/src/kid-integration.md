@@ -37,7 +37,7 @@ TargetKeyword | ItemType | FilterStrings | Traits | Chance
 
 | Field | Notes |
 |---|---|
-| `TargetKeyword` | EditorID (e.g. `MyKeyword`) or `0xFFFFFF~Mod.esp`. **v1 supports EditorIDs only** — FormID references emit a `kid-formid-unsupported` warning and drop the line. |
+| `TargetKeyword` | EditorID (e.g. `MyKeyword`) or `0xFFFFFF~Mod.esp`. Both are resolved against the load order. ESL/light refs use the `0xFE00xxxx` encoding automatically. Unknown plugins produce `kid-missing-plugin`. |
 | `ItemType` | One of the 19 KID item types: `Weapon`, `Armor`, `Ammo`, `MagicEffect`, `Potion`, `Scroll`, `Location`, `Ingredient`, `Book`, `MiscItem`, `Key`, `SoulGem`, `Spell`, `Activator`, `Flora`, `Furniture`, `Race`, `TalkingActivator`, `Enchantment`. Case-insensitive; spaces allowed (`Magic Effect`). |
 | `FilterStrings` | Comma-separated OR-groups. `+` joins an AND-group inside a group. In v1 AND-groups are flattened to OR (narrower intent than KID's original) — see Limitations. |
 | `Traits` | Parsed but not consumed in v1. `E` / `-E` hit `ini/kid_trait` but no wiring rule reads them yet. |
@@ -51,14 +51,14 @@ Comments start with `;`. Bracketed section headers (`[Keywords]`) are accepted a
 |---|---|
 | `kid-parse` | Malformed line (missing fields, bad hex, unknown item type). Line dropped. |
 | `kid-unresolved` | An EditorID didn't match the ESP load order. Targets drop the line; filter values narrow the filter. |
-| `kid-formid-unsupported` | `0xFFF~Mod.esp` reference — v1 doesn't resolve these. Line dropped. |
+| `kid-formid-unsupported` | `0xFFF~Mod.esp` reference but the caller didn't wire `plugin_runtime_index_out`. Library usage only; `mora compile` always sets it. |
+| `kid-missing-plugin` | `0xFFF~Unknown.esp` references a plugin not in the resolved load order. Line dropped. |
 | `kid-chance-ignored` | `Chance < 100`. Line kept, applied unconditionally. |
 | `kid-no-editor-ids` | No ESPs were loaded, so nothing resolves. Usually means `--data-dir` is wrong or the ESPs are missing. |
 | `stdlib-missing` | Mora couldn't find its stdlib and won't activate the wiring rules. Pass `--stdlib-dir` or set `$MORA_STDLIB`. |
 
 ## Limitations
 
-- **FormID references** (`0xFFF~Mod.esp`) are rejected in v1. Use EditorIDs.
 - **Wildcard item matching** (`*Iron`) isn't supported.
 - **AND-of-ORs** (`KW1+KW2`) is flattened to OR in v1: each value becomes its own `ini/kid_filter` row. The resulting match set is a superset of a strict AND but a subset of the original KID intent.
 - **Trait filters** (`E`, `-E`, `HEAVY`, `LIGHT`, `AR(min,max)`, body slots) are parsed but not honored. Wiring needs `form/is_enchanted`, `form/armor_rating`, etc. — tracked as follow-up work.

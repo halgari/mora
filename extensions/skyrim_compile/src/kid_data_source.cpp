@@ -102,6 +102,7 @@ void KidDataSource::load(mora::ext::LoadCtx& ctx, mora::FactDB& out) {
         auto parsed = parse_kid_file(path);
         total_lines += parsed.lines.size();
         auto emissions = resolve_kid_file(parsed, *ctx.editor_ids_out,
+                                           ctx.plugin_runtime_index_out,
                                            ctx.pool, ctx.diags, next_rule_id);
         for (auto& e : emissions) {
             out.add_fact(rel_cache(e.relation), std::move(e.values));

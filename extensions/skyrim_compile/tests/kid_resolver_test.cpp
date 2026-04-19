@@ -5,6 +5,7 @@
 #include "mora/core/string_pool.h"
 #include "mora/data/value.h"
 #include "mora/diag/diagnostic.h"
+#include "mora/ext/runtime_index.h"
 
 using namespace mora_skyrim_compile;
 
@@ -50,7 +51,7 @@ TEST(KidResolverTest, BasicLineEmitsDistAndFilter) {
                               {{edid("FilterKW1")}}));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     EXPECT_EQ(diags.warning_count(), 0u);
     ASSERT_EQ(out.size(), 2u);
 
@@ -79,7 +80,7 @@ TEST(KidResolverTest, UnresolvedTargetDropsLine) {
     f.lines.push_back(mk_line(edid("Missing"), "weapon"));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     EXPECT_TRUE(out.empty());
     EXPECT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-unresolved");
@@ -96,7 +97,7 @@ TEST(KidResolverTest, FormidReferenceUnsupported) {
     f.lines.push_back(mk_line(fid_ref(0x1A2B, "Mod.esp"), "weapon"));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     EXPECT_TRUE(out.empty());
     ASSERT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-formid-unsupported");
@@ -117,7 +118,7 @@ TEST(KidResolverTest, PartialFilterResolutionKeepsLine) {
                               {{edid("A")}, {edid("B")}}));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     // dist + one filter row for A. B is dropped with warning.
     ASSERT_EQ(out.size(), 2u);
     EXPECT_EQ(out[1].values[2].as_formid(), 0x22u);
@@ -138,7 +139,7 @@ TEST(KidResolverTest, AllFilterValuesUnresolvedDropsLine) {
                               {{edid("Missing1")}, {edid("Missing2")}}));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     EXPECT_TRUE(out.empty());
     EXPECT_GE(diags.warning_count(), 1u);
 }
@@ -155,7 +156,7 @@ TEST(KidResolverTest, CaseInsensitiveEditorId) {
     f.lines.push_back(mk_line(edid("mykw"), "weapon"));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0].values[1].as_formid(), 0x55u);
 }
@@ -172,12 +173,85 @@ TEST(KidResolverTest, TraitsEmittedForEAndNegE) {
                               /*traits*/ {"E", "HEAVY", "-E"}));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     // dist + trait(E) + trait(-E). HEAVY is silently dropped (unsupported).
     ASSERT_EQ(out.size(), 3u);
     EXPECT_EQ(out[1].relation, "ini/kid_trait");
     EXPECT_EQ(pool.get(out[1].values[1].as_string()), "E");
     EXPECT_EQ(pool.get(out[2].values[1].as_string()), "-E");
+}
+
+TEST(KidResolverTest, FormidRefResolvesAgainstRegularPlugin) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids;
+    // MyMod.esp sits at runtime index 0x42 (regular, not ESL).
+    std::unordered_map<std::string, uint32_t> plugins = {
+        {"mymod.esp", 0x42u},
+    };
+
+    KidFile f;
+    f.lines.push_back(mk_line(fid_ref(0x12AB, "MyMod.esp"), "weapon"));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].values[1].as_formid(), 0x420012ABu);
+    EXPECT_EQ(diags.warning_count(), 0u);
+}
+
+TEST(KidResolverTest, FormidRefResolvesAgainstEslPlugin) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids;
+    // LightMod.esl at ESL slot 0x003. Descriptor has bit 31 set.
+    std::unordered_map<std::string, uint32_t> plugins = {
+        {"lightmod.esl", 0x003u | mora::ext::kRuntimeIdxEsl},
+    };
+
+    KidFile f;
+    f.lines.push_back(mk_line(fid_ref(0x7F, "LightMod.esl"), "weapon"));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
+    ASSERT_EQ(out.size(), 1u);
+    // Expected: 0xFE | slot<<12 | (local & 0xFFF) = 0xFE00307F
+    EXPECT_EQ(out[0].values[1].as_formid(), 0xFE00307Fu);
+}
+
+TEST(KidResolverTest, FormidRefCaseInsensitivePluginLookup) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids;
+    std::unordered_map<std::string, uint32_t> plugins = {
+        {"mymod.esp", 0x10u},
+    };
+
+    KidFile f;
+    // Plugin filename capitalization drifts under Wine — resolver
+    // lowercases before lookup.
+    f.lines.push_back(mk_line(fid_ref(0xABC, "MYMOD.ESP"), "weapon"));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].values[1].as_formid(), 0x10000ABCu);
+}
+
+TEST(KidResolverTest, FormidRefMissingPluginDiagnosed) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids;
+    std::unordered_map<std::string, uint32_t> plugins;  // empty
+
+    KidFile f;
+    f.lines.push_back(mk_line(fid_ref(0x01, "Unknown.esp"), "weapon"));
+
+    uint32_t next = 1;
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
+    EXPECT_TRUE(out.empty());
+    ASSERT_EQ(diags.warning_count(), 1u);
+    EXPECT_EQ(diags.all()[0].code, "kid-missing-plugin");
 }
 
 TEST(KidResolverTest, LowChanceDiagnosedButLineKept) {
@@ -191,7 +265,7 @@ TEST(KidResolverTest, LowChanceDiagnosedButLineKept) {
     f.lines.push_back(mk_line(edid("T"), "weapon", {}, {}, /*chance*/ 50.0));
 
     uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
     ASSERT_EQ(out.size(), 1u);  // dist only
     EXPECT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-chance-ignored");

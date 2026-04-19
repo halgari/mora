@@ -28,15 +28,22 @@ struct KidFactEmission {
 // `editor_ids` maps EditorID -> (runtime-globalized) FormID; produced
 // by SkyrimEspDataSource and passed through via LoadCtx.
 //
+// `plugin_runtime_index` maps lowercase plugin filename -> packed
+// runtime-index descriptor (see mora/ext/runtime_index.h). When
+// non-null, KID `0xNNN~Plugin.ext` references resolve via
+// `mora::ext::globalize_formid`; when null, those references are
+// rejected with `kid-formid-unsupported` (back-compat v1 behavior).
+//
 // `next_rule_id` is updated in-place; each line that resolves cleanly
 // consumes exactly one RuleID.
 //
-// v1 resolution policy:
-//   - EditorID references: looked up in `editor_ids`. Misses emit a
-//     `kid-unresolved` warning and drop the line.
-//   - FormID references (`0xFFF~Mod.esp`): unsupported in v1 — emits a
-//     `kid-formid-unsupported` warning and drops the line. Authors are
-//     encouraged to use EditorIDs (KID's own recommendation).
+// Resolution policy:
+//   - EditorID references: looked up in `editor_ids` (case-insensitive).
+//     Misses emit `kid-unresolved` and drop the line.
+//   - FormID references (`0xFFF~Mod.esp`): resolved via
+//     `plugin_runtime_index` when available. An unknown plugin
+//     produces `kid-missing-plugin`; an unavailable map produces
+//     `kid-formid-unsupported`. Both drop the line.
 //   - Partial filters: if the target resolves but some filter values
 //     don't, resolvable values are kept and a warning records the
 //     drops; the line is retained (narrower filter still matches a
@@ -46,6 +53,7 @@ struct KidFactEmission {
 std::vector<KidFactEmission> resolve_kid_file(
     const KidFile&                                       file,
     const std::unordered_map<std::string, uint32_t>&     editor_ids,
+    const std::unordered_map<std::string, uint32_t>*     plugin_runtime_index,
     mora::StringPool&                                    pool,
     mora::DiagBag&                                       diags,
     uint32_t&                                            next_rule_id);
