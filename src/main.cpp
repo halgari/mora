@@ -158,10 +158,41 @@ static std::string format_value(const mora::Value& v, const mora::StringPool& po
     }
 }
 
-// Collect all relation names referenced by rules (for lazy ESP loading)
+// Collect all relation names referenced by rules (for lazy ESP loading).
+//
+// v3 removed the verb-keyword grammar (Plan 16), so effects no longer
+// carry an explicit relation name like master's `add form/keyword(...)`.
+// Instead, `skyrim/add(N, :Keyword, @ActorTypeNPC)` embeds the field
+// (`Keyword`) as a keyword literal and the target (`@ActorTypeNPC`) as
+// an EditorIdExpr. We infer the needed ESP relation from the field name
+// so the ESP loader builds the EditorID→FormID table for that form type.
 static std::unordered_set<uint32_t> collect_used_relations(
-    const std::vector<mora::Module>& modules) {
+    const std::vector<mora::Module>& modules,
+    mora::StringPool&                pool)
+{
+    // Field keyword → ESP relation name. When rules reference a field
+    // like ":Keyword" in an effect head, we need the ESP loader to
+    // populate that form-type's EditorID table.
+    static const std::unordered_map<std::string_view, std::string_view>
+        kFieldToRelation = {
+            {"Keyword",      "keyword"},
+            {"Spell",        "spell"},
+            {"Perk",         "perk"},
+            {"Faction",      "faction"},
+            {"Shout",        "shout"},
+            {"Race",         "race"},
+            {"VoiceType",    "voice_type"},
+            {"Outfit",       "outfit"},
+            {"Skin",         "armor"},
+            {"Class",        "class"},
+            {"Enchantment",  "enchantment"},
+        };
+
     std::unordered_set<uint32_t> used;
+    auto add_relation = [&](std::string_view name) {
+        used.insert(pool.intern(std::string(name)).index);
+    };
+
     for (auto& mod : modules) {
         for (auto& rule : mod.rules) {
             // Body clauses
@@ -171,6 +202,19 @@ static std::unordered_set<uint32_t> collect_used_relations(
                 } else if (auto* or_c = std::get_if<mora::OrClause>(&clause.data)) {
                     for (auto& branch : or_c->branches) {
                         for (auto& fp : branch) used.insert(fp.name.index);
+                    }
+                }
+            }
+            // Qualified rule heads may embed a field keyword (arg index 1
+            // by convention) whose name implies the ESP relation to load.
+            // Example: `skyrim/add(N, :Keyword, @KW)` → needs "keyword"
+            // loaded so @KW resolves at compile time.
+            for (auto& ha : rule.head_args) {
+                if (auto const* kl = std::get_if<mora::KeywordLiteral>(&ha.data)) {
+                    auto name = pool.get(kl->value);
+                    auto it = kFieldToRelation.find(name);
+                    if (it != kFieldToRelation.end()) {
+                        add_relation(it->second);
                     }
                 }
             }
@@ -349,7 +393,7 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             cr.diags,
             /*data_dir*/          fs::path(data_dir),
             /*plugins_txt*/       fs::path(plugins_txt),
-            /*needed_relations*/  collect_used_relations(cr.modules),
+            /*needed_relations*/  collect_used_relations(cr.modules, cr.pool),
             /*editor_ids_out*/    &editor_id_map,
             /*loaded_plugins_out*/&loaded_plugins,
         };

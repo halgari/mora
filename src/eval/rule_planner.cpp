@@ -113,11 +113,30 @@ std::vector<StringId> var_union(const std::vector<StringId>& a,
 // symbol_formids. For arbitrary expression kinds (BinaryExpr, CallExpr, etc.)
 // that cannot be resolved at plan time, returns Kind::Expr with a pointer to
 // the Expr for per-row evaluation via resolve_expr.
+// Case-insensitive lookup in symbols_ — Skyrim treats EditorIDs as
+// case-insensitive, and main.cpp's ESP-load → set_symbol_formid loop
+// feeds editor_ids_ (which lowercases keys) into the evaluator. The
+// original-case StringId in the AST won't match the lowercased entry;
+// fall back by lowercasing + re-interning. Mirrors the equivalent
+// branch in expr_eval.cpp's resolve_expr.
+static uint32_t lookup_symbol_ci(
+    StringId name,
+    StringPool& pool,
+    const std::unordered_map<uint32_t, uint32_t>& symbols)
+{
+    auto it = symbols.find(name.index);
+    if (it != symbols.end()) return it->second;
+    std::string lower(pool.get(name));
+    for (char& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    it = symbols.find(pool.intern(lower).index);
+    return (it == symbols.end()) ? 0u : it->second;
+}
+
 EffectArgSpec spec_from_expr(const Expr& e,
                               StringPool& pool,
                               const std::unordered_map<uint32_t, uint32_t>& symbols)
 {
-    (void)pool;
     EffectArgSpec s{};
     if (auto const* ve = std::get_if<VariableExpr>(&e.data)) {
         s.kind     = EffectArgSpec::Kind::Var;
@@ -141,25 +160,25 @@ EffectArgSpec spec_from_expr(const Expr& e,
     }
     if (auto const* kl = std::get_if<KeywordLiteral>(&e.data)) {
         s.kind = EffectArgSpec::Kind::Constant;
-        auto it = symbols.find(kl->value.index);
-        s.constant = (it != symbols.end())
-            ? Value::make_formid(it->second)
+        uint32_t fid = lookup_symbol_ci(kl->value, pool, symbols);
+        s.constant = (fid != 0)
+            ? Value::make_formid(fid)
             : Value::make_keyword(kl->value);
         return s;
     }
     if (auto const* se = std::get_if<SymbolExpr>(&e.data)) {
         s.kind = EffectArgSpec::Kind::Constant;
-        auto it = symbols.find(se->name.index);
-        s.constant = (it != symbols.end())
-            ? Value::make_formid(it->second)
+        uint32_t fid = lookup_symbol_ci(se->name, pool, symbols);
+        s.constant = (fid != 0)
+            ? Value::make_formid(fid)
             : Value::make_var();
         return s;
     }
     if (auto const* eid = std::get_if<EditorIdExpr>(&e.data)) {
         s.kind = EffectArgSpec::Kind::Constant;
-        auto it = symbols.find(eid->name.index);
-        s.constant = (it != symbols.end())
-            ? Value::make_formid(it->second)
+        uint32_t fid = lookup_symbol_ci(eid->name, pool, symbols);
+        s.constant = (fid != 0)
+            ? Value::make_formid(fid)
             : Value::make_var();
         return s;
     }
