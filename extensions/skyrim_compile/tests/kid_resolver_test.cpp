@@ -1,12 +1,18 @@
 #include <gtest/gtest.h>
-#include <algorithm>
-#include "mora_skyrim_compile/kid_resolver.h"
-#include "mora_skyrim_compile/kid_parser.h"
 
+#include "mora_skyrim_compile/kid_parser.h"
+#include "mora_skyrim_compile/kid_resolver.h"
+#include "mora_skyrim_compile/kid_rule_builder.h"
+
+#include "mora/ast/ast.h"
 #include "mora/core/string_pool.h"
-#include "mora/data/value.h"
 #include "mora/diag/diagnostic.h"
 #include "mora/ext/runtime_index.h"
+
+#include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <variant>
 
 using namespace mora_skyrim_compile;
 
@@ -43,9 +49,55 @@ KidRef fid_ref(uint32_t id, std::string mod) {
     KidRef r; r.formid = id; r.mod_file = std::move(mod); return r;
 }
 
+// ── Inspectors over synthesized Rule AST ──────────────────────────────
+
+std::string head_target_editor_id(const mora::Rule& r,
+                                    const mora::StringPool& pool) {
+    if (r.head_args.size() < 3) return {};
+    if (auto const* eid = std::get_if<mora::EditorIdExpr>(&r.head_args[2].data)) {
+        return std::string(pool.get(eid->name));
+    }
+    return {};
+}
+
+bool head_is_skyrim_add(const mora::Rule& r, const mora::StringPool& pool) {
+    return pool.get(r.qualifier) == "skyrim" && pool.get(r.name) == "add";
+}
+
+const mora::FactPattern* find_first_fact(const mora::Rule& r,
+                                           std::string_view qualifier,
+                                           std::string_view name,
+                                           const mora::StringPool& pool) {
+    for (const auto& clause : r.body) {
+        if (auto const* fp = std::get_if<mora::FactPattern>(&clause.data)) {
+            if (pool.get(fp->qualifier) == qualifier &&
+                pool.get(fp->name) == name) {
+                return fp;
+            }
+        }
+    }
+    return nullptr;
+}
+
+// Collect the EditorID arg of every form/keyword(X, @KW) clause in a rule.
+std::vector<std::string> body_keyword_editor_ids(const mora::Rule& r,
+                                                   const mora::StringPool& pool) {
+    std::vector<std::string> out;
+    for (const auto& clause : r.body) {
+        auto const* fp = std::get_if<mora::FactPattern>(&clause.data);
+        if (!fp) continue;
+        if (pool.get(fp->qualifier) != "form" || pool.get(fp->name) != "keyword") continue;
+        if (fp->args.size() < 2) continue;
+        if (auto const* eid = std::get_if<mora::EditorIdExpr>(&fp->args[1].data)) {
+            out.emplace_back(pool.get(eid->name));
+        }
+    }
+    return out;
+}
+
 } // namespace
 
-TEST(KidResolverTest, BasicLineEmitsDistAndFilter) {
+TEST(KidResolverTest, BasicLineProducesOneRule) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids = {
@@ -58,25 +110,18 @@ TEST(KidResolverTest, BasicLineEmitsDistAndFilter) {
     f.lines.push_back(mk_line(edid("TargetKW"), "weapon",
                               {{edid("FilterKW1")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
     EXPECT_EQ(diags.warning_count(), 0u);
-    ASSERT_EQ(out.size(), 2u);
+    ASSERT_EQ(out.rules.size(), 1u);
 
-    EXPECT_EQ(out[0].relation, "ini/kid_dist");
-    ASSERT_EQ(out[0].values.size(), 3u);
-    EXPECT_EQ(out[0].values[0].as_int(),     1);
-    EXPECT_EQ(out[0].values[1].as_formid(),  0x10000100u);
-    EXPECT_EQ(pool.get(out[0].values[2].as_string()), "weapon");
+    const mora::Rule& r = out.rules[0];
+    EXPECT_TRUE(head_is_skyrim_add(r, pool));
+    EXPECT_EQ(head_target_editor_id(r, pool), "TargetKW");
+    EXPECT_NE(find_first_fact(r, "form", "weapon", pool), nullptr);
 
-    EXPECT_EQ(out[1].relation, "ini/kid_filter");
-    ASSERT_EQ(out[1].values.size(), 4u);
-    EXPECT_EQ(out[1].values[0].as_int(),    1);       // RuleID
-    EXPECT_EQ(out[1].values[1].as_int(),    0);       // GroupID (first OR-group)
-    EXPECT_EQ(pool.get(out[1].values[2].as_string()), "keyword");
-    EXPECT_EQ(out[1].values[3].as_formid(), 0x10000200u);
-
-    EXPECT_EQ(next, 2u);
+    auto kws = body_keyword_editor_ids(r, pool);
+    ASSERT_EQ(kws.size(), 1u);
+    EXPECT_EQ(kws[0], "FilterKW1");
 }
 
 TEST(KidResolverTest, UnresolvedTargetDropsLine) {
@@ -85,15 +130,12 @@ TEST(KidResolverTest, UnresolvedTargetDropsLine) {
     std::unordered_map<std::string, uint32_t> edids;  // empty
 
     KidFile f;
-    f.path = "test_KID.ini";
     f.lines.push_back(mk_line(edid("Missing"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    EXPECT_TRUE(out.empty());
-    EXPECT_EQ(diags.warning_count(), 1u);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    EXPECT_TRUE(out.rules.empty());
+    ASSERT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-unresolved");
-    EXPECT_EQ(next, 1u);  // not incremented
 }
 
 TEST(KidResolverTest, FormidReferenceUnsupported) {
@@ -102,12 +144,10 @@ TEST(KidResolverTest, FormidReferenceUnsupported) {
     std::unordered_map<std::string, uint32_t> edids;
 
     KidFile f;
-    f.path = "test_KID.ini";
     f.lines.push_back(mk_line(fid_ref(0x1A2B, "Mod.esp"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    EXPECT_TRUE(out.empty());
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    EXPECT_TRUE(out.rules.empty());
     ASSERT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-formid-unsupported");
 }
@@ -118,135 +158,138 @@ TEST(KidResolverTest, PartialFilterResolutionKeepsLine) {
     std::unordered_map<std::string, uint32_t> edids = {
         {"Target", 0x11u},
         {"A",      0x22u},
-        // "B" missing on purpose
     };
 
     KidFile f;
-    f.path = "t_KID.ini";
     f.lines.push_back(mk_line(edid("Target"), "weapon",
                               {{edid("A")}, {edid("B")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // dist + one filter row for A. B is dropped with warning. The
-    // empty B group is omitted entirely, so A keeps GroupID=0 (its
-    // original position) and the B group isn't emitted at all.
-    ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);
-    EXPECT_EQ(diags.warning_count(), 1u);
-    EXPECT_EQ(diags.all()[0].code, "kid-unresolved");
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    // B's group fails entirely; A's group survives → 1 rule.
+    ASSERT_EQ(out.rules.size(), 1u);
+    auto kws = body_keyword_editor_ids(out.rules[0], pool);
+    ASSERT_EQ(kws.size(), 1u);
+    EXPECT_EQ(kws[0], "A");
+
+    bool saw = false;
+    for (auto& d : diags.all()) if (d.code == "kid-unresolved") saw = true;
+    EXPECT_TRUE(saw);
 }
 
-TEST(KidResolverTest, AndOfOrsEmitsGroupIds) {
+TEST(KidResolverTest, AndOfOrsProducesOneRulePerGroup) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids = {
-        {"Target", 0x11u},
-        {"A",      0x22u},
-        {"B",      0x33u},
-        {"C",      0x44u},
+        {"Target", 0x11u}, {"A", 0x22u}, {"B", 0x33u}, {"C", 0x44u},
     };
 
     KidFile f;
-    // Filter: (A AND B) OR C  ->  2 OR-groups, first has 2 AND-members.
+    // Filter: (A AND B) OR C  → 2 rules, first has A and B conjuncts.
     f.lines.push_back(mk_line(edid("Target"), "weapon",
                               {{edid("A"), edid("B")}, {edid("C")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // 1 kid_dist + 3 kid_filter rows (A, B in group 0; C in group 1).
-    ASSERT_EQ(out.size(), 4u);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 2u);
 
-    EXPECT_EQ(out[1].relation, "ini/kid_filter");
-    EXPECT_EQ(out[1].values[1].as_int(), 0);  // group 0
-    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);  // A
+    auto kws_a = body_keyword_editor_ids(out.rules[0], pool);
+    ASSERT_EQ(kws_a.size(), 2u);
+    std::sort(kws_a.begin(), kws_a.end());
+    EXPECT_EQ(kws_a[0], "A");
+    EXPECT_EQ(kws_a[1], "B");
 
-    EXPECT_EQ(out[2].values[1].as_int(), 0);  // group 0 still
-    EXPECT_EQ(out[2].values[3].as_formid(), 0x33u);  // B
-
-    EXPECT_EQ(out[3].values[1].as_int(), 1);  // group 1
-    EXPECT_EQ(out[3].values[3].as_formid(), 0x44u);  // C
+    auto kws_c = body_keyword_editor_ids(out.rules[1], pool);
+    ASSERT_EQ(kws_c.size(), 1u);
+    EXPECT_EQ(kws_c[0], "C");
 }
 
 TEST(KidResolverTest, AllFilterValuesUnresolvedDropsLine) {
     mora::StringPool pool;
     mora::DiagBag diags;
-    std::unordered_map<std::string, uint32_t> edids = {
-        {"Target", 0x11u},
-    };
+    std::unordered_map<std::string, uint32_t> edids = {{"Target", 0x11u}};
 
     KidFile f;
-    f.path = "t_KID.ini";
     f.lines.push_back(mk_line(edid("Target"), "weapon",
                               {{edid("Missing1")}, {edid("Missing2")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    EXPECT_TRUE(out.empty());
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    EXPECT_TRUE(out.rules.empty());
     EXPECT_GE(diags.warning_count(), 1u);
 }
 
-TEST(KidResolverTest, CaseInsensitiveEditorId) {
+TEST(KidResolverTest, CaseInsensitiveEditorIdResolution) {
     mora::StringPool pool;
     mora::DiagBag diags;
-    std::unordered_map<std::string, uint32_t> edids = {
-        {"MyKW", 0x55u},
-    };
+    std::unordered_map<std::string, uint32_t> edids = {{"MyKW", 0x55u}};
 
     KidFile f;
-    f.path = "t_KID.ini";
     f.lines.push_back(mk_line(edid("mykw"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].values[1].as_formid(), 0x55u);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    // The CANONICAL editor_id (the one in the map) is what flows into
+    // the AST — Skyrim treats EditorIDs case-insensitively, but the
+    // evaluator's symbol lookup is case-sensitive on the StringId, so
+    // the AST must reference the same casing the evaluator was loaded with.
+    EXPECT_EQ(head_target_editor_id(out.rules[0], pool), "MyKW");
 }
 
-TEST(KidResolverTest, TraitsEmittedForEAndNegE) {
+TEST(KidResolverTest, TraitEAddsEnchantedConjunct) {
     mora::StringPool pool;
     mora::DiagBag diags;
-    std::unordered_map<std::string, uint32_t> edids = {
-        {"T", 1u},
-    };
+    std::unordered_map<std::string, uint32_t> edids = {{"T", 1u}};
 
     KidFile f;
     f.lines.push_back(mk_line(edid("T"), "weapon", {},
-                              /*traits*/ {"E", "HEAVY", "-E"}));
+                              /*traits*/ {"E", "HEAVY"}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // dist + trait(E) + trait(-E). HEAVY is silently dropped (unsupported).
-    ASSERT_EQ(out.size(), 3u);
-    EXPECT_EQ(out[1].relation, "ini/kid_trait");
-    EXPECT_EQ(pool.get(out[1].values[1].as_string()), "E");
-    EXPECT_EQ(pool.get(out[2].values[1].as_string()), "-E");
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    const auto* ench = find_first_fact(out.rules[0], "form", "enchanted_with", pool);
+    ASSERT_NE(ench, nullptr);
+    EXPECT_FALSE(ench->negated);
 }
 
-TEST(KidResolverTest, FormidRefResolvesAgainstRegularPlugin) {
+TEST(KidResolverTest, TraitNegEAddsNegatedEnchantedConjunct) {
+    mora::StringPool pool;
+    mora::DiagBag diags;
+    std::unordered_map<std::string, uint32_t> edids = {{"T", 1u}};
+
+    KidFile f;
+    f.lines.push_back(mk_line(edid("T"), "armor", {}, {"-E"}));
+
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    const auto* ench = find_first_fact(out.rules[0], "form", "enchanted_with", pool);
+    ASSERT_NE(ench, nullptr);
+    EXPECT_TRUE(ench->negated);
+}
+
+TEST(KidResolverTest, FormidRefResolvesAndSurfacesSyntheticEditorId) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids;
-    // MyMod.esp sits at runtime index 0x42 (regular, not ESL).
-    std::unordered_map<std::string, uint32_t> plugins = {
-        {"mymod.esp", 0x42u},
-    };
+    std::unordered_map<std::string, uint32_t> plugins = {{"mymod.esp", 0x42u}};
 
     KidFile f;
     f.lines.push_back(mk_line(fid_ref(0x12AB, "MyMod.esp"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
-    ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].values[1].as_formid(), 0x420012ABu);
-    EXPECT_EQ(diags.warning_count(), 0u);
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    // Synthesized name embeds the resolved 32-bit FormID.
+    auto expected_edid = compose_synthetic_editor_id(0x420012ABu);
+    EXPECT_EQ(head_target_editor_id(out.rules[0], pool), expected_edid);
+
+    // The synthetic-editor-id list must surface the new mapping so the
+    // evaluator's symbol table picks it up.
+    ASSERT_EQ(out.synthetic_editor_ids.size(), 1u);
+    EXPECT_EQ(out.synthetic_editor_ids[0].first, expected_edid);
+    EXPECT_EQ(out.synthetic_editor_ids[0].second, 0x420012ABu);
 }
 
-TEST(KidResolverTest, FormidRefResolvesAgainstEslPlugin) {
+TEST(KidResolverTest, FormidRefResolvesEsl) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids;
-    // LightMod.esl at ESL slot 0x003. Descriptor has bit 31 set.
     std::unordered_map<std::string, uint32_t> plugins = {
         {"lightmod.esl", 0x003u | mora::ext::kRuntimeIdxEsl},
     };
@@ -254,30 +297,10 @@ TEST(KidResolverTest, FormidRefResolvesAgainstEslPlugin) {
     KidFile f;
     f.lines.push_back(mk_line(fid_ref(0x7F, "LightMod.esl"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
-    ASSERT_EQ(out.size(), 1u);
-    // Expected: 0xFE | slot<<12 | (local & 0xFFF) = 0xFE00307F
-    EXPECT_EQ(out[0].values[1].as_formid(), 0xFE00307Fu);
-}
-
-TEST(KidResolverTest, FormidRefCaseInsensitivePluginLookup) {
-    mora::StringPool pool;
-    mora::DiagBag diags;
-    std::unordered_map<std::string, uint32_t> edids;
-    std::unordered_map<std::string, uint32_t> plugins = {
-        {"mymod.esp", 0x10u},
-    };
-
-    KidFile f;
-    // Plugin filename capitalization drifts under Wine — resolver
-    // lowercases before lookup.
-    f.lines.push_back(mk_line(fid_ref(0xABC, "MYMOD.ESP"), "weapon"));
-
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
-    ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].values[1].as_formid(), 0x10000ABCu);
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    EXPECT_EQ(head_target_editor_id(out.rules[0], pool),
+              compose_synthetic_editor_id(0xFE00307Fu));
 }
 
 TEST(KidResolverTest, FormidRefMissingPluginDiagnosed) {
@@ -289,14 +312,13 @@ TEST(KidResolverTest, FormidRefMissingPluginDiagnosed) {
     KidFile f;
     f.lines.push_back(mk_line(fid_ref(0x01, "Unknown.esp"), "weapon"));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, &plugins, pool, diags, next);
-    EXPECT_TRUE(out.empty());
+    auto out = resolve_kid_file(f, edids, &plugins, pool, diags);
+    EXPECT_TRUE(out.rules.empty());
     ASSERT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-missing-plugin");
 }
 
-TEST(KidResolverTest, WildcardExpandsAgainstEditorIds) {
+TEST(KidResolverTest, WildcardExpandsToOneRulePerMatch) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids = {
@@ -310,18 +332,18 @@ TEST(KidResolverTest, WildcardExpandsAgainstEditorIds) {
     f.lines.push_back(mk_line(edid("Target"), "weapon",
                               {{wild("Iron*")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // 1 dist + 2 filter rows (IronSword, IronAxe); SteelSword doesn't match.
-    ASSERT_EQ(out.size(), 3u);
-
-    std::vector<uint32_t> matched;
-    for (size_t i = 1; i < out.size(); ++i) {
-        matched.push_back(out[i].values[3].as_formid());
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    // 2 matches → 2 rules (each with one form/keyword conjunct).
+    ASSERT_EQ(out.rules.size(), 2u);
+    std::vector<std::string> matched;
+    for (const auto& r : out.rules) {
+        auto kws = body_keyword_editor_ids(r, pool);
+        ASSERT_EQ(kws.size(), 1u);
+        matched.push_back(kws[0]);
     }
     std::sort(matched.begin(), matched.end());
-    EXPECT_EQ(matched[0], 0x20u);
-    EXPECT_EQ(matched[1], 0x21u);
+    EXPECT_EQ(matched[0], "IronAxe");
+    EXPECT_EQ(matched[1], "IronSword");
 }
 
 TEST(KidResolverTest, WildcardNoMatchWarnsAndSkips) {
@@ -333,15 +355,14 @@ TEST(KidResolverTest, WildcardNoMatchWarnsAndSkips) {
     };
 
     KidFile f;
-    // Non-matching wildcard plus a literal. Line should keep the literal.
     f.lines.push_back(mk_line(edid("Target"), "weapon",
                               {{wild("Iron*")}, {edid("Steel")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // dist + 1 filter (Steel).
-    ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[1].values[3].as_formid(), 0x22u);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
+    auto kws = body_keyword_editor_ids(out.rules[0], pool);
+    ASSERT_EQ(kws.size(), 1u);
+    EXPECT_EQ(kws[0], "Steel");
     bool saw_empty = false;
     for (auto& d : diags.all()) if (d.code == "kid-wildcard-empty") saw_empty = true;
     EXPECT_TRUE(saw_empty);
@@ -351,62 +372,61 @@ TEST(KidResolverTest, WildcardStarAloneRejected) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids = {
-        {"Target", 0x10u},
-        {"A",      0x20u},
-        {"B",      0x21u},
+        {"Target", 0x10u}, {"A", 0x20u}, {"B", 0x21u},
     };
 
     KidFile f;
-    f.lines.push_back(mk_line(edid("Target"), "weapon",
-                              {{wild("*")}}));
+    f.lines.push_back(mk_line(edid("Target"), "weapon", {{wild("*")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // No survivors → line dropped.
-    EXPECT_TRUE(out.empty());
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    EXPECT_TRUE(out.rules.empty());
     bool saw_all = false;
     for (auto& d : diags.all()) if (d.code == "kid-wildcard-all") saw_all = true;
     EXPECT_TRUE(saw_all);
 }
 
-TEST(KidResolverTest, WildcardInsideAndGroupDropped) {
+// New in v2: wildcards inside an AND-group are now expanded and
+// cross-producted with the group's other members. Each resulting tuple
+// becomes its own OR-alternative (its own rule).
+TEST(KidResolverTest, WildcardInsideAndGroupCrossProducts) {
     mora::StringPool pool;
     mora::DiagBag diags;
     std::unordered_map<std::string, uint32_t> edids = {
         {"Target",    0x10u},
         {"IronSword", 0x20u},
+        {"IronAxe",   0x21u},
         {"Heavy",     0x30u},
     };
 
     KidFile f;
-    // `*Iron + Heavy` — wildcard inside an AND-group. Wildcard dropped
-    // with a diagnostic; the group keeps only the literal Heavy.
+    // `Iron* + Heavy` — wildcard in an AND-group with a literal.
     f.lines.push_back(mk_line(edid("Target"), "weapon",
-                              {{wild("*Iron"), edid("Heavy")}}));
+                              {{wild("Iron*"), edid("Heavy")}}));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    // dist + 1 filter row for Heavy (group 0). Wildcard not expanded.
-    ASSERT_EQ(out.size(), 2u);
-    EXPECT_EQ(out[1].values[3].as_formid(), 0x30u);
-    bool saw_in_and = false;
-    for (auto& d : diags.all()) if (d.code == "kid-wildcard-in-and") saw_in_and = true;
-    EXPECT_TRUE(saw_in_and);
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    // Iron* matches IronSword and IronAxe → 2 cross-product tuples →
+    // 2 rules, each with two form/keyword conjuncts (the matched item
+    // AND Heavy).
+    ASSERT_EQ(out.rules.size(), 2u);
+    for (const auto& r : out.rules) {
+        auto kws = body_keyword_editor_ids(r, pool);
+        ASSERT_EQ(kws.size(), 2u);
+        // One is "Heavy", the other is one of the iron variants.
+        bool has_heavy = std::find(kws.begin(), kws.end(), "Heavy") != kws.end();
+        EXPECT_TRUE(has_heavy);
+    }
 }
 
 TEST(KidResolverTest, LowChanceDiagnosedButLineKept) {
     mora::StringPool pool;
     mora::DiagBag diags;
-    std::unordered_map<std::string, uint32_t> edids = {
-        {"T", 1u},
-    };
+    std::unordered_map<std::string, uint32_t> edids = {{"T", 1u}};
 
     KidFile f;
     f.lines.push_back(mk_line(edid("T"), "weapon", {}, {}, /*chance*/ 50.0));
 
-    uint32_t next = 1;
-    auto out = resolve_kid_file(f, edids, nullptr, pool, diags, next);
-    ASSERT_EQ(out.size(), 1u);  // dist only
+    auto out = resolve_kid_file(f, edids, nullptr, pool, diags);
+    ASSERT_EQ(out.rules.size(), 1u);
     EXPECT_EQ(diags.warning_count(), 1u);
     EXPECT_EQ(diags.all()[0].code, "kid-chance-ignored");
 }

@@ -1,5 +1,7 @@
 #include "mora_skyrim_compile/kid_resolver.h"
 
+#include "mora_skyrim_compile/kid_rule_builder.h"
+
 #include "mora/core/source_location.h"
 #include "mora/diag/diagnostic.h"
 #include "mora/ext/runtime_index.h"
@@ -11,6 +13,11 @@
 namespace mora_skyrim_compile {
 
 namespace {
+
+// Cap on rules synthesized per single AND-group after wildcard
+// cross-product expansion. A KID author writing `*Iron+*Heavy` against
+// a Wabbajack-scale corpus could otherwise spawn millions of rules.
+constexpr size_t kMaxAndGroupExpansion = 1024;
 
 std::string to_lower(std::string_view s) {
     std::string r(s);
@@ -47,23 +54,21 @@ bool glob_match_ci(std::string_view pat, std::string_view text) {
     return i == pat.size();
 }
 
-// Enumerate EditorIDs matching `pattern` in the given map. Linear scan
+// Enumerate (EditorID, FormID) entries matching `pattern`. Linear scan
 // — the map is typically 50k-500k entries; one pass per wildcard is
-// acceptable (each takes ~a millisecond on commodity hardware).
-// Returns {} for degenerate `*` / empty patterns; caller treats that
-// as a diagnostic, not a silent success.
-std::vector<uint32_t> expand_glob(
+// acceptable. Returns {} for degenerate `*` / empty patterns.
+std::vector<std::pair<std::string, uint32_t>> expand_glob(
     std::string_view pattern,
     const std::unordered_map<std::string, uint32_t>& editor_ids) {
-    std::vector<uint32_t> out;
+    std::vector<std::pair<std::string, uint32_t>> out;
     if (pattern.empty()) return out;
-    // `*` alone would expand to every EditorID — almost always a bug.
-    // Reject here; the caller emits kid-wildcard-all.
     if (pattern.size() == 1 && pattern[0] == '*') return out;
     out.reserve(16);
     for (const auto& [edid, fid] : editor_ids) {
-        if (glob_match_ci(pattern, edid)) out.push_back(fid);
+        if (glob_match_ci(pattern, edid)) out.emplace_back(edid, fid);
     }
+    // Sort by EditorID for deterministic rule ordering across runs.
+    std::sort(out.begin(), out.end());
     return out;
 }
 
@@ -78,12 +83,14 @@ ResolveError resolve_ref(
     const KidRef&                                     ref,
     const std::unordered_map<std::string, uint32_t>&  editor_ids,
     const std::unordered_map<std::string, uint32_t>*  plugin_runtime_index,
-    uint32_t&                                         out_formid) {
+    uint32_t&                                         out_formid,
+    std::string&                                      out_canonical_editor_id) {
     if (ref.is_editor_id()) {
         // Exact match first — ESP extraction preserves casing as-written.
         auto it = editor_ids.find(ref.editor_id);
         if (it != editor_ids.end()) {
             out_formid = it->second;
+            out_canonical_editor_id = it->first;
             return ResolveError::None;
         }
         // Case-insensitive fallback. KID users routinely mis-case
@@ -93,6 +100,7 @@ ResolveError resolve_ref(
         for (const auto& [k, v] : editor_ids) {
             if (to_lower(k) == lc) {
                 out_formid = v;
+                out_canonical_editor_id = k;
                 return ResolveError::None;
             }
         }
@@ -105,6 +113,11 @@ ResolveError resolve_ref(
     auto it = plugin_runtime_index->find(key);
     if (it == plugin_runtime_index->end()) return ResolveError::MissingPlugin;
     out_formid = mora::ext::globalize_formid(it->second, ref.formid);
+    // No real EditorID for a FormID ref — synthesize a stable one so
+    // the AST has something to put in EditorIdExpr. Callers register
+    // it as a synthetic_editor_ids entry so the evaluator's symbol
+    // table resolves it to `out_formid`.
+    out_canonical_editor_id = compose_synthetic_editor_id(out_formid);
     return ResolveError::None;
 }
 
@@ -115,22 +128,70 @@ std::string ref_to_string(const KidRef& ref) {
 
 void emit_diag(mora::DiagBag& diags, const std::string& code,
                const std::string& msg, const KidFile& file, int line_num) {
-    mora::SourceSpan span{file.path.string(), static_cast<uint32_t>(line_num), 0,
-                          static_cast<uint32_t>(line_num), 0};
+    mora::SourceSpan span;
+    span.file = file.path.string();
+    span.start_line = static_cast<uint32_t>(line_num);
+    span.end_line   = static_cast<uint32_t>(line_num);
     diags.warning(code, msg, span, /*source_line*/ "");
+}
+
+// One member of an AND-group after individual-ref resolution: a list
+// of alternatives. For a literal EditorID this is a 1-element list;
+// for a wildcard it's the glob expansion.
+struct ResolvedMember {
+    std::vector<ResolvedRef> alternatives;
+    // Diagnostic shorthand if every alternative failed to resolve and
+    // the member should be dropped. Non-empty member.alternatives means
+    // at least one survivor.
+    bool dropped = false;
+};
+
+// Cross-product of N member alternatives → list of AND-tuples.
+// {[a, b], [c]} → {[a, c], [b, c]}. Cap honored externally.
+void cartesian_extend(
+    std::vector<std::vector<ResolvedRef>>& acc,
+    const std::vector<ResolvedRef>& next_alternatives)
+{
+    if (acc.empty()) {
+        acc.reserve(next_alternatives.size());
+        for (const auto& alt : next_alternatives) {
+            acc.push_back({alt});
+        }
+        return;
+    }
+    std::vector<std::vector<ResolvedRef>> grown;
+    grown.reserve(acc.size() * next_alternatives.size());
+    for (const auto& tuple : acc) {
+        for (const auto& alt : next_alternatives) {
+            std::vector<ResolvedRef> extended = tuple;
+            extended.push_back(alt);
+            grown.push_back(std::move(extended));
+        }
+    }
+    acc = std::move(grown);
 }
 
 } // namespace
 
-std::vector<KidFactEmission> resolve_kid_file(
+KidResolveResult resolve_kid_file(
     const KidFile&                                     file,
     const std::unordered_map<std::string, uint32_t>&   editor_ids,
     const std::unordered_map<std::string, uint32_t>*   plugin_runtime_index,
     mora::StringPool&                                  pool,
-    mora::DiagBag&                                     diags,
-    uint32_t&                                          next_rule_id) {
+    mora::DiagBag&                                     diags) {
 
-    std::vector<KidFactEmission> out;
+    KidResolveResult out;
+
+    // Track synthetic editor IDs we need to register with the evaluator.
+    // De-dup with a set so a FormID referenced from multiple lines only
+    // yields one entry.
+    std::unordered_map<std::string, uint32_t> synth_seen;
+    auto record_synthetic = [&](const std::string& edid, uint32_t fid) {
+        // Only emit for our own synthetic prefix — real EditorIDs come
+        // from editor_ids and don't need re-registration.
+        if (edid.rfind("__kid_formid_", 0) != 0) return;
+        synth_seen.try_emplace(edid, fid);
+    };
 
     // Surface any parser-level diagnostics up to the caller.
     for (const auto& pd : file.diags) {
@@ -151,8 +212,9 @@ std::vector<KidFactEmission> resolve_kid_file(
 
     for (const auto& line : file.lines) {
         // Resolve target keyword first — if this fails the whole line is dropped.
-        uint32_t target_fid = 0;
-        auto err = resolve_ref(line.target, editor_ids, plugin_runtime_index, target_fid);
+        ResolvedRef target;
+        auto err = resolve_ref(line.target, editor_ids, plugin_runtime_index,
+                                target.formid, target.editor_id);
         if (err != ResolveError::None) {
             emit_diag(diags, err_code(err),
                 fmt::format("KID target \"{}\" unresolved; line dropped",
@@ -160,50 +222,28 @@ std::vector<KidFactEmission> resolve_kid_file(
                 file, line.source_line);
             continue;
         }
+        record_synthetic(target.editor_id, target.formid);
 
-        // Gather resolved filter values per OR-group. KID's syntax is
-        // an AND-of-ORs: values joined by ','   are separate groups
-        // (OR'd); values joined by '+' within a group are AND'd. We
-        // preserve that structure on emission so the stdlib wiring
-        // rules can reconstruct "item satisfies ALL members of SOME
-        // group" via negation-as-failure.
+        // Resolve every filter group, expanding wildcards and crossing
+        // the resulting per-member alternative lists.
         //
-        // Per-group resolution policy:
-        //   - A group where EVERY value fails to resolve is dropped
-        //     entirely (keeping an empty AND-group is meaningless).
-        //   - A group where SOME values fail: the AND-conjunction is
-        //     weakened (fewer required keywords), not a strict subset
-        //     of original intent. Emit the survivors + a warning so
-        //     the author sees the degradation. Alternative (drop the
-        //     whole group) is stricter but usually wrong for
-        //     Wabbajack-scale inputs where one missing mod shouldn't
-        //     silently nuke an otherwise-fine rule.
-        struct ResolvedGroup {
-            std::vector<uint32_t> values;
-        };
-        std::vector<ResolvedGroup> resolved_groups;
+        // Per-group resolution policy (preserved from v1):
+        //   - A group where EVERY value fails resolves to no AND-tuples
+        //     and is dropped entirely.
+        //   - A group with SOME failures yields a narrower (fewer
+        //     conjuncts) intent and emits `kid-unresolved` for the
+        //     dropped values.
+        // New in v2 (rule-synthesis): wildcards inside AND-groups are
+        // expanded and cross-producted with the other members. The
+        // earlier `kid-wildcard-in-and` restriction is no longer needed.
+        std::vector<std::vector<ResolvedRef>> resolved_groups;
         std::vector<std::string> dropped_filter;
         for (const auto& group : line.filter) {
-            ResolvedGroup rg;
+            std::vector<ResolvedMember> members;
+            members.reserve(group.values.size());
             for (const auto& ref : group.values) {
+                ResolvedMember m;
                 if (ref.wildcard) {
-                    // Wildcards weaken AND-group semantics — expanding
-                    // `*Iron` inside `*Iron+ArmorHeavy` would mean "any
-                    // weapon whose EditorID matches *Iron AND has
-                    // ArmorHeavy", which v2 can't represent (the glob
-                    // match happens pre-join, so once expanded the
-                    // group becomes "has ANY of {IronSword, IronAxe,
-                    // ...} AND ArmorHeavy" — wrong intent). Drop
-                    // wildcards that appear inside multi-member AND
-                    // groups and warn. Wildcards in solo-OR groups
-                    // (the common case: `*Iron,*Gold`) expand cleanly.
-                    if (group.values.size() > 1) {
-                        emit_diag(diags, "kid-wildcard-in-and",
-                            fmt::format("KID line {}: wildcard \"{}\" inside an AND-group is not supported; value dropped",
-                                        line.source_line, ref.editor_id),
-                            file, line.source_line);
-                        continue;
-                    }
                     auto matches = expand_glob(ref.editor_id, editor_ids);
                     if (matches.empty()) {
                         const char* code = (ref.editor_id == "*")
@@ -212,27 +252,59 @@ std::vector<KidFactEmission> resolve_kid_file(
                             fmt::format("KID line {}: wildcard \"{}\" matched no EditorIDs; value dropped",
                                         line.source_line, ref.editor_id),
                             file, line.source_line);
+                        m.dropped = true;
+                        members.push_back(std::move(m));
                         continue;
                     }
-                    // Every glob match becomes its own OR-value in
-                    // this group. Fan-out warning at a large
-                    // threshold — too-broad wildcards degrade build
-                    // time and almost always indicate a typo.
                     if (matches.size() > 1000) {
                         emit_diag(diags, "kid-wildcard-fanout",
                             fmt::format("KID line {}: wildcard \"{}\" expanded to {} matches",
                                         line.source_line, ref.editor_id, matches.size()),
                             file, line.source_line);
                     }
-                    for (uint32_t fid : matches) rg.values.push_back(fid);
+                    m.alternatives.reserve(matches.size());
+                    for (auto& [edid, fid] : matches) {
+                        ResolvedRef r;
+                        r.formid    = fid;
+                        r.editor_id = std::move(edid);
+                        m.alternatives.push_back(std::move(r));
+                    }
+                    members.push_back(std::move(m));
                     continue;
                 }
-                uint32_t fid = 0;
-                auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index, fid);
-                if (ferr == ResolveError::None) rg.values.push_back(fid);
-                else dropped_filter.push_back(ref_to_string(ref));
+                ResolvedRef r;
+                auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index,
+                                          r.formid, r.editor_id);
+                if (ferr == ResolveError::None) {
+                    record_synthetic(r.editor_id, r.formid);
+                    m.alternatives.push_back(std::move(r));
+                } else {
+                    dropped_filter.push_back(ref_to_string(ref));
+                    m.dropped = true;
+                }
+                members.push_back(std::move(m));
             }
-            if (!rg.values.empty()) resolved_groups.push_back(std::move(rg));
+
+            // Drop members with no surviving alternatives, then take
+            // the cross-product across the remaining members.
+            std::vector<std::vector<ResolvedRef>> tuples;
+            bool any_member_kept = false;
+            for (const auto& m : members) {
+                if (m.alternatives.empty()) continue;
+                any_member_kept = true;
+                cartesian_extend(tuples, m.alternatives);
+                if (tuples.size() > kMaxAndGroupExpansion) {
+                    emit_diag(diags, "kid-wildcard-fanout",
+                        fmt::format("KID line {}: AND-group cross-product exceeded {} entries; group dropped",
+                                    line.source_line, kMaxAndGroupExpansion),
+                        file, line.source_line);
+                    tuples.clear();
+                    any_member_kept = false;
+                    break;
+                }
+            }
+            if (!any_member_kept) continue;
+            for (auto& t : tuples) resolved_groups.push_back(std::move(t));
         }
 
         // Drop the whole line iff the ORIGINAL filter had groups and
@@ -260,49 +332,24 @@ std::vector<KidFactEmission> resolve_kid_file(
             continue;
         }
 
-        // Allocate RuleID and emit facts.
-        uint32_t rule_id = next_rule_id++;
-
-        KidFactEmission dist;
-        dist.relation = "ini/kid_dist";
-        dist.values   = {
-            mora::Value::make_int(static_cast<int64_t>(rule_id)),
-            mora::Value::make_formid(target_fid),
-            mora::Value::make_string(pool.intern(line.item_type)),
-        };
-        out.push_back(std::move(dist));
-
-        // Emit one row per (group, member). GroupID is the group's
-        // zero-based position within this line's filter — local to
-        // RuleID, not global. AND-semantics within a group are handled
-        // by the stdlib wiring rules via negation-as-failure (see
-        // data/stdlib/kid.mora `_kid_group_matches`).
-        for (size_t gi = 0; gi < resolved_groups.size(); ++gi) {
-            for (uint32_t fv : resolved_groups[gi].values) {
-                KidFactEmission f;
-                f.relation = "ini/kid_filter";
-                f.values   = {
-                    mora::Value::make_int(static_cast<int64_t>(rule_id)),
-                    mora::Value::make_int(static_cast<int64_t>(gi)),
-                    mora::Value::make_string(pool.intern("keyword")),
-                    mora::Value::make_formid(fv),
-                };
-                out.push_back(std::move(f));
-            }
-        }
-
+        // Trait recognition. v1 wires E / -E only; other tokens stay
+        // silently dropped (the parser surfaces unknown traits).
+        bool trait_e = false;
+        bool trait_neg_e = false;
         for (const auto& trait : line.traits) {
-            // Only E / -E are recognized in v1. Others are silently
-            // dropped here — the parser already surfaced them.
-            if (trait != "E" && trait != "-E") continue;
-            KidFactEmission t;
-            t.relation = "ini/kid_trait";
-            t.values   = {
-                mora::Value::make_int(static_cast<int64_t>(rule_id)),
-                mora::Value::make_string(pool.intern(trait)),
-            };
-            out.push_back(std::move(t));
+            if (trait == "E") trait_e = true;
+            else if (trait == "-E") trait_neg_e = true;
         }
+
+        // Source span for diagnostics on the synthesized AST nodes.
+        mora::SourceSpan span;
+        span.file = file.path.string();
+        span.start_line = static_cast<uint32_t>(line.source_line);
+        span.end_line   = static_cast<uint32_t>(line.source_line);
+
+        auto built = build_rules(target, line.item_type, resolved_groups,
+                                  trait_e, trait_neg_e, span, pool);
+        for (auto& r : built) out.rules.push_back(std::move(r));
 
         // Chance <100 is reported but not enforced at compile time.
         if (line.chance < 100.0) {
@@ -313,6 +360,10 @@ std::vector<KidFactEmission> resolve_kid_file(
         }
     }
 
+    out.synthetic_editor_ids.reserve(synth_seen.size());
+    for (auto& kv : synth_seen) {
+        out.synthetic_editor_ids.emplace_back(kv.first, kv.second);
+    }
     return out;
 }
 

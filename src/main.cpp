@@ -17,6 +17,7 @@
 #include "mora/core/string_utils.h"
 #include "mora/ext/extension.h"
 #include "mora_skyrim_compile/register.h"
+#include "mora_skyrim_compile/kid_compiler.h"
 #include "mora_parquet/register.h"
 #include "mora_skyrim_runtime/runtime.h"
 #include "mora_skyrim_runtime/runtime_snapshot.h"
@@ -250,56 +251,6 @@ struct CheckResult {
     size_t rule_count = 0;
 };
 
-// Resolve the Mora stdlib directory via (1) explicit --stdlib-dir,
-// (2) $MORA_STDLIB, (3) `<cwd>/data/stdlib` for dev usage, (4) a walked-
-// up sibling for tests run from the build dir. Returns an empty path
-// when nothing resolves; the caller emits a warning once.
-static fs::path resolve_stdlib_dir(const std::string& explicit_override) {
-    auto try_path = [](fs::path p) -> fs::path {
-        std::error_code ec;
-        if (!p.empty() && fs::exists(p / "kid.mora", ec)) return p;
-        return {};
-    };
-    if (!explicit_override.empty()) {
-        if (auto p = try_path(fs::path(explicit_override)); !p.empty()) return p;
-    }
-    if (const char* env = std::getenv("MORA_STDLIB"); env && *env) {
-        if (auto p = try_path(fs::path(env)); !p.empty()) return p;
-    }
-    if (auto p = try_path(fs::current_path() / "data" / "stdlib"); !p.empty()) return p;
-    if (auto p = try_path(fs::current_path().parent_path() / "data" / "stdlib"); !p.empty()) return p;
-    return {};
-}
-
-// Parse + resolve the KID stdlib module and append it to `cr`. A
-// missing stdlib_dir surfaces as a one-shot warning so a user whose
-// KID rules never fire knows why.
-static bool load_kid_stdlib(CheckResult& cr, const fs::path& stdlib_dir) {
-    if (stdlib_dir.empty()) {
-        cr.diags.warning(
-            "stdlib-missing",
-            "Mora stdlib not found; KID wiring rules will not be active. "
-            "Set MORA_STDLIB, pass --stdlib-dir, or run from the repo root.",
-            mora::SourceSpan{}, "");
-        return false;
-    }
-    fs::path kid_path = stdlib_dir / "kid.mora";
-    std::string source = read_file(kid_path);
-    if (source.empty()) return false;
-
-    mora::Lexer lexer(source, kid_path.string(), cr.pool, cr.diags);
-    mora::Parser parser(lexer, cr.pool, cr.diags);
-    auto mod = parser.parse_module();
-    mod.filename = kid_path.string();
-    mod.source   = source;
-
-    mora::NameResolver resolver(cr.pool, cr.diags);
-    resolver.resolve(mod);
-    cr.rule_count += mod.rules.size();
-    cr.modules.push_back(std::move(mod));
-    return true;
-}
-
 static bool run_check_pipeline(
     CheckResult& result,
     const std::string& target_path,
@@ -398,17 +349,12 @@ static int cmd_compile(const std::string& target_path, const std::string& output
     auto start = std::chrono::steady_clock::now();
     out.print_header(MORA_VERSION);
 
+    (void)stdlib_dir_override;  // retained for CLI compat; KID no longer
+                                // depends on the stdlib (rules are now
+                                // synthesized in C++ from *_KID.ini).
+
     CheckResult cr;
     if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
-
-    // Bundled stdlib — wiring rules that consume fact-only datasources
-    // (KID today; SPID later). Auto-loaded whenever the user hasn't
-    // opted out of KID, so a plain `mora compile --data-dir …` picks
-    // up *_KID.ini without any extra flags.
-    if (!no_kid && !data_dir.empty()) {
-        fs::path const stdlib = resolve_stdlib_dir(stdlib_dir_override);
-        load_kid_stdlib(cr, stdlib);
-    }
 
     if (cr.diags.has_errors()) {
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -460,14 +406,38 @@ static int cmd_compile(const std::string& target_path, const std::string& output
             /*editor_ids_out*/           &editor_id_map,
             /*loaded_plugins_out*/       &loaded_plugins,
             /*plugin_runtime_index_out*/ &plugin_runtime_index,
-            /*kid_enabled*/              !no_kid,
-            /*kid_dir*/                  kid_dir.empty() ? fs::path{} : fs::path(kid_dir),
         };
 
         ext_ctx.load_required(load_ctx, db);
 
-        // Feed editor IDs accumulated by SkyrimEspDataSource into the
-        // evaluator so symbol literals in .mora files resolve to FormIDs.
+        // KID rule synthesis: parse *_KID.ini, resolve references against
+        // the EditorID map populated by SkyrimEspDataSource, and produce a
+        // synthetic module of `skyrim/add` rules. Each KID line becomes
+        // one rule per OR-group — no separate stdlib interpreter needed.
+        if (!no_kid) {
+            mora_skyrim_compile::KidCompileInputs kid_in;
+            kid_in.data_dir             = fs::path(data_dir);
+            kid_in.kid_dir              = kid_dir.empty() ? fs::path{} : fs::path(kid_dir);
+            kid_in.editor_ids           = &editor_id_map;
+            kid_in.plugin_runtime_index = &plugin_runtime_index;
+            auto kid_result = mora_skyrim_compile::compile_kid_modules(
+                kid_in, cr.pool, cr.diags);
+            // Synthetic FormID-ref editor IDs are merged into the map so
+            // the existing pump (below) registers them with the evaluator.
+            for (auto& [edid, fid] : kid_result.synthetic_editor_ids) {
+                editor_id_map.try_emplace(edid, fid);
+            }
+            if (!kid_result.module.rules.empty()) {
+                mora::NameResolver kid_resolver(cr.pool, cr.diags);
+                kid_resolver.resolve(kid_result.module);
+                cr.rule_count += kid_result.module.rules.size();
+                cr.modules.push_back(std::move(kid_result.module));
+            }
+        }
+
+        // Feed editor IDs accumulated by SkyrimEspDataSource (and the
+        // KID compiler) into the evaluator so EditorIdExpr nodes
+        // resolve to FormIDs at scan time.
         for (auto& [edid, formid] : editor_id_map) {
             evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
         }

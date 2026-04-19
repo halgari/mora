@@ -1,15 +1,13 @@
 # Fact-Based INI Distribution
 
-> **Status:** Historical design doc. KID landed via the
-> `feat/kid-integration` branch (see `docs/src/kid-integration.md`) but
-> with several deviations: ingestion is via a DataSource plugin rather
-> than the `import_kid` lexer keyword (still reserved, still unused);
-> filter values are stored as individual rows under
-> `ini/kid_filter(RuleID, Kind, Value)` rather than list-typed columns;
-> `form/*` existence predicates drive wiring instead of generic item-
-> type rules. SPID is **not** integrated yet; the schema proposed here
-> is still the right shape for that follow-up. Paired plan:
-> `docs/plans/2026-04-12-fact-based-ini-distribution.md`.
+> **Status:** Superseded for KID. KID v1 (the fact-based design this
+> doc describes) was replaced on 2026-04-19 by **rule synthesis**: the
+> KID compiler now produces Mora `Rule` AST nodes directly rather than
+> `ini/kid_*` facts that an interpreter-style stdlib unpacks. See
+> `docs/src/kid-integration.md` and
+> `extensions/skyrim_compile/include/mora_skyrim_compile/kid_compiler.h`
+> for the current design. The fact-based shape proposed here may still
+> be the right starting point for SPID; revisit when SPID lands.
 
 ## Problem
 

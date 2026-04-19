@@ -1,5 +1,12 @@
 # Fact-Based INI Distribution Implementation Plan
 
+> **Status (KID):** Superseded on 2026-04-19. KID was reimplemented as
+> rule synthesis — each KID line compiles directly to a Mora `Rule` AST
+> node. The fact-based pipeline this plan describes (`ini/kid_*` facts
+> + generic stdlib joins) was retired. See
+> `docs/src/kid-integration.md`. The plan may still be the right
+> starting point for SPID; revisit when SPID lands.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace 12,000 generated rules from SPID/KID INI files with facts in the FactDB, evaluated by ~20 generic distribution rules via bulk Datalog joins.

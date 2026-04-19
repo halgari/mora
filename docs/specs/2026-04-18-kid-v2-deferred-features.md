@@ -1,22 +1,32 @@
 # KID v2: Deferred Features
 
-> **Status:** Design doc. Scopes the four feature gaps left open after
-> `feat/kid-integration` (v1) landed on 2026-04-18. Each section is
-> independently implementable — ship them one at a time in separate
-> PRs rather than a single mega-patch.
+> **Status:** Partially superseded. Waves 1 (FormID-ref), 2 (AND-of-ORs),
+> 3 (wildcards) and the wildcard-in-AND-group restriction were all
+> resolved by the 2026-04-19 rule-synthesis refactor — KID lines now
+> compile directly to Mora `Rule` AST nodes (see
+> `extensions/skyrim_compile/include/mora_skyrim_compile/kid_compiler.h`),
+> so AND-semantics, wildcard cross-product expansion, and FormID
+> resolution are all naturally expressible in the rule body. Remaining
+> work: extend `kid_rule_builder.cpp` to emit conjuncts for the
+> additional traits documented in waves 2-3 below (HEAVY/LIGHT/
+> CLOTHING, AR/W ranges, body slots, spell/magic-effect flags). Each
+> trait is now a small localised edit (one new helper, one extra
+> conjunct) rather than the per-type variant explosion v1's stdlib
+> required.
 
 ## Background
 
-KID v1 ingests `*_KID.ini` as facts (`ini/kid_*`) and wires them into
-`skyrim/add(X, :Keyword, KW)` via a bundled stdlib (`data/stdlib/kid.mora`).
-See `docs/src/kid-integration.md` for the user-facing view and
-`extensions/skyrim_compile/src/kid_{parser,resolver,data_source}.cpp`
-for the implementation.
+KID v1 ingested `*_KID.ini` as facts (`ini/kid_*`) and wired them into
+`skyrim/add(X, :Keyword, KW)` via a bundled stdlib
+(`data/stdlib/kid.mora`). Both the facts and the stdlib were removed
+on 2026-04-19; lines are now compiled to rules instead. See
+`docs/src/kid-integration.md` for the user-facing view.
 
-v1 handles EditorID references, comma-separated OR filters, and basic
-wiring per item type. It rejects FormID refs and wildcards, flattens
-`+` (AND) to `,` (OR), and parses-but-ignores trait filters. The four
-subsections below lay out how to close each of those gaps.
+The original v1 limitations — flattening `+` (AND) to `,` (OR),
+rejecting FormID refs, dropping wildcards inside AND-groups, and
+parsing-but-ignoring trait filters beyond `E` / `-E` — are now mostly
+gone. The four subsections below were the original v2 plan; they
+remain useful as a reference for the trait wiring still to come.
 
 ---
 

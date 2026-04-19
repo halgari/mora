@@ -170,12 +170,9 @@ void NameResolver::register_builtins() {
     reg("spid_exclude", 3);
     reg("spid_level",   3);
 
-    // ── KID distribution facts ──
-    reg("kid_dist",     3);
-    reg("kid_filter",   4);  // RuleID, GroupID, Kind, Value
-    reg("kid_exclude",  3);
-    reg("kid_trait",    2);
-
+    // (KID `ini/kid_*` relations were removed; KID lines compile to
+    // Mora rules now — see extensions/skyrim_compile/include/
+    // mora_skyrim_compile/kid_compiler.h.)
 }
 
 // ---------------------------------------------------------------------------
