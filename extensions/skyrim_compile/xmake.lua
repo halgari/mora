@@ -6,6 +6,7 @@ target("mora_skyrim_compile")
               "src/types.cpp",
               "src/plugin_facts.cpp",
               "src/esp_data_source.cpp",
+              "src/form_reader.cpp",
               "src/kid_parser.cpp",
               "src/kid_resolver.cpp",
               "src/kid_rule_builder.cpp",

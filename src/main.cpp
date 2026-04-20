@@ -2,6 +2,7 @@
 #include "mora/lexer/lexer.h"
 #include "mora/parser/parser.h"
 #include "mora/sema/name_resolver.h"
+#include "mora/sema/reader_expansion.h"
 #include "mora/diag/diagnostic.h"
 #include "mora/diag/renderer.h"
 #include "mora/cli/terminal.h"
@@ -251,16 +252,16 @@ struct CheckResult {
     size_t rule_count = 0;
 };
 
-static bool run_check_pipeline(
+// Parse-only pipeline phase: populates result.pool / result.diags /
+// result.sources / result.files / result.modules. No name resolution.
+// Returns false iff no .mora files were found.
+static bool run_parse_pipeline(
     CheckResult& result,
     const std::string& target_path,
-    mora::Output& out,
-    bool use_color)
+    mora::Output& out)
 {
-    (void)use_color;
     result.files = find_mora_files(target_path);
 
-    // Parse .mora files
     out.phase_start("Parsing");
     result.sources.reserve(result.files.size());
     for (auto& file : result.files) {
@@ -283,8 +284,11 @@ static bool run_check_pipeline(
     }
 
     out.phase_done(fmt::format("Parsing {} .mora files", result.files.size()));
+    return true;
+}
 
-    // Resolve
+// Name-resolve every module in `result`. Updates result.rule_count.
+static void run_resolve_pipeline(CheckResult& result, mora::Output& out) {
     out.phase_start("Resolving");
     mora::NameResolver resolver(result.pool, result.diags);
     for (auto& mod : result.modules) {
@@ -292,23 +296,39 @@ static bool run_check_pipeline(
         result.rule_count += mod.rules.size();
     }
     out.phase_done(fmt::format("Resolving {} rules", result.rule_count));
+}
 
-    // Render diagnostics if any
-    if (!result.diags.all().empty()) {
-        mora::DiagRenderer const renderer(use_color);
-        mora::log::info("\n{}", renderer.render_all(result.diags));
-        if (result.diags.error_count() > mora::DiagBag::kMaxErrors) {
-            mora::log::info("\n  ... and {} more errors (showing first {})\n",
-                result.diags.error_count() - mora::DiagBag::kMaxErrors,
-                mora::DiagBag::kMaxErrors);
-        }
-        if (result.diags.warning_count() > mora::DiagBag::kMaxWarnings) {
-            mora::log::info("\n  ... and {} more warnings (showing first {})\n",
-                result.diags.warning_count() - mora::DiagBag::kMaxWarnings,
-                mora::DiagBag::kMaxWarnings);
-        }
+// Render any collected diagnostics to the output. Used by both check
+// and compile paths.
+static void render_diags(const CheckResult& result, bool use_color) {
+    if (result.diags.all().empty()) return;
+    mora::DiagRenderer const renderer(use_color);
+    mora::log::info("\n{}", renderer.render_all(result.diags));
+    if (result.diags.error_count() > mora::DiagBag::kMaxErrors) {
+        mora::log::info("\n  ... and {} more errors (showing first {})\n",
+            result.diags.error_count() - mora::DiagBag::kMaxErrors,
+            mora::DiagBag::kMaxErrors);
     }
+    if (result.diags.warning_count() > mora::DiagBag::kMaxWarnings) {
+        mora::log::info("\n  ... and {} more warnings (showing first {})\n",
+            result.diags.warning_count() - mora::DiagBag::kMaxWarnings,
+            mora::DiagBag::kMaxWarnings);
+    }
+}
 
+// Full check pipeline (parse + resolve + render diags). Used by
+// `mora check`. Compile uses the individual helpers directly because
+// it interleaves ESP loading and reader expansion between parse and
+// resolve.
+static bool run_check_pipeline(
+    CheckResult& result,
+    const std::string& target_path,
+    mora::Output& out,
+    bool use_color)
+{
+    if (!run_parse_pipeline(result, target_path, out)) return false;
+    run_resolve_pipeline(result, out);
+    render_diags(result, use_color);
     return true;
 }
 
@@ -354,9 +374,10 @@ static int cmd_compile(const std::string& target_path, const std::string& output
                                 // synthesized in C++ from *_KID.ini).
 
     CheckResult cr;
-    if (!run_check_pipeline(cr, target_path, out, use_color)) return 1;
+    if (!run_parse_pipeline(cr, target_path, out)) return 1;
 
     if (cr.diags.has_errors()) {
+        render_diags(cr, use_color);
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start).count();
         out.failure(fmt::format("Failed with {} error(s) in {}ms \xe2\x80\x94 aborting compilation",
@@ -364,23 +385,9 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         return 1;
     }
 
-    // Phase classification
-    out.phase_start("Classifying");
-    mora::PhaseClassifier const classifier(cr.pool);
-    size_t static_count = 0;
-    size_t dynamic_count = 0;
-
-    for (auto& mod : cr.modules) {
-        auto classifications = classifier.classify_module(mod);
-        for (size_t i = 0; i < classifications.size(); i++) {
-            if (classifications[i].phase == mora::Phase::Static) static_count++;
-            else dynamic_count++;
-        }
-    }
-    out.phase_done(fmt::format("{} static, {} dynamic", static_count, dynamic_count));
-
-    // Setup evaluation
-    out.phase_start("Evaluating");
+    // Setup evaluation state up-front; ESP-load + reader expansion
+    // populate editor_id_map and plugin_runtime_index before name
+    // resolution so readers (e.g. `#form`) see the loaded data.
     mora::FactDB db(cr.pool);
     mora::Evaluator evaluator(cr.pool, cr.diags, db);
     mora::EditorIdMap editor_id_map;
@@ -389,8 +396,8 @@ static int cmd_compile(const std::string& target_path, const std::string& output
 
     // Registration is cheap (one unique_ptr per extension); dispatch is
     // gated below on --data-dir (load_required) and --sink (sinks loop).
-    // Hoisted out of the data_dir branch so ext_ctx stays in scope for
-    // the post-evaluation sink-dispatch loop.
+    // Hoisted so ext_ctx stays in scope for the post-evaluation sink
+    // dispatch loop.
     mora::ext::ExtensionContext ext_ctx;
     mora_skyrim_compile::register_skyrim(ext_ctx);
     mora_parquet::register_parquet(ext_ctx);
@@ -411,37 +418,82 @@ static int cmd_compile(const std::string& target_path, const std::string& output
         ext_ctx.load_required(load_ctx, db);
 
         // KID rule synthesis: parse *_KID.ini, resolve references against
-        // the EditorID map populated by SkyrimEspDataSource, and produce a
-        // synthetic module of `skyrim/add` rules. Each KID line becomes
+        // the EditorID map populated by SkyrimEspDataSource, and produce
+        // a synthetic module of `skyrim/add` rules. Each KID line becomes
         // one rule per OR-group — no separate stdlib interpreter needed.
+        // Runs BEFORE reader-expansion so KID-emitted TaggedLiteralExpr
+        // nodes (for FormID refs) expand uniformly with user-written ones.
         if (!no_kid) {
             mora_skyrim_compile::KidCompileInputs kid_in;
-            kid_in.data_dir             = fs::path(data_dir);
-            kid_in.kid_dir              = kid_dir.empty() ? fs::path{} : fs::path(kid_dir);
-            kid_in.editor_ids           = &editor_id_map;
-            kid_in.plugin_runtime_index = &plugin_runtime_index;
+            kid_in.data_dir   = fs::path(data_dir);
+            kid_in.kid_dir    = kid_dir.empty() ? fs::path{} : fs::path(kid_dir);
+            kid_in.editor_ids = &editor_id_map;
             auto kid_result = mora_skyrim_compile::compile_kid_modules(
                 kid_in, cr.pool, cr.diags);
-            // Synthetic FormID-ref editor IDs are merged into the map so
-            // the existing pump (below) registers them with the evaluator.
-            for (auto& [edid, fid] : kid_result.synthetic_editor_ids) {
-                editor_id_map.try_emplace(edid, fid);
-            }
             if (!kid_result.module.rules.empty()) {
-                mora::NameResolver kid_resolver(cr.pool, cr.diags);
-                kid_resolver.resolve(kid_result.module);
-                cr.rule_count += kid_result.module.rules.size();
                 cr.modules.push_back(std::move(kid_result.module));
             }
         }
+    }
 
-        // Feed editor IDs accumulated by SkyrimEspDataSource (and the
-        // KID compiler) into the evaluator so EditorIdExpr nodes
-        // resolve to FormIDs at scan time.
+    // Reader-expansion phase: replaces every `#<tag> "<payload>"`
+    // literal with the result of the tag's registered reader. Runs on
+    // every module (user-written and KID-synthesized) after ESP-load so
+    // readers can consult editor_id_map / plugin_runtime_index.
+    {
+        out.phase_start("Expanding readers");
+        mora::ext::ReaderContext rctx{
+            cr.pool,
+            cr.diags,
+            /*editor_ids*/           data_dir.empty() ? nullptr : &editor_id_map,
+            /*plugin_runtime_index*/ data_dir.empty() ? nullptr : &plugin_runtime_index,
+        };
+        for (auto& mod : cr.modules) {
+            mora::expand_readers(mod, ext_ctx, rctx);
+        }
+        out.phase_done("done");
+    }
+
+    // Name resolution runs AFTER reader-expansion so resolved nodes get
+    // fully checked. Tagged literals that survived expansion (unknown
+    // tags) are caught by the reader-expansion diag.
+    run_resolve_pipeline(cr, out);
+    render_diags(cr, use_color);
+    if (cr.diags.has_errors()) {
+        auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        out.failure(fmt::format("Failed with {} error(s) in {}ms \xe2\x80\x94 aborting compilation",
+            cr.diags.error_count(), total_ms));
+        return 1;
+    }
+
+    // Feed editor IDs accumulated by SkyrimEspDataSource into the
+    // evaluator so EditorIdExpr nodes resolve to FormIDs at scan time.
+    // (Synthetic KID FormID-ref editor IDs are gone — those are now
+    // baked into FormIdLiteral nodes by the `#form` reader.)
+    if (!data_dir.empty()) {
         for (auto& [edid, formid] : editor_id_map) {
             evaluator.set_symbol_formid(cr.pool.intern(edid), formid);
         }
     }
+
+    // Phase classification (after reader expansion so tagged literals
+    // don't confuse the classifier).
+    out.phase_start("Classifying");
+    mora::PhaseClassifier const classifier(cr.pool);
+    size_t static_count = 0;
+    size_t dynamic_count = 0;
+
+    for (auto& mod : cr.modules) {
+        auto classifications = classifier.classify_module(mod);
+        for (size_t i = 0; i < classifications.size(); i++) {
+            if (classifications[i].phase == mora::Phase::Static) static_count++;
+            else dynamic_count++;
+        }
+    }
+    out.phase_done(fmt::format("{} static, {} dynamic", static_count, dynamic_count));
+
+    out.phase_start("Evaluating");
 
     // Enforce `requires mod("X")` — a module whose declared
     // dependencies aren't in the resolved load order gets a warning

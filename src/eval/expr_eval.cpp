@@ -50,6 +50,13 @@ Value resolve_expr(const Expr& expr,
             return Value::make_keyword(e.value);
         } else if constexpr (std::is_same_v<T, DiscardExpr>) {
             return Value::make_var();
+        } else if constexpr (std::is_same_v<T, FormIdLiteral>) {
+            return Value::make_formid(e.value);
+        } else if constexpr (std::is_same_v<T, TaggedLiteralExpr>) {
+            // Unreachable in a well-formed pipeline: reader expansion
+            // should have replaced this node before evaluation. Return
+            // an unbound var so downstream code bails without crashing.
+            return Value::make_var();
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
             Value const left  = resolve_expr(*e.left,  bindings, pool, symbols);
             Value const right = resolve_expr(*e.right, bindings, pool, symbols);

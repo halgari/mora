@@ -1,6 +1,7 @@
 #include "mora_skyrim_compile/kid_resolver.h"
 
 #include "mora_skyrim_compile/kid_rule_builder.h"
+#include "mora_skyrim_compile/kid_util.h"
 
 #include "mora/core/source_location.h"
 #include "mora/diag/diagnostic.h"
@@ -19,11 +20,23 @@ namespace {
 // a Wabbajack-scale corpus could otherwise spawn millions of rules.
 constexpr size_t kMaxAndGroupExpansion = 1024;
 
-std::string to_lower(std::string_view s) {
-    std::string r(s);
-    std::transform(r.begin(), r.end(), r.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return r;
+// Per-wildcard match-count warning threshold. Distinct from the hard cap
+// above: this fires as an informational warning when a single glob
+// touches a lot of the EditorID map, while the cap is the limit on
+// AND-group cross-products.
+constexpr size_t kWildcardFanoutWarnThreshold = 1000;
+
+// Supported KID trait tokens → body-clause evidence they compile into.
+// Adding a new trait is one entry here (and, once range/constant-arg
+// traits land, a corresponding extension to TraitEvidence). The `-`
+// polarity prefix is stripped by the caller; both `E` and `-E` look up
+// the same entry and only differ in TraitRef::negated.
+const std::unordered_map<std::string_view, TraitEvidence>&
+kid_trait_token_map() {
+    static const std::unordered_map<std::string_view, TraitEvidence> m = {
+        {"E", {"form", "enchanted_with", 1}},
+    };
+    return m;
 }
 
 // Case-insensitive shell-style glob match. Supports '*' (zero or more
@@ -74,23 +87,23 @@ std::vector<std::pair<std::string, uint32_t>> expand_glob(
 
 enum class ResolveError {
     None,
-    MissingEditorId,
-    FormidUnsupported,  // caller didn't wire plugin_runtime_index
-    MissingPlugin,      // plugin named in `0xNNN~Plugin.ext` isn't loaded
+    MissingEditorId,  // caller's editor_ids doesn't contain this name
 };
 
+// Resolve a single KID ref to a ResolvedRef. EditorID refs look up the
+// canonical casing in `editor_ids`; FormID refs (`0xNNN~Plugin.ext`)
+// become a TaggedLiteralExpr payload (`"0xNNN@Plugin.ext"`) that the
+// `#form` reader globalizes during the reader-expansion phase — no
+// plugin-runtime-index lookup happens here.
 ResolveError resolve_ref(
     const KidRef&                                     ref,
     const std::unordered_map<std::string, uint32_t>&  editor_ids,
-    const std::unordered_map<std::string, uint32_t>*  plugin_runtime_index,
-    uint32_t&                                         out_formid,
-    std::string&                                      out_canonical_editor_id) {
+    ResolvedRef&                                      out) {
     if (ref.is_editor_id()) {
         // Exact match first — ESP extraction preserves casing as-written.
         auto it = editor_ids.find(ref.editor_id);
         if (it != editor_ids.end()) {
-            out_formid = it->second;
-            out_canonical_editor_id = it->first;
+            out = ResolvedRef::make_editor_id(it->first);
             return ResolveError::None;
         }
         // Case-insensitive fallback. KID users routinely mis-case
@@ -99,25 +112,18 @@ ResolveError resolve_ref(
         std::string lc = to_lower(ref.editor_id);
         for (const auto& [k, v] : editor_ids) {
             if (to_lower(k) == lc) {
-                out_formid = v;
-                out_canonical_editor_id = k;
+                out = ResolvedRef::make_editor_id(k);
                 return ResolveError::None;
             }
         }
         return ResolveError::MissingEditorId;
     }
 
-    // FormID ref: `0xNNNN~Plugin.ext`.
-    if (!plugin_runtime_index) return ResolveError::FormidUnsupported;
-    std::string key = to_lower(ref.mod_file);
-    auto it = plugin_runtime_index->find(key);
-    if (it == plugin_runtime_index->end()) return ResolveError::MissingPlugin;
-    out_formid = mora::ext::globalize_formid(it->second, ref.formid);
-    // No real EditorID for a FormID ref — synthesize a stable one so
-    // the AST has something to put in EditorIdExpr. Callers register
-    // it as a synthetic_editor_ids entry so the evaluator's symbol
-    // table resolves it to `out_formid`.
-    out_canonical_editor_id = compose_synthetic_editor_id(out_formid);
+    // FormID ref: `0xNNN~Plugin.ext`. Emit a TaggedLiteralExpr payload
+    // — the `#form` reader handles plugin-index lookup, globalization,
+    // and missing-plugin / data-less diagnostics during expansion.
+    out = ResolvedRef::make_tagged_form(
+        fmt::format("0x{:X}@{}", ref.formid, ref.mod_file));
     return ResolveError::None;
 }
 
@@ -176,22 +182,10 @@ void cartesian_extend(
 KidResolveResult resolve_kid_file(
     const KidFile&                                     file,
     const std::unordered_map<std::string, uint32_t>&   editor_ids,
-    const std::unordered_map<std::string, uint32_t>*   plugin_runtime_index,
     mora::StringPool&                                  pool,
     mora::DiagBag&                                     diags) {
 
     KidResolveResult out;
-
-    // Track synthetic editor IDs we need to register with the evaluator.
-    // De-dup with a set so a FormID referenced from multiple lines only
-    // yields one entry.
-    std::unordered_map<std::string, uint32_t> synth_seen;
-    auto record_synthetic = [&](const std::string& edid, uint32_t fid) {
-        // Only emit for our own synthetic prefix — real EditorIDs come
-        // from editor_ids and don't need re-registration.
-        if (edid.rfind("__kid_formid_", 0) != 0) return;
-        synth_seen.try_emplace(edid, fid);
-    };
 
     // Surface any parser-level diagnostics up to the caller.
     for (const auto& pd : file.diags) {
@@ -200,29 +194,17 @@ KidResolveResult resolve_kid_file(
                   file, pd.line);
     }
 
-    auto err_code = [](ResolveError e) -> const char* {
-        switch (e) {
-            case ResolveError::FormidUnsupported: return "kid-formid-unsupported";
-            case ResolveError::MissingPlugin:     return "kid-missing-plugin";
-            case ResolveError::MissingEditorId:   return "kid-unresolved";
-            case ResolveError::None:              break;
-        }
-        return "kid-unresolved";
-    };
-
     for (const auto& line : file.lines) {
         // Resolve target keyword first — if this fails the whole line is dropped.
         ResolvedRef target;
-        auto err = resolve_ref(line.target, editor_ids, plugin_runtime_index,
-                                target.formid, target.editor_id);
+        auto err = resolve_ref(line.target, editor_ids, target);
         if (err != ResolveError::None) {
-            emit_diag(diags, err_code(err),
+            emit_diag(diags, "kid-unresolved",
                 fmt::format("KID target \"{}\" unresolved; line dropped",
                             ref_to_string(line.target)),
                 file, line.source_line);
             continue;
         }
-        record_synthetic(target.editor_id, target.formid);
 
         // Resolve every filter group, expanding wildcards and crossing
         // the resulting per-member alternative lists.
@@ -256,7 +238,7 @@ KidResolveResult resolve_kid_file(
                         members.push_back(std::move(m));
                         continue;
                     }
-                    if (matches.size() > 1000) {
+                    if (matches.size() > kWildcardFanoutWarnThreshold) {
                         emit_diag(diags, "kid-wildcard-fanout",
                             fmt::format("KID line {}: wildcard \"{}\" expanded to {} matches",
                                         line.source_line, ref.editor_id, matches.size()),
@@ -264,19 +246,17 @@ KidResolveResult resolve_kid_file(
                     }
                     m.alternatives.reserve(matches.size());
                     for (auto& [edid, fid] : matches) {
-                        ResolvedRef r;
-                        r.formid    = fid;
-                        r.editor_id = std::move(edid);
-                        m.alternatives.push_back(std::move(r));
+                        (void)fid;  // wildcards produce EditorIdExpr nodes;
+                                    // evaluator resolves to FormID at scan time.
+                        m.alternatives.push_back(
+                            ResolvedRef::make_editor_id(std::move(edid)));
                     }
                     members.push_back(std::move(m));
                     continue;
                 }
                 ResolvedRef r;
-                auto ferr = resolve_ref(ref, editor_ids, plugin_runtime_index,
-                                          r.formid, r.editor_id);
+                auto ferr = resolve_ref(ref, editor_ids, r);
                 if (ferr == ResolveError::None) {
-                    record_synthetic(r.editor_id, r.formid);
                     m.alternatives.push_back(std::move(r));
                 } else {
                     dropped_filter.push_back(ref_to_string(ref));
@@ -332,13 +312,25 @@ KidResolveResult resolve_kid_file(
             continue;
         }
 
-        // Trait recognition. v1 wires E / -E only; other tokens stay
-        // silently dropped (the parser surfaces unknown traits).
-        bool trait_e = false;
-        bool trait_neg_e = false;
-        for (const auto& trait : line.traits) {
-            if (trait == "E") trait_e = true;
-            else if (trait == "-E") trait_neg_e = true;
+        // Trait recognition via the trait-token map (defined at
+        // namespace scope above). Each supported token maps to a
+        // TraitEvidence describing the body clause it compiles into; a
+        // leading `-` flips polarity. Unknown tokens are dropped with a
+        // diagnostic — either typos or traits Mora doesn't support yet.
+        std::vector<TraitRef> resolved_traits;
+        for (const auto& raw : line.traits) {
+            std::string_view tok = raw;
+            bool const negated = !tok.empty() && tok.front() == '-';
+            if (negated) tok.remove_prefix(1);
+            auto it = kid_trait_token_map().find(tok);
+            if (it == kid_trait_token_map().end()) {
+                emit_diag(diags, "kid-unknown-trait",
+                    fmt::format("KID line {}: trait \"{}\" not supported; dropped",
+                                line.source_line, raw),
+                    file, line.source_line);
+                continue;
+            }
+            resolved_traits.push_back({it->second, negated});
         }
 
         // Source span for diagnostics on the synthesized AST nodes.
@@ -348,7 +340,7 @@ KidResolveResult resolve_kid_file(
         span.end_line   = static_cast<uint32_t>(line.source_line);
 
         auto built = build_rules(target, line.item_type, resolved_groups,
-                                  trait_e, trait_neg_e, span, pool);
+                                  resolved_traits, span, pool);
         for (auto& r : built) out.rules.push_back(std::move(r));
 
         // Chance <100 is reported but not enforced at compile time.
@@ -360,10 +352,6 @@ KidResolveResult resolve_kid_file(
         }
     }
 
-    out.synthetic_editor_ids.reserve(synth_seen.size());
-    for (auto& kv : synth_seen) {
-        out.synthetic_editor_ids.emplace_back(kv.first, kv.second);
-    }
     return out;
 }
 

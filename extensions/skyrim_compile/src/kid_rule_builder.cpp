@@ -34,6 +34,28 @@ mora::Expr make_editor_id(mora::StringPool& pool, std::string_view name,
     return e;
 }
 
+mora::Expr make_tagged_form(mora::StringPool& pool, std::string_view payload,
+                             const mora::SourceSpan& span) {
+    // TaggedLiteralExpr("form", payload) — the `#form` reader globalizes
+    // it to a FormIdLiteral during the reader-expansion phase.
+    mora::Expr e;
+    e.span = span;
+    e.data = mora::TaggedLiteralExpr{
+        pool.intern("form"), pool.intern(payload), span};
+    return e;
+}
+
+// Build the right Expr node for a ResolvedRef: EditorIdExpr for
+// EditorID refs (and wildcard expansions), TaggedLiteralExpr for
+// FormID refs (`0xNNN@Plugin.ext` payload).
+mora::Expr expr_from_ref(mora::StringPool& pool, const ResolvedRef& ref,
+                          const mora::SourceSpan& span) {
+    if (ref.is_tagged_form()) {
+        return make_tagged_form(pool, ref.tagged_payload, span);
+    }
+    return make_editor_id(pool, ref.editor_id, span);
+}
+
 mora::FactPattern make_fact_pattern(
     mora::StringPool& pool,
     std::string_view qualifier,
@@ -72,46 +94,51 @@ void append_type_clause(std::vector<mora::Clause>& body,
                            /*negated*/ false, span)));
 }
 
-// Append `form/keyword(X, @kw_name)` to body.
+// Append `form/keyword(X, <member>)` to body. <member> is built from
+// the ResolvedRef — EditorIdExpr for EditorID refs, TaggedLiteralExpr
+// for FormID refs.
 void append_keyword_clause(std::vector<mora::Clause>& body,
                             mora::StringPool& pool,
                             std::string_view subject_var,
-                            std::string_view keyword_editor_id,
+                            const ResolvedRef& member,
                             const mora::SourceSpan& span)
 {
     std::vector<mora::Expr> args;
     args.push_back(make_var(pool, subject_var, span));
-    args.push_back(make_editor_id(pool, keyword_editor_id, span));
+    args.push_back(expr_from_ref(pool, member, span));
     body.push_back(clause_from_fact(
         make_fact_pattern(pool, "form", "keyword", std::move(args),
                            /*negated*/ false, span)));
 }
 
-// Append `[not] form/enchanted_with(X, V)` to body. `V` is a fresh
-// throwaway variable so the planner sees a valid binding — the
-// evaluator uses negation-as-failure on existence; using a fresh
-// VariableExpr (not DiscardExpr — the planner rejects DiscardExpr in
-// args; see is_simple_arg_expr in src/eval/rule_planner.cpp) keeps the
-// scan well-formed and the value column unused.
-void append_enchanted_with(std::vector<mora::Clause>& body,
-                            mora::StringPool& pool,
-                            std::string_view subject_var,
-                            std::string_view fresh_var,
-                            bool negated,
-                            const mora::SourceSpan& span)
+// Append one trait clause: `[not] <ev.qualifier>/<ev.name>(X, _freshN...)`.
+// Each fresh var is a distinct VariableExpr (not DiscardExpr — the
+// planner rejects DiscardExpr in args; see is_simple_arg_expr in
+// src/eval/rule_planner.cpp) so the scan stays well-formed and the
+// value columns remain unused by downstream logic.
+void append_trait_clause(std::vector<mora::Clause>& body,
+                          mora::StringPool& pool,
+                          std::string_view subject_var,
+                          const TraitEvidence& ev,
+                          bool negated,
+                          size_t& fresh_id,
+                          const mora::SourceSpan& span)
 {
     std::vector<mora::Expr> args;
     args.push_back(make_var(pool, subject_var, span));
-    args.push_back(make_var(pool, fresh_var, span));
+    for (int i = 0; i < ev.fresh_var_count; ++i) {
+        std::string const fresh = fmt::format("_anon_{}", fresh_id++);
+        args.push_back(make_var(pool, fresh, span));
+    }
     body.push_back(clause_from_fact(
-        make_fact_pattern(pool, "form", "enchanted_with", std::move(args),
+        make_fact_pattern(pool, ev.qualifier, ev.name, std::move(args),
                            negated, span)));
 }
 
 mora::Rule make_skyrim_add_rule(
     mora::StringPool& pool,
     std::string_view subject_var,
-    std::string_view target_editor_id,
+    const ResolvedRef& target,
     const mora::SourceSpan& span)
 {
     mora::Rule rule;
@@ -120,34 +147,28 @@ mora::Rule make_skyrim_add_rule(
     rule.name      = pool.intern("add");
     rule.span      = span;
 
-    // Head: (X, :Keyword, @TargetEditorId)
+    // Head: (X, :Keyword, <target>)
     rule.head_args.push_back(make_var(pool, subject_var, span));
     rule.head_args.push_back(make_keyword(pool, ":Keyword", span));
-    rule.head_args.push_back(make_editor_id(pool, target_editor_id, span));
+    rule.head_args.push_back(expr_from_ref(pool, target, span));
     return rule;
 }
 
 } // namespace
 
-std::string compose_synthetic_editor_id(uint32_t formid) {
-    // Lowercase 8-hex format keeps the generated name stable across
-    // runs and avoids any case-folding surprises in the evaluator's
-    // case-insensitive symbol lookup. Real Skyrim EditorIDs never
-    // start with `__` so collisions are impossible.
-    return fmt::format("__kid_formid_{:08x}", formid);
-}
-
 std::vector<mora::Rule> build_rules(
     const ResolvedRef&                                     target,
     std::string_view                                       item_type,
     const std::vector<std::vector<ResolvedRef>>&           filter_groups,
-    bool                                                   trait_e,
-    bool                                                   trait_neg_e,
+    const std::vector<TraitRef>&                           traits,
     const mora::SourceSpan&                                source_span,
     mora::StringPool&                                      pool)
 {
     std::vector<mora::Rule> out;
-    if (item_type.empty() || target.editor_id.empty()) return out;
+    if (item_type.empty() ||
+        (!target.is_editor_id() && !target.is_tagged_form())) {
+        return out;
+    }
 
     // How many rules: one per OR-group, or one if no filter at all.
     size_t const n_rules = filter_groups.empty() ? size_t{1} : filter_groups.size();
@@ -159,24 +180,18 @@ std::vector<mora::Rule> build_rules(
 
     for (size_t gi = 0; gi < n_rules; ++gi) {
         mora::Rule rule = make_skyrim_add_rule(
-            pool, "X", target.editor_id, source_span);
+            pool, "X", target, source_span);
 
         append_type_clause(rule.body, pool, item_type, "X", source_span);
 
-        if (trait_e) {
-            std::string fresh = fmt::format("_anon_{}", fresh_id++);
-            append_enchanted_with(rule.body, pool, "X", fresh,
-                                    /*negated*/ false, source_span);
-        }
-        if (trait_neg_e) {
-            std::string fresh = fmt::format("_anon_{}", fresh_id++);
-            append_enchanted_with(rule.body, pool, "X", fresh,
-                                    /*negated*/ true, source_span);
+        for (const TraitRef& t : traits) {
+            append_trait_clause(rule.body, pool, "X", t.evidence, t.negated,
+                                 fresh_id, source_span);
         }
 
         if (!filter_groups.empty()) {
             for (const ResolvedRef& member : filter_groups[gi]) {
-                append_keyword_clause(rule.body, pool, "X", member.editor_id,
+                append_keyword_clause(rule.body, pool, "X", member,
                                        source_span);
             }
         }

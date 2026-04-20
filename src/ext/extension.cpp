@@ -10,6 +10,7 @@ struct ExtensionContext::Impl {
     std::vector<std::unique_ptr<Sink>>       sinks;
     std::vector<RelationSchema>              schemas;
     std::unordered_map<std::string, std::size_t> schema_by_name;
+    std::unordered_map<std::string, ReaderFn>    readers;
 };
 
 ExtensionContext::ExtensionContext()  : impl_(std::make_unique<Impl>()) {}
@@ -61,6 +62,16 @@ ExtensionContext::find_schema(std::string_view name) const {
     auto it = impl_->schema_by_name.find(std::string(name));
     if (it == impl_->schema_by_name.end()) return nullptr;
     return &impl_->schemas[it->second];
+}
+
+void ExtensionContext::register_reader(std::string_view tag, ReaderFn fn) {
+    impl_->readers[std::string(tag)] = std::move(fn);
+}
+
+const ReaderFn* ExtensionContext::find_reader(std::string_view tag) const {
+    auto it = impl_->readers.find(std::string(tag));
+    if (it == impl_->readers.end()) return nullptr;
+    return &it->second;
 }
 
 std::size_t ExtensionContext::load_required(LoadCtx& ctx, FactDB& out) const {

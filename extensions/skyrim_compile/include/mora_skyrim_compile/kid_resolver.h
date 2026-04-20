@@ -21,35 +21,30 @@ namespace mora_skyrim_compile {
 struct KidResolveResult {
     // Synthesized rules — one per KID line per OR-group (per AND-group
     // after wildcard cross-product expansion). All have head shape
-    // skyrim/add(X, :Keyword, @TargetEditorId).
+    // skyrim/add(X, :Keyword, <target>) where <target> is either an
+    // EditorIdExpr (for EditorID-shaped KID refs) or a TaggedLiteralExpr
+    // with tag "form" (for `0xFFF~Mod.esp` refs — the `#form` reader
+    // globalizes them to FormIdLiteral during reader expansion).
     std::vector<mora::Rule> rules;
-
-    // Synthetic EditorID names (for FormID-only references like
-    // `0xFFF~Mod.esp`) that need registering in the evaluator's symbol
-    // table so the EditorIdExpr nodes in `rules` resolve to the right
-    // FormIDs. The caller merges these into LoadCtx::editor_ids_out (or
-    // calls Evaluator::set_symbol_formid directly) before evaluation.
-    std::vector<std::pair<std::string, uint32_t>> synthetic_editor_ids;
 };
 
 // Convert a parsed KID file into Mora rules.
 //
 // `editor_ids` maps EditorID -> (runtime-globalized) FormID; produced
-// by SkyrimEspDataSource and passed through via LoadCtx.
+// by SkyrimEspDataSource and passed through via LoadCtx. Used only for
+// EditorID-shaped KID refs (exact + case-insensitive match) and
+// wildcard expansion.
 //
-// `plugin_runtime_index` maps lowercase plugin filename -> packed
-// runtime-index descriptor (see mora/ext/runtime_index.h). When
-// non-null, KID `0xNNN~Plugin.ext` references resolve via
-// `mora::ext::globalize_formid`; when null, those references are
-// rejected with `kid-formid-unsupported` (back-compat v1 behavior).
+// FormID refs (`0xFFF~Mod.esp`) compile into TaggedLiteralExpr nodes
+// that the `#form` reader globalizes in the reader-expansion phase —
+// no plugin-runtime-index lookup happens in this resolver.
 //
 // Resolution policy:
 //   - EditorID references: looked up in `editor_ids` (case-insensitive).
 //     Misses emit `kid-unresolved` and drop the line.
-//   - FormID references (`0xFFF~Mod.esp`): resolved via
-//     `plugin_runtime_index` when available. An unknown plugin
-//     produces `kid-missing-plugin`; an unavailable map produces
-//     `kid-formid-unsupported`. Both drop the line.
+//   - FormID references: emitted as TaggedLiteralExpr("form",
+//     "0xNNN@Plugin.ext"). Any missing-plugin / data-less diagnostics
+//     surface later from the `#form` reader.
 //   - Partial filters: if the target resolves but some filter values
 //     don't, resolvable values are kept and a warning records the
 //     drops; the line is retained (narrower filter still matches a
@@ -62,7 +57,6 @@ struct KidResolveResult {
 KidResolveResult resolve_kid_file(
     const KidFile&                                       file,
     const std::unordered_map<std::string, uint32_t>&     editor_ids,
-    const std::unordered_map<std::string, uint32_t>*     plugin_runtime_index,
     mora::StringPool&                                    pool,
     mora::DiagBag&                                       diags);
 

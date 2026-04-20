@@ -18,30 +18,23 @@ namespace mora_skyrim_compile {
 // non-empty, overrides `data_dir` for *_KID.ini discovery.
 //
 // `editor_ids` is the EditorID -> FormID map populated by
-// SkyrimEspDataSource (compile_kid_modules reads it for resolution).
-//
-// `plugin_runtime_index` (optional) maps lowercase plugin filename to
-// the packed runtime descriptor for FormID-ref resolution. When null,
-// `0xFFF~Mod.esp` lines drop with `kid-formid-unsupported`.
+// SkyrimEspDataSource (compile_kid_modules reads it for EditorID-shape
+// refs + wildcard expansion).
 struct KidCompileInputs {
     std::filesystem::path                                   data_dir;
     std::filesystem::path                                   kid_dir;          // empty = use data_dir
     const std::unordered_map<std::string, uint32_t>*        editor_ids = nullptr;
-    const std::unordered_map<std::string, uint32_t>*        plugin_runtime_index = nullptr;
 };
 
 // Output of KID rule synthesis.
 struct KidCompileResult {
     // Synthesized module containing one rule per KID line per OR-group.
     // Empty (no rules, no namespace) when KID is disabled, no
-    // *_KID.ini files exist, or all lines failed to resolve.
+    // *_KID.ini files exist, or all lines failed to resolve. FormID-ref
+    // refs appear as TaggedLiteralExpr("form", "0xNNN@Plugin.ext") in
+    // the AST — the `#form` reader globalizes them during reader
+    // expansion.
     mora::Module module;
-
-    // Synthetic EditorID names (`__kid_formid_<8hex>`) the caller must
-    // register in the evaluator's symbol table so EditorIdExpr nodes in
-    // `module.rules` resolve to the correct runtime FormIDs. Real
-    // EditorIDs already resolve via the existing editor_ids map.
-    std::vector<std::pair<std::string, uint32_t>> synthetic_editor_ids;
 
     // Total lines parsed across all *_KID.ini files. Used for
     // user-facing logging (`KID INI: N lines -> M rules`).

@@ -1,5 +1,6 @@
 #include "mora_skyrim_compile/register.h"
 #include "mora_skyrim_compile/esp_data_source.h"
+#include "mora_skyrim_compile/form_reader.h"
 #include "mora_skyrim_compile/types.h"
 #include "mora/core/string_pool.h"
 #include "mora/data/schema_registry.h"
@@ -47,6 +48,11 @@ void register_skyrim(mora::ext::ExtensionContext& ctx) {
     // The compile pipeline calls `compile_kid_modules` directly after
     // SkyrimEspDataSource has populated the EditorID map. See
     // mora_skyrim_compile/kid_compiler.h.
+
+    // Reader: `#form "0xNNN@Plugin.ext"` — a first-class form-in-plugin
+    // reference. Also accepts an EditorID payload (shorthand for `@edid`).
+    // See extensions/skyrim_compile/src/form_reader.cpp.
+    ctx.register_reader("form", form_reader);
 
     // Bridge: enumerate the default Skyrim schemas via a throwaway
     // SchemaRegistry bound to a throwaway StringPool, then mirror each

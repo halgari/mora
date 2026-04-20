@@ -20,11 +20,19 @@ mora::SourceSpan span_at(uint32_t line) {
     return s;
 }
 
-ResolvedRef rr(uint32_t formid, std::string_view editor_id) {
-    ResolvedRef r;
-    r.formid = formid;
-    r.editor_id = std::string(editor_id);
-    return r;
+ResolvedRef rr(uint32_t /*formid*/, std::string_view editor_id) {
+    // formid is retained in the callsite for historical readability;
+    // the builder only needs the editor_id name (the evaluator's symbol
+    // table maps it to a FormID at scan time).
+    return ResolvedRef::make_editor_id(std::string(editor_id));
+}
+
+ResolvedRef rr_tagged_form(std::string_view payload) {
+    return ResolvedRef::make_tagged_form(std::string(payload));
+}
+
+TraitRef enchanted_trait(bool negated) {
+    return TraitRef{TraitEvidence{"form", "enchanted_with", 1}, negated};
 }
 
 // Pull the StringId out of an Expr's variant for the kinds we care about.
@@ -61,7 +69,7 @@ TEST(KidRuleBuilderTest, NoFilterNoTraitProducesOneRule) {
         rr(0x100, "MyKW"),
         "weapon",
         /*filter_groups=*/{},
-        /*trait_e=*/false, /*trait_neg_e=*/false,
+        /*traits=*/{},
         span_at(1), pool);
 
     ASSERT_EQ(rules.size(), 1u);
@@ -95,7 +103,7 @@ TEST(KidRuleBuilderTest, OneOrGroupOneAndMember) {
         rr(0x100, "TargetKW"),
         "weapon",
         {{rr(0x200, "FilterKW")}},
-        false, false, span_at(2), pool);
+        {}, span_at(2), pool);
 
     ASSERT_EQ(rules.size(), 1u);
     const mora::Rule& r = rules[0];
@@ -122,7 +130,7 @@ TEST(KidRuleBuilderTest, AndOfOrsExpandsToMultipleRules) {
         rr(0x100, "Target"),
         "armor",
         {{rr(0x200, "A"), rr(0x201, "B")}, {rr(0x202, "C")}},
-        false, false, span_at(3), pool);
+        {}, span_at(3), pool);
 
     // Two rules — one per OR-group.
     ASSERT_EQ(rules.size(), 2u);
@@ -143,7 +151,7 @@ TEST(KidRuleBuilderTest, TraitEAddsPositiveEnchantedWith) {
     mora::StringPool pool;
     auto rules = build_rules(
         rr(0x100, "T"), "weapon", /*filter_groups*/{},
-        /*trait_e=*/true, /*trait_neg_e=*/false,
+        {enchanted_trait(/*negated*/ false)},
         span_at(4), pool);
 
     ASSERT_EQ(rules.size(), 1u);
@@ -164,7 +172,7 @@ TEST(KidRuleBuilderTest, TraitNegEAddsNegatedEnchantedWith) {
     mora::StringPool pool;
     auto rules = build_rules(
         rr(0x100, "T"), "armor", {},
-        /*trait_e=*/false, /*trait_neg_e=*/true,
+        {enchanted_trait(/*negated*/ true)},
         span_at(5), pool);
 
     ASSERT_EQ(rules.size(), 1u);
@@ -182,7 +190,7 @@ TEST(KidRuleBuilderTest, FreshVariablesAreDistinctAcrossRules) {
     auto rules = build_rules(
         rr(0x100, "T"), "weapon",
         {{rr(0x200, "A")}, {rr(0x201, "B")}},
-        /*trait_e=*/true, false,
+        {enchanted_trait(/*negated*/ false)},
         span_at(6), pool);
 
     ASSERT_EQ(rules.size(), 2u);
@@ -193,20 +201,30 @@ TEST(KidRuleBuilderTest, FreshVariablesAreDistinctAcrossRules) {
     EXPECT_NE(fresh0, fresh1);
 }
 
-TEST(KidRuleBuilderTest, EmptyTargetEditorIdReturnsNoRules) {
+TEST(KidRuleBuilderTest, EmptyTargetReturnsNoRules) {
     mora::StringPool pool;
+    // Both editor_id AND tagged_payload are empty — a degenerate ref
+    // the builder should reject.
     ResolvedRef bad;
-    bad.formid = 0x100;
-    bad.editor_id = "";
-    auto rules = build_rules(bad, "weapon", {}, false, false,
+    auto rules = build_rules(bad, "weapon", {}, {},
                               span_at(7), pool);
     EXPECT_TRUE(rules.empty());
 }
 
-TEST(KidRuleBuilderTest, ComposeSyntheticEditorIdIsStable) {
-    EXPECT_EQ(compose_synthetic_editor_id(0x12AB), "__kid_formid_000012ab");
-    EXPECT_EQ(compose_synthetic_editor_id(0xFE00307Fu), "__kid_formid_fe00307f");
-    // Same input produces same name (caller relies on this for symbol lookup).
-    EXPECT_EQ(compose_synthetic_editor_id(0xDEADBEEFu),
-              compose_synthetic_editor_id(0xDEADBEEFu));
+TEST(KidRuleBuilderTest, TaggedFormTargetEmitsTaggedLiteralInHead) {
+    mora::StringPool pool;
+    auto target = rr_tagged_form("0x800123@MyMod.esp");
+    auto rules = build_rules(target, "weapon", /*filter_groups*/{},
+                              /*traits*/{}, span_at(8), pool);
+
+    ASSERT_EQ(rules.size(), 1u);
+    const mora::Rule& r = rules[0];
+    ASSERT_EQ(r.head_args.size(), 3u);
+
+    // Head arg 2 is a TaggedLiteralExpr carrying the form payload —
+    // reader expansion replaces it with a FormIdLiteral at compile time.
+    const auto* tl = std::get_if<mora::TaggedLiteralExpr>(&r.head_args[2].data);
+    ASSERT_NE(tl, nullptr);
+    EXPECT_EQ(pool.get(tl->tag), "form");
+    EXPECT_EQ(pool.get(tl->payload), "0x800123@MyMod.esp");
 }

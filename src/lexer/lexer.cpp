@@ -352,8 +352,16 @@ Token Lexer::next() {
 
     char const c = peek();
 
-    // Comment
+    // '#' dispatches two ways:
+    //   '#' + [A-Za-z_] = reader-tag start (Hash token, parser consumes
+    //                      the identifier + string-literal payload).
+    //   '#' + anything-else = comment-to-end-of-line (legacy behavior).
     if (c == '#') {
+        char const next = peek_next();
+        if (std::isalpha(static_cast<unsigned char>(next)) || next == '_') {
+            advance(); // consume '#'
+            return make_token(TokenKind::Hash);
+        }
         if (keep_trivia_) {
             return lex_comment();
         }

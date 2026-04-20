@@ -24,6 +24,19 @@ struct StringLiteral { StringId value; SourceSpan span; };
 struct KeywordLiteral{ StringId value; SourceSpan span; };
 struct DiscardExpr   { SourceSpan span; };
 
+// A resolved 32-bit runtime FormID embedded as a literal. Produced by
+// reader expansion (e.g. `#form "0xFFF@Mod.esp"` after globalization),
+// or by the KID resolver when it translates a KID FormID ref into an
+// AST node. Evaluator treats it as an already-resolved FormID constant.
+struct FormIdLiteral { uint32_t value; SourceSpan span; };
+
+// Reader-style tagged literal: `#<tag> "<payload>"`. Produced by the
+// parser; replaced during the reader-expansion pass with whatever the
+// tag's registered reader returns. Reaching evaluation unexpanded is a
+// compile-time error (the tag was never registered, or the expansion
+// pass was skipped).
+struct TaggedLiteralExpr { StringId tag; StringId payload; SourceSpan span; };
+
 struct BinaryExpr {
     enum class Op { Add, Sub, Mul, Div, Eq, Neq, Lt, Gt, LtEq, GtEq };
     Op op;
@@ -41,7 +54,8 @@ struct CallExpr {
 
 struct Expr {
     std::variant<VariableExpr, SymbolExpr, EditorIdExpr, IntLiteral, FloatLiteral,
-                 StringLiteral, KeywordLiteral, DiscardExpr, BinaryExpr, CallExpr> data;
+                 StringLiteral, KeywordLiteral, DiscardExpr, FormIdLiteral,
+                 TaggedLiteralExpr, BinaryExpr, CallExpr> data;
     SourceSpan span;
 };
 

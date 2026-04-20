@@ -623,6 +623,26 @@ Expr Parser::parse_primary() {
         return e;
     }
 
+    // Reader-style tagged literal: `#<tag> "<payload>"`.
+    if (tok.kind == TokenKind::Hash) {
+        advance(); // consume '#'
+        Token const tag_tok = expect(
+            TokenKind::Identifier, "expected tag name after '#'");
+        Token const payload_tok = expect(
+            TokenKind::String, "expected string-literal payload after tag");
+        // Strip the surrounding quotes from the payload (same treatment
+        // as StringLiteral above).
+        std::string_view const sv = pool_.get(payload_tok.string_id);
+        StringId payload_id = payload_tok.string_id;
+        if (sv.size() >= 2 && sv.front() == '"' && sv.back() == '"') {
+            payload_id = pool_.intern(sv.substr(1, sv.size() - 2));
+        }
+        Expr e;
+        e.span = merge_spans(tok.span, payload_tok.span);
+        e.data = TaggedLiteralExpr{tag_tok.string_id, payload_id, e.span};
+        return e;
+    }
+
     if (tok.kind == TokenKind::LParen) {
         advance(); // consume '('
         Expr inner = parse_expr();

@@ -23,7 +23,8 @@ bool is_simple_arg_expr(const Expr& e) {
         || std::holds_alternative<StringLiteral>(e.data)
         || std::holds_alternative<KeywordLiteral>(e.data)
         || std::holds_alternative<SymbolExpr>(e.data)
-        || std::holds_alternative<EditorIdExpr>(e.data);
+        || std::holds_alternative<EditorIdExpr>(e.data)
+        || std::holds_alternative<FormIdLiteral>(e.data);
 }
 
 // Returns true iff every body clause is either:
@@ -180,6 +181,11 @@ EffectArgSpec spec_from_expr(const Expr& e,
         s.constant = (fid != 0)
             ? Value::make_formid(fid)
             : Value::make_var();
+        return s;
+    }
+    if (auto const* fl = std::get_if<FormIdLiteral>(&e.data)) {
+        s.kind = EffectArgSpec::Kind::Constant;
+        s.constant = Value::make_formid(fl->value);
         return s;
     }
     // Anything else (BinaryExpr, CallExpr, FieldAccessExpr): evaluate per-row.

@@ -1,5 +1,7 @@
 #include "mora_skyrim_compile/kid_parser.h"
 
+#include "mora_skyrim_compile/kid_util.h"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -26,13 +28,6 @@ std::vector<std::string_view> split(std::string_view s, char sep) {
         }
     }
     return out;
-}
-
-std::string to_lower(std::string_view s) {
-    std::string r(s);
-    std::transform(r.begin(), r.end(), r.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return r;
 }
 
 // Map KID item-type token (case-insensitive, space-tolerant) to the
@@ -162,9 +157,10 @@ bool parse_kid_line(std::string_view raw, int line_num,
         auto fstr = trim(fields[2]);
         if (!fstr.empty() && to_lower(fstr) != "none") {
             // Top-level commas separate OR-groups; '+' inside a group
-            // ANDs the alternatives. Wildcards ('*') aren't supported
-            // yet — we pass them through as literal editor IDs and
-            // resolution will likely fail, producing a warning.
+            // ANDs the alternatives. Each alternative is an EditorID, a
+            // FormID reference ("0xNN~Plugin.ext"), or a glob — parse_ref
+            // flags wildcards for the resolver to expand against the
+            // EditorID map at resolve time.
             for (auto or_tok : split(fstr, ',')) {
                 or_tok = trim(or_tok);
                 if (or_tok.empty()) continue;

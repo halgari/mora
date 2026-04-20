@@ -75,6 +75,9 @@ std::unique_ptr<ScanOp> ScanOp::build(
                 return op;
             }
             op->const_pos_.push_back({Value::make_formid(sit->second), i});
+        } else if (auto const* fl = std::get_if<FormIdLiteral>(&arg.data)) {
+            // Already-resolved FormID literal (from reader expansion).
+            op->const_pos_.push_back({Value::make_formid(fl->value), i});
         } else {
             // BinaryExpr, CallExpr, FieldAccessExpr — not supported in
             // pattern args. The planner should have rejected this rule;
