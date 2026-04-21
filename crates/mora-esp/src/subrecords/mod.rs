@@ -6,3 +6,4 @@
 
 pub mod edid;
 pub mod kwda;
+pub mod form_id_ref;
