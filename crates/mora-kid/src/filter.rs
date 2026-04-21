@@ -243,6 +243,76 @@ pub fn evaluate_weapon_traits(
     true
 }
 
+/// Evaluate armor trait predicates against a parsed ArmorRecord.
+pub fn evaluate_armor_traits(
+    traits: &crate::traits_armor::ArmorTraits,
+    armor: &mora_esp::records::armor::ArmorRecord,
+) -> bool {
+    // armor_types: OR. At least one must match the armor's type.
+    if !traits.armor_types.is_empty() {
+        let Some(armor_type) = armor.armor_type else {
+            return false;
+        };
+        let matched = traits.armor_types.iter().any(|t| match t {
+            crate::traits_armor::ArmorType::Heavy => {
+                armor_type == mora_esp::subrecords::biped_object::ArmorType::HeavyArmor
+            }
+            crate::traits_armor::ArmorType::Light => {
+                armor_type == mora_esp::subrecords::biped_object::ArmorType::LightArmor
+            }
+            crate::traits_armor::ArmorType::Clothing => {
+                armor_type == mora_esp::subrecords::biped_object::ArmorType::Clothing
+            }
+        });
+        if !matched {
+            return false;
+        }
+    }
+
+    if let Some(must_enchanted) = traits.require_enchanted {
+        if armor.enchantment.is_some() != must_enchanted {
+            return false;
+        }
+    }
+
+    if let Some(must_template) = traits.require_template {
+        if armor.template_armor.is_some() != must_template {
+            return false;
+        }
+    }
+
+    if let Some((min, max)) = traits.ar_range {
+        let Some(ar) = armor.armor_rating else {
+            return false;
+        };
+        if !(ar >= min && ar <= max) {
+            return false;
+        }
+    }
+
+    if let Some((min, max)) = traits.weight_range {
+        let Some(weight) = armor.weight else {
+            return false;
+        };
+        if !(weight >= min && weight <= max) {
+            return false;
+        }
+    }
+
+    // body_slots: OR. At least one listed slot must be occupied.
+    if !traits.body_slots.is_empty() {
+        let any_match = traits
+            .body_slots
+            .iter()
+            .any(|wanted| armor.body_slots.contains(wanted));
+        if !any_match {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
