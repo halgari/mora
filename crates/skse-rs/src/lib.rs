@@ -27,6 +27,7 @@
 
 pub mod address_library;
 pub mod ffi;
+pub mod game;
 pub mod log;
 pub mod plugin;
 pub mod relocation;
