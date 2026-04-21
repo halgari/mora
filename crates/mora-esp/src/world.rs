@@ -70,12 +70,17 @@ impl EspWorld {
             plugins.push(plugin);
         }
 
+        // Skyrim 1.6+ treats a plugin as a light master if EITHER the
+        // TES4 LIGHT_MASTER flag is set OR the filename ends in `.esl`.
+        // The extension fallback matches files like `_ResourcePack.esl`
+        // which load as light slots without the runtime flag.
         let is_esl = |name: &str| -> bool {
-            plugins
+            let flagged = plugins
                 .iter()
                 .find(|p| p.filename.eq_ignore_ascii_case(name))
                 .map(|p| p.is_esl())
-                .unwrap_or(false)
+                .unwrap_or(false);
+            flagged || name.to_ascii_lowercase().ends_with(".esl")
         };
         let user_refs: Vec<&str> = active_names.clone();
         let load_order = build_load_order(&implicit_present, &user_refs, &is_esl);

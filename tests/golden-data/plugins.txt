@@ -1,3 +1,4 @@
+*_ResourcePack.esl
 *ccASVSSE001-ALMSIVI.esm
 *ccBGSSSE001-Fish.esm
 *ccBGSSSE002-ExoticArrows.esl
