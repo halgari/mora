@@ -151,12 +151,10 @@ impl Distributor<EspWorld> for KidDistributor {
                     continue;
                 }
                 if let Traits::Weapon(wt) = &rr.rule.traits
-                    && !wt.anim_types.is_empty()
+                    && !filter::evaluate_weapon_traits(wt, &weapon)
                 {
-                    debug!(
-                        "{}:{}: weapon trait predicates not yet evaluated (WeaponRecord lacks animType) — treating as pass",
-                        rr.rule.source.file, rr.rule.source.line_number
-                    );
+                    stats.rejected_by_filter += 1;
+                    continue;
                 }
                 // ExclusiveGroup check.
                 if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id)
@@ -211,12 +209,10 @@ impl Distributor<EspWorld> for KidDistributor {
                     continue;
                 }
                 if let Traits::Armor(at) = &rr.rule.traits
-                    && !at.armor_types.is_empty()
+                    && !filter::evaluate_armor_traits(at, &armor)
                 {
-                    debug!(
-                        "{}:{}: armor trait predicates not yet evaluated (ArmorRecord lacks armorType) — treating as pass",
-                        rr.rule.source.file, rr.rule.source.line_number
-                    );
+                    stats.rejected_by_filter += 1;
+                    continue;
                 }
                 if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id)
                     && let Some(applied_set) = applied_groups.get(&form_id)
