@@ -638,9 +638,12 @@ dependencies = [
 name = "mora-kid"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "miette",
  "mora-core",
  "mora-esp",
+ "serde_json",
+ "sha2",
  "thiserror",
  "tracing",
 ]
