@@ -153,6 +153,96 @@ fn ref_matches_item(
     }
 }
 
+/// Evaluate weapon trait predicates against a parsed WeaponRecord.
+/// Returns `true` if every specified predicate passes; `true` if the
+/// traits struct is empty (no constraints).
+pub fn evaluate_weapon_traits(
+    traits: &crate::traits_weapon::WeaponTraits,
+    weapon: &mora_esp::records::weapon::WeaponRecord,
+) -> bool {
+    // anim_types: OR across the listed types. If any matches, pass.
+    if !traits.anim_types.is_empty() {
+        let Some(weapon_anim) = weapon.animation_type else {
+            return false;
+        };
+        let matched = traits.anim_types.iter().any(|t| match t {
+            crate::traits_weapon::WeaponAnimType::OneHandSword => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::OneHandSword
+            }
+            crate::traits_weapon::WeaponAnimType::OneHandDagger => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::OneHandDagger
+            }
+            crate::traits_weapon::WeaponAnimType::OneHandAxe => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::OneHandAxe
+            }
+            crate::traits_weapon::WeaponAnimType::OneHandMace => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::OneHandMace
+            }
+            crate::traits_weapon::WeaponAnimType::TwoHandSword => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::TwoHandSword
+            }
+            crate::traits_weapon::WeaponAnimType::TwoHandAxe => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::TwoHandAxe
+            }
+            crate::traits_weapon::WeaponAnimType::Bow => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::Bow
+            }
+            crate::traits_weapon::WeaponAnimType::Crossbow => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::Crossbow
+            }
+            crate::traits_weapon::WeaponAnimType::Staff => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::Staff
+            }
+            crate::traits_weapon::WeaponAnimType::HandToHandMelee => {
+                weapon_anim == mora_esp::subrecords::weapon_dnam::WeaponAnimType::HandToHandMelee
+            }
+        });
+        if !matched {
+            return false;
+        }
+    }
+
+    // require_enchanted: Some(true) means "must be enchanted";
+    // Some(false) means "must not be"; None means "no constraint".
+    if let Some(must_enchanted) = traits.require_enchanted {
+        let is_enchanted = weapon.enchantment.is_some();
+        if is_enchanted != must_enchanted {
+            return false;
+        }
+    }
+
+    // require_template: Some(true/false) / None as above.
+    if let Some(must_template) = traits.require_template {
+        let has_template = weapon.template_weapon.is_some();
+        if has_template != must_template {
+            return false;
+        }
+    }
+
+    // damage_range: inclusive range check.
+    if let Some((min, max)) = traits.damage_range {
+        let Some(damage) = weapon.damage else {
+            return false;
+        };
+        let damage_f = damage as f32;
+        if !(damage_f >= min && damage_f <= max) {
+            return false;
+        }
+    }
+
+    // weight_range: inclusive range check.
+    if let Some((min, max)) = traits.weight_range {
+        let Some(weight) = weapon.weight else {
+            return false;
+        };
+        if !(weight >= min && weight <= max) {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
