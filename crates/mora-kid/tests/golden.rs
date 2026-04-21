@@ -67,6 +67,24 @@ fn run_golden_scenario(name: &str) {
     let plugins_txt = workspace_root.join("tests/golden-data/plugins.txt");
     let world = EspWorld::open(&data_dir, &plugins_txt).expect("open world");
 
+    // DIAGNOSTIC: dump the first 10 light-slot assignments.
+    if std::env::var("MORA_DUMP_LOAD_ORDER").is_ok() {
+        eprintln!("[{name}] load_order (first 10 per pool):");
+        let mut full_count = 0;
+        let mut light_count = 0;
+        for (i, pname) in world.load_order.plugin_names.iter().enumerate() {
+            let slot = world.load_order.lookup(pname);
+            let is_light = matches!(slot, Some(mora_esp::load_order::LoadSlot::Light(_)));
+            if is_light && light_count < 10 {
+                eprintln!("  #{i} {pname} → {slot:?}");
+                light_count += 1;
+            } else if !is_light && full_count < 10 {
+                eprintln!("  #{i} {pname} → {slot:?}");
+                full_count += 1;
+            }
+        }
+    }
+
     let chance = DeterministicChance::kid_compatible();
     let distributor = KidDistributor::new(rules).with_exclusive_groups(groups);
     let mut sink = PatchSink::new();
