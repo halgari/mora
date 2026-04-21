@@ -214,8 +214,19 @@ impl SksePlugin for MoraGoldenHarness {
     unsafe fn on_data_loaded() {
         let Some(logger) = LOGGER.get() else { return };
         logger
-            .write_line("kDataLoaded received — beginning capture")
+            .write_line("kDataLoaded received — waiting for peer plugins to finish")
             .ok();
+
+        // KID (and potentially other SKSE plugins) do their distribution
+        // work asynchronously after the kDataLoaded handler returns —
+        // LOOKUP builds the rule table inside the handler, DISTRIBUTE
+        // applies patches on subsequent ticks. If we dump immediately,
+        // we see vanilla+override-only keyword lists. A 20-second sleep
+        // gives KID 3.4.0 ample time to complete its distribution on
+        // Skyrim SE 1.6.1179. This is brittle but effective; a better
+        // fix would poll KID's log for a DISTRIBUTE-complete marker.
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        logger.write_line("wait complete — beginning capture").ok();
 
         let collected = match unsafe { collect_keyword_dumps(logger) } {
             Ok(x) => x,
