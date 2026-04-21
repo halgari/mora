@@ -29,6 +29,7 @@ pub mod address_library;
 pub mod ffi;
 pub mod game;
 pub mod log;
+pub mod messaging;
 pub mod plugin;
 pub mod relocation;
 pub mod version;
