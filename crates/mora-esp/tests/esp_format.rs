@@ -213,3 +213,34 @@ fn world_weapons_typed_iterator() {
     assert_eq!(w.editor_id.as_deref(), Some("IronSword"));
     assert_eq!(w.keywords, vec![FormId(0x0001_E718)]);
 }
+
+#[test]
+fn world_resolves_keyword_editor_id() {
+    let plugin_bytes = PluginBuilder::new()
+        .esm()
+        .add_group(
+            GroupBuilder::new(b"KYWD").add(
+                RecordBuilder::new(b"KYWD", 0x0001_E718).add(SubrecordBuilder::new(
+                    b"EDID",
+                    edid_payload("WeapMaterialIron"),
+                )),
+            ),
+        )
+        .bytes();
+
+    let path = write_tmp("KeywordPlugin.esm", &plugin_bytes);
+    let plugin = EspPlugin::open(&path).unwrap();
+    let plugins_txt = path.parent().unwrap().join("plugins-kw.txt");
+    std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
+    let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();
+
+    assert_eq!(
+        world.resolve_keyword_by_editor_id("WeapMaterialIron"),
+        Some(FormId(0x0001_E718))
+    );
+    assert_eq!(
+        world.resolve_keyword_by_editor_id("WEAPMATERIALIRON"), // case-insensitive
+        Some(FormId(0x0001_E718))
+    );
+    assert_eq!(world.resolve_keyword_by_editor_id("UnknownKw"), None);
+}
