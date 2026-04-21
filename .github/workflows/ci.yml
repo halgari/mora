@@ -62,12 +62,13 @@ jobs:
 
   skyrim-integration:
     # Gated until M5 wires a Rust harness into tests/integration/.
-    # A case is "Rust-ready" when it contains a Rust-compatible check.sh
-    # plus the required KID INIs instead of .mora sources. Until at least
-    # one case meets that bar, this job is skipped.
+    # Flip `if: false` to a real condition (e.g. a gate-check job that
+    # emits an output from `hashFiles(...)` — job-level `if:` expressions
+    # cannot call hashFiles directly) when the first Rust-ready case
+    # lands.
     name: Skyrim integration (self-hosted)
     runs-on: [self-hosted, linux, unraid, skyrim]
-    if: ${{ hashFiles('tests/integration/**/rust-ready.marker') != '' }}
+    if: false
     needs: [test, windows-cross]
     steps:
       - uses: actions/checkout@v4
