@@ -1,16 +1,13 @@
 //! The `Distributor` trait — the extensibility hinge for future
 //! frontends (mora-kid, mora-spid, mora-skypatcher, …).
 //!
-//! Plan 4 uses a placeholder [`EspWorld`] marker; Plan 5 replaces it
-//! with the real `mora_esp::EspWorld`.
+//! `Distributor` is generic over the world type so we avoid a
+//! `mora-core → mora-esp → mora-core` cycle. Frontends bind the
+//! generic to `mora_esp::EspWorld`; `mora-cli` ties everything
+//! together.
 
 use crate::chance::DeterministicChance;
 use crate::patch_sink::PatchSink;
-
-/// Placeholder for the real `mora_esp::EspWorld`. Plan 5 replaces
-/// with the actual indexed ESP view; downstream trait users compile
-/// against this marker until then.
-pub struct EspWorld;
 
 /// Per-run statistics summed across all registered frontends.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -33,22 +30,27 @@ impl std::ops::AddAssign for DistributorStats {
 }
 
 /// A distributor frontend — consumes ESP + rules → produces patches.
-pub trait Distributor {
-    /// Error type surfaced by [`lower`]. Must be `Send + Sync + 'static`.
+///
+/// Generic over `World` so `mora-core` doesn't depend on `mora-esp`.
+/// Frontends (mora-kid, etc.) instantiate with
+/// `mora_esp::EspWorld` in their `Distributor` impl.
+pub trait Distributor<World: ?Sized> {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Short name for diagnostics (e.g. `"kid"`, `"spid"`).
     fn name(&self) -> &'static str;
 
-    /// Produce patches from the loaded ESP world + chance RNG, pushing
-    /// each into the provided sink.
     fn lower(
         &self,
-        world: &EspWorld,
+        world: &World,
         chance: &DeterministicChance,
         sink: &mut PatchSink,
     ) -> Result<DistributorStats, Self::Error>;
 }
+
+/// Placeholder kept for backward compatibility with Plan 4 code.
+/// New code should use the real `mora_esp::EspWorld`.
+#[deprecated(note = "use mora_esp::EspWorld directly")]
+pub struct EspWorld;
 
 #[cfg(test)]
 mod tests {

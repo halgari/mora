@@ -1,0 +1,70 @@
+//! `ARMO` — armor record accessor.
+//!
+//! M2 exposes the subset mora-kid needs:
+//! - `editor_id` (EDID subrecord)
+//! - `keywords` (KWDA subrecord, resolved to runtime FormIDs)
+//!
+//! Keyword FormIDs are resolved at parse time against the active load
+//! order; unresolvable keywords (referenced plugin not in load order)
+//! are silently dropped, matching KID behavior.
+
+use mora_core::FormId;
+
+use crate::compression::{DecompressError, decompress};
+use crate::reader::ReadError;
+use crate::record::Record;
+use crate::signature::{EDID, KWDA};
+use crate::subrecord::SubrecordIter;
+use crate::subrecords::{edid, kwda};
+use crate::world::EspWorld;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ArmorError {
+    #[error("read: {0}")]
+    Read(#[from] ReadError),
+    #[error("decompress: {0}")]
+    Decompress(#[from] DecompressError),
+}
+
+/// Parsed ARMO record.
+#[derive(Debug, Default)]
+pub struct ArmorRecord {
+    pub editor_id: Option<String>,
+    pub keywords: Vec<FormId>,
+}
+
+pub fn parse(
+    record: &Record<'_>,
+    plugin_index: usize,
+    world: &EspWorld,
+) -> Result<ArmorRecord, ArmorError> {
+    let body_owned: Option<Vec<u8>> = if record.is_compressed() {
+        Some(decompress(record.body)?)
+    } else {
+        None
+    };
+    let body: &[u8] = body_owned.as_deref().unwrap_or(record.body);
+
+    let mut a = ArmorRecord::default();
+    let iter = SubrecordIter::new(body);
+    for sub in iter {
+        let sub = sub?;
+        match sub.signature {
+            s if s == EDID => a.editor_id = Some(edid::parse(sub.data)?),
+            s if s == KWDA => {
+                let local_ids = kwda::parse(sub.data)?;
+                a.keywords = local_ids
+                    .into_iter()
+                    .filter_map(|raw| world.resolve_in_plugin(plugin_index, raw))
+                    .collect();
+            }
+            _ => {}
+        }
+    }
+    Ok(a)
+}
+
+#[cfg(test)]
+mod tests {
+    // Full ARMO parsing tests land in tests/esp_format.rs (Task 21).
+}
