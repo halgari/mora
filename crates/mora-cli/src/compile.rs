@@ -30,20 +30,17 @@ pub fn run(args: CompileArgs) -> Result<()> {
     info!("Mora v{}", env!("CARGO_PKG_VERSION"));
 
     // Open the EspWorld.
-    let world = EspWorld::open(&args.data_dir, &args.plugins_txt)
-        .context("failed to open EspWorld")?;
-    info!(
-        "Loaded plugins.txt: {} active plugins",
-        world.plugins.len()
-    );
+    let world =
+        EspWorld::open(&args.data_dir, &args.plugins_txt).context("failed to open EspWorld")?;
+    info!("Loaded plugins.txt: {} active plugins", world.plugins.len());
 
     // Compute load-order hash.
     let load_hash = compute_load_order_hash(&world.plugins);
     info!("Load-order hash: 0x{load_hash:016x}");
 
     // Discover + parse KID INIs.
-    let ini_paths = ini::discover_kid_ini_files(&args.data_dir)
-        .context("failed to scan for _KID.ini files")?;
+    let ini_paths =
+        ini::discover_kid_ini_files(&args.data_dir).context("failed to scan for _KID.ini files")?;
     info!("Discovered {} _KID.ini files", ini_paths.len());
 
     let mut all_rules = Vec::new();

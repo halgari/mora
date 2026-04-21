@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "mora", version, about = "Mora — KID-compatible keyword distributor compiler")]
+#[command(
+    name = "mora",
+    version,
+    about = "Mora — KID-compatible keyword distributor compiler"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -43,8 +47,11 @@ pub struct CompileArgs {
 impl CompileArgs {
     /// Resolve the output path, defaulting to <data_dir>/SKSE/Plugins/mora_patches.bin.
     pub fn resolve_output(&self) -> PathBuf {
-        self.output
-            .clone()
-            .unwrap_or_else(|| self.data_dir.join("SKSE").join("Plugins").join("mora_patches.bin"))
+        self.output.clone().unwrap_or_else(|| {
+            self.data_dir
+                .join("SKSE")
+                .join("Plugins")
+                .join("mora_patches.bin")
+        })
     }
 }

@@ -7,8 +7,8 @@ use tracing_subscriber::fmt::format::FmtSpan;
 /// Respects `RUST_LOG` when set (overrides our default filter).
 pub fn init(verbose: bool) {
     let default_filter = if verbose { "debug" } else { "info" };
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)

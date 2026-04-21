@@ -17,14 +17,16 @@ impl Fixture {
     /// Create a fresh tmpdir with the given (filename, bytes) plugins.
     /// Writes plugins.txt marking all as active.
     pub fn new(label: &str, plugins: &[(&str, Vec<u8>)]) -> Self {
-        let dir = std::env::temp_dir()
-            .join(format!("mora-cli-it-{label}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mora-cli-it-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
         for (name, bytes) in plugins {
             let path = dir.join(name);
-            std::fs::File::create(&path).unwrap().write_all(bytes).unwrap();
+            std::fs::File::create(&path)
+                .unwrap()
+                .write_all(bytes)
+                .unwrap();
         }
 
         let plugins_txt = dir.join("plugins.txt");
@@ -56,8 +58,8 @@ impl Drop for Fixture {
 /// Lifted from the mora-kid test fixtures — lightweight reimplementation.
 pub fn build_plugin(
     is_esm: bool,
-    keywords: &[(&str, u32)],  // (editor_id, form_id)
-    weapons: &[(u32, &str, Vec<u32>)],  // (form_id, editor_id, keyword_form_ids)
+    keywords: &[(&str, u32)],          // (editor_id, form_id)
+    weapons: &[(u32, &str, Vec<u32>)], // (form_id, editor_id, keyword_form_ids)
     armors: &[(u32, &str, Vec<u32>)],
 ) -> Vec<u8> {
     fn sub(sig: &[u8; 4], data: &[u8]) -> Vec<u8> {

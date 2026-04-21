@@ -10,7 +10,11 @@ use std::process::Command;
 use fixtures::*;
 use mora_core::{FormId, Patch, PatchFile};
 
-fn run_mora_compile(fixture: &Fixture, output: &std::path::Path, extra_args: &[&str]) -> std::process::Output {
+fn run_mora_compile(
+    fixture: &Fixture,
+    output: &std::path::Path,
+    extra_args: &[&str],
+) -> std::process::Output {
     Command::new(mora_bin())
         .arg("compile")
         .arg("--data-dir")
@@ -83,7 +87,8 @@ fn compile_bad_data_dir_exits_nonzero() {
     // Use a path that exists as a FILE (not a dir) for data-dir.
     let tmpfile = std::env::temp_dir().join(format!("mora-not-a-dir-{}", std::process::id()));
     std::fs::write(&tmpfile, "").unwrap();
-    let plugins_txt = std::env::temp_dir().join(format!("mora-bad-plugins-{}.txt", std::process::id()));
+    let plugins_txt =
+        std::env::temp_dir().join(format!("mora-bad-plugins-{}.txt", std::process::id()));
     std::fs::write(&plugins_txt, "*Doesnotmatter.esm\n").unwrap();
 
     let out = Command::new(mora_bin())
@@ -96,9 +101,15 @@ fn compile_bad_data_dir_exits_nonzero() {
         .arg(std::env::temp_dir().join("should-not-be-created.bin"))
         .output()
         .expect("run mora");
-    assert!(!out.status.success(), "expected non-zero exit for bad data-dir");
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit for bad data-dir"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("data-dir"), "stderr should mention data-dir: {stderr}");
+    assert!(
+        stderr.contains("data-dir"),
+        "stderr should mention data-dir: {stderr}"
+    );
 
     let _ = std::fs::remove_file(&tmpfile);
     let _ = std::fs::remove_file(&plugins_txt);
@@ -107,12 +118,7 @@ fn compile_bad_data_dir_exits_nonzero() {
 #[test]
 fn compile_empty_kid_ini_set_produces_empty_patches() {
     // No KID INIs at all → zero patches emitted, patch file still well-formed.
-    let bytes = build_plugin(
-        true,
-        &[],
-        &[(0x0001_2EB7, "IronSword", vec![])],
-        &[],
-    );
+    let bytes = build_plugin(true, &[], &[(0x0001_2EB7, "IronSword", vec![])], &[]);
     let fixture = Fixture::new("empty-inis", &[("Test.esm", bytes)]);
 
     let output = fixture.data_dir.join("mora_patches.bin");
