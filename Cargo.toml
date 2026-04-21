@@ -9,6 +9,7 @@ members = [
     "crates/mora-cli",
     "crates/mora-runtime",
     "crates/mora-test-harness",
+    "crates/mora-golden-harness",
     "crates/xtask",
 ]
 

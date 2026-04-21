@@ -1,0 +1,16 @@
+[package]
+name = "mora-golden-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Minimal SKSE DLL: on kDataLoaded dumps every weapon/armor form's keywords to JSONL, then writes a .done sentinel. Used only by the M4 golden-test capture xtask. Subsumed by mora-test-harness at M5."
+publish = false
+
+[lib]
+name = "MoraGoldenHarness"
+crate-type = ["cdylib"]
+
+[dependencies]
+skse-rs = { path = "../skse-rs" }

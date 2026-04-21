@@ -509,6 +509,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mora-golden-harness"
+version = "0.1.0"
+dependencies = [
+ "skse-rs",
+]
+
+[[package]]
 name = "mora-kid"
 version = "0.1.0"
 dependencies = [
