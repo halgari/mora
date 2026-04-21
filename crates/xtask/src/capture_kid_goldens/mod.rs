@@ -38,9 +38,13 @@ pub fn run(args: Args) -> Result<()> {
     let harness_dll = root.join("target/x86_64-pc-windows-msvc/release/MoraGoldenHarness.dll");
     let kid_dll = root.join("third_party/kid/KID.dll");
     let kid_ini = root.join("third_party/kid/KID.ini");
+    let skyrim_root = args
+        .skyrim_root
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/skyrim"));
 
     for name in &scenarios {
-        capture_one_scenario(&root, name, &harness_dll, &kid_dll, &kid_ini)?;
+        capture_one_scenario(&root, name, &harness_dll, &kid_dll, &kid_ini, &skyrim_root)?;
     }
     println!("captured {}/{} scenarios", scenarios.len(), scenarios.len());
     Ok(())
@@ -52,6 +56,7 @@ fn capture_one_scenario(
     harness_dll: &std::path::Path,
     kid_dll: &std::path::Path,
     kid_ini: &std::path::Path,
+    skyrim_root: &std::path::Path,
 ) -> Result<()> {
     eprintln!("[capture] === {name} ===");
     let scenario_ini_dir = root.join("tests/golden-data/kid-inis").join(name);
@@ -89,13 +94,18 @@ fn capture_one_scenario(
         bail!("run-skyrim-test.sh failed for scenario {name}: {status}");
     }
 
-    // The dumps live at $SKYRIM_ROOT/Data/MoraCache/dumps/ at run time;
-    // run-skyrim-test.sh stages $SKYRIM_ROOT under /tmp/skyrim. Pull
-    // both JSONL files out.
-    let dump_src = std::path::Path::new("/tmp/skyrim")
-        .join("Data")
-        .join("MoraCache")
-        .join("dumps");
+    // The dumps live at $SKYRIM_ROOT/Data/MoraCache/dumps/ at run time.
+    // run-skyrim-test.sh stages $SKYRIM_ROOT under the path passed here
+    // (default /tmp/skyrim on the runner image).
+    let dump_src = skyrim_root.join("Data").join("MoraCache").join("dumps");
+    if !dump_src.is_dir() {
+        bail!(
+            "dump directory not found at {} after run-skyrim-test.sh succeeded \
+             — the harness DLL did not write to $SKYRIM_ROOT/Data/MoraCache/dumps/. \
+             Check the harness crash via logs in $LOG_DIR.",
+            dump_src.display()
+        );
+    }
     let expected_out = root.join("tests/golden-data/expected").join(name);
     std::fs::create_dir_all(&expected_out)?;
     for f in ["weapons.jsonl", "armors.jsonl"] {

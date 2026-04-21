@@ -23,9 +23,9 @@ pub struct AssembleInputs<'a> {
 ///   <scenario>_KID.ini
 /// ```
 ///
-/// Only files ending in `_KID.ini` (case-insensitive) are copied from
-/// the scenario directory; READMEs and other non-ini fixtures are
-/// skipped.
+/// Only files that contain `_kid` AND end in `.ini` (case-insensitive)
+/// are copied from the scenario directory; READMEs and other non-ini
+/// fixtures are skipped. This matches `mora-kid::ini::discover_kid_ini_files`.
 pub fn assemble_mod_dir(inputs: &AssembleInputs<'_>) -> Result<()> {
     if !inputs.harness_dll.is_file() {
         bail!(
@@ -64,7 +64,10 @@ pub fn assemble_mod_dir(inputs: &AssembleInputs<'_>) -> Result<()> {
             continue;
         };
         let lower = name.to_ascii_lowercase();
-        if !lower.ends_with("_kid.ini") {
+        // Match the semantic of mora-kid::ini::discover_kid_ini_files:
+        // filename contains "_kid" AND ends in ".ini". Same set KID itself
+        // discovers at runtime.
+        if !(lower.ends_with(".ini") && lower.contains("_kid")) {
             continue;
         }
         std::fs::copy(entry.path(), plugins.join(&name))?;

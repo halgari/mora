@@ -20,6 +20,11 @@ fn assemble_mod_dir_copies_all_fixtures_into_plugins_dir() {
         b"should be skipped (not an ini)",
     )
     .unwrap();
+    fs::write(
+        scenario_ini_dir.join("base_kid_extra.ini"),
+        b"; another kid rule\n",
+    )
+    .unwrap();
     fs::write(harness.join("MoraGoldenHarness.dll"), b"\x4D\x5A fake PE").unwrap();
 
     let kid_dll = src.join("KID.dll");
@@ -42,6 +47,10 @@ fn assemble_mod_dir_copies_all_fixtures_into_plugins_dir() {
     assert!(plugins.join("KID.ini").is_file());
     assert!(plugins.join("MoraGoldenHarness.dll").is_file());
     assert!(plugins.join("example_KID.ini").is_file());
+    assert!(
+        plugins.join("base_kid_extra.ini").is_file(),
+        "staging must match mora-kid's discovery predicate (contains _kid AND ends .ini)"
+    );
     // README / non-INI fixtures must not be copied.
     assert!(!plugins.join("notes.md").exists());
 }
