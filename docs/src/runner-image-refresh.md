@@ -87,3 +87,50 @@ Both should succeed.
 The image refresh is a prerequisite for M5 (it's where the Skyrim
 integration pipeline actually runs), but doing it now keeps the infra
 delta bundled with the rest of the M0 toolchain churn.
+
+## M4 addition — KID baseline plugin
+
+M4 golden-test capture requires the real KID SKSE plugin at a pinned
+version. Bake it into `/skyrim-baseline/optional-plugins/KID/` on the
+runner image:
+
+```bash
+# Pinned version (update atomically with golden re-capture PRs).
+KID_VERSION=5.6.0
+
+mkdir -p /skyrim-baseline/optional-plugins/KID
+# Source: upstream KID release — download URL + checksum documented
+# alongside the image build. The `KID.dll` and `KID.ini` files go
+# under that directory.
+cp -v ~/staging/KID_${KID_VERSION}/KID.dll \
+      /skyrim-baseline/optional-plugins/KID/KID.dll
+cp -v ~/staging/KID_${KID_VERSION}/KID.ini \
+      /skyrim-baseline/optional-plugins/KID/KID.ini
+
+chmod 0444 /skyrim-baseline/optional-plugins/KID/*
+```
+
+### How the xtask finds KID
+
+`cargo xtask capture-kid-goldens` expects KID fixtures at
+`third_party/kid/KID.{dll,ini}` relative to the workspace root. On the
+runner, symlink into the baseline:
+
+```bash
+# One-time setup per worker container.
+mkdir -p /_work/unraid-runner-*/mora/mora/third_party/kid
+ln -sf /skyrim-baseline/optional-plugins/KID/KID.dll \
+       /_work/unraid-runner-*/mora/mora/third_party/kid/KID.dll
+ln -sf /skyrim-baseline/optional-plugins/KID/KID.ini \
+       /_work/unraid-runner-*/mora/mora/third_party/kid/KID.ini
+```
+
+Locally, place `KID.dll` + `KID.ini` at `third_party/kid/` (this path
+is `.gitignore`d — see next step).
+
+### Why `third_party/kid/` is gitignored
+
+KID is a third-party mod. Its binaries and INI are not redistributed
+with this repo; each developer or CI runner stages them from their
+own KID install. Only the captured post-state dumps (derived, not
+KID source) live in git.

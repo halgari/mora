@@ -18,3 +18,7 @@ Cargo.lock.bak
 # Build artifacts (legacy; retained to prevent accidental re-commit during transition)
 /build/
 /compile_commands.json
+
+# Third-party KID fixtures staged locally for `cargo xtask capture-kid-goldens`.
+# See docs/src/runner-image-refresh.md.
+/third_party/kid/
