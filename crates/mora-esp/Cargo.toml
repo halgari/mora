@@ -13,5 +13,6 @@ mora-core = { path = "../mora-core" }
 thiserror.workspace = true
 memmap2.workspace = true
 lz4_flex.workspace = true
+blake3.workspace = true
 rayon.workspace = true
 tracing.workspace = true

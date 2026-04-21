@@ -1,9 +1,35 @@
 //! `mora` CLI entry point.
-//!
-//! Populated in milestone M3 (wires the pipeline end-to-end for the
-//! first time) and refined through M5 and M8.
+
+mod cli;
+mod compile;
+mod logging;
+
+use clap::Parser;
+
+use crate::cli::{Cli, Commands};
 
 fn main() {
-    eprintln!("mora: not yet implemented (workspace stub — see M0 plan)");
-    std::process::exit(2);
+    let args = Cli::parse();
+    let verbose = match &args.command {
+        Commands::Compile(c) => c.verbose,
+    };
+    logging::init(verbose);
+
+    let result = match args.command {
+        Commands::Compile(c) => compile::run(c),
+    };
+
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err(e) => {
+            // Print error chain to stderr.
+            eprintln!("error: {e}");
+            let mut source = e.source();
+            while let Some(s) = source {
+                eprintln!("  caused by: {s}");
+                source = s.source();
+            }
+            std::process::exit(1);
+        }
+    }
 }
