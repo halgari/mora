@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use crate::patch::{Patch, PatchFile, PATCH_FILE_MAGIC, PATCH_FILE_VERSION};
+use crate::patch::{PATCH_FILE_MAGIC, PATCH_FILE_VERSION, Patch, PatchFile};
 
 /// Append-only patch collector. Frontends push into it; finalize
 /// produces a sorted, deduped `PatchFile`.
@@ -56,7 +56,8 @@ impl PatchSink {
     /// by `(opcode_tag, target_form_id.raw())` for a stable, reproducible
     /// output across runs.
     pub fn finalize(mut self) -> PatchFile {
-        self.patches.sort_by_key(|p| (p.opcode_tag(), p.target().raw()));
+        self.patches
+            .sort_by_key(|p| (p.opcode_tag(), p.target().raw()));
         PatchFile {
             magic: PATCH_FILE_MAGIC,
             version: PATCH_FILE_VERSION,
