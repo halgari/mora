@@ -9,3 +9,6 @@ pub mod kwda;
 pub mod form_id_ref;
 pub mod weapon_data;
 pub mod weapon_dnam;
+pub mod armor_data;
+pub mod armor_dnam;
+pub mod biped_object;
