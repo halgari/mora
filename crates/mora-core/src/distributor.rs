@@ -17,6 +17,7 @@ pub struct DistributorStats {
     pub patches_emitted: u64,
     pub rejected_by_chance: u64,
     pub rejected_by_filter: u64,
+    pub rejected_by_exclusive_group: u64,
 }
 
 impl std::ops::AddAssign for DistributorStats {
@@ -26,6 +27,7 @@ impl std::ops::AddAssign for DistributorStats {
         self.patches_emitted += rhs.patches_emitted;
         self.rejected_by_chance += rhs.rejected_by_chance;
         self.rejected_by_filter += rhs.rejected_by_filter;
+        self.rejected_by_exclusive_group += rhs.rejected_by_exclusive_group;
     }
 }
 
@@ -64,6 +66,7 @@ mod tests {
             patches_emitted: 3,
             rejected_by_chance: 4,
             rejected_by_filter: 5,
+            rejected_by_exclusive_group: 6,
         };
         let b = DistributorStats {
             rules_evaluated: 10,
@@ -71,6 +74,7 @@ mod tests {
             patches_emitted: 30,
             rejected_by_chance: 40,
             rejected_by_filter: 50,
+            rejected_by_exclusive_group: 60,
         };
         a += b;
         assert_eq!(
@@ -81,6 +85,7 @@ mod tests {
                 patches_emitted: 33,
                 rejected_by_chance: 44,
                 rejected_by_filter: 55,
+                rejected_by_exclusive_group: 66,
             }
         );
     }
