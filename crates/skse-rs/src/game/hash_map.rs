@@ -1,7 +1,7 @@
 //! `BSTHashMap<FormID, *mut TESForm>` read-only binding.
 //!
-//! M1-minimal: only lookup is implemented. Insert, delete, iterate,
-//! and capacity-growth paths are all out of scope.
+//! M1-minimal: lookup and read-only iteration are implemented. Insert,
+//! delete, and capacity-growth paths are all out of scope.
 //!
 //! Algorithm ported from `CommonLibSSE-NG` `BSTScatterTable::do_find`.
 
@@ -74,6 +74,12 @@ impl FormHashMap {
 /// `FormHashMap`. Walks every bucket in `entries`; for each non-empty
 /// bucket follows the `next` chain until hitting the `SENTINEL`
 /// terminator.
+///
+/// The `current: *mut HashMapEntry` field makes `FormHashMapIter`
+/// `!Send + !Sync`. This is intentional — the iterator must stay on
+/// the thread that holds the read lock (see `iter()`'s safety
+/// contract), and raw-pointer auto-non-Send enforces that
+/// structurally.
 pub struct FormHashMapIter<'a> {
     map: &'a FormHashMap,
     /// Index of the bucket currently being walked.
@@ -128,8 +134,17 @@ impl FormHashMap {
     /// Walk every form in the map.
     ///
     /// # Safety
-    /// Caller must hold the map's read lock for the duration of iteration
-    /// and must not mutate the map while the iterator is live.
+    /// * The caller must acquire the map's read lock **before** calling
+    ///   `iter()` and must not release it until both the iterator and
+    ///   every `*mut TESForm` pointer obtained from it are no longer in
+    ///   use. The `'a` lifetime ties the iterator to the *map borrow*;
+    ///   it does not borrow the lock, so the compiler will not enforce
+    ///   this ordering.
+    /// * The map's `entries` pointer must be non-null and point to
+    ///   `capacity` contiguous `HashMapEntry` elements (guaranteed by
+    ///   SKSE for `allForms` after `kDataLoaded`).
+    /// * The caller must not mutate the map while the iterator is live
+    ///   (no concurrent insert, delete, or rehash).
     pub unsafe fn iter(&self) -> FormHashMapIter<'_> {
         FormHashMapIter {
             map: self,
