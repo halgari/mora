@@ -90,7 +90,11 @@ impl AddressLibrary {
             };
 
             let scale = (hi & 0x08) != 0;
-            let base = if scale { prev_offset / ptr_size } else { prev_offset };
+            let base = if scale {
+                prev_offset / ptr_size
+            } else {
+                prev_offset
+            };
             let offset_mode = hi & 0x07;
             let mut offset: u64 = match offset_mode {
                 0 => r.u64()?,

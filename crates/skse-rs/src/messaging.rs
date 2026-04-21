@@ -8,7 +8,7 @@
 //! types (kPreLoadGame, kPostLoadGame, kSaveGame, etc.).
 
 use crate::ffi::{
-    MessageType, MessagingCallback, SKSEInterface, SKSEMessage, SKSEMessagingInterface, KMESSAGING,
+    KMESSAGING, MessageType, MessagingCallback, SKSEInterface, SKSEMessage, SKSEMessagingInterface,
 };
 use crate::plugin::LoadError;
 

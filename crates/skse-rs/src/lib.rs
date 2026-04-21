@@ -131,9 +131,7 @@ macro_rules! declare_plugin {
         /// # Safety
         /// Called by SKSE on the main thread.
         #[allow(non_snake_case)]
-        unsafe extern "C" fn __skse_rs_messaging_callback(
-            msg: *mut $crate::ffi::SKSEMessage,
-        ) {
+        unsafe extern "C" fn __skse_rs_messaging_callback(msg: *mut $crate::ffi::SKSEMessage) {
             if unsafe { $crate::messaging::is_data_loaded(msg) } {
                 unsafe { <$plugin_ty as $crate::SksePlugin>::on_data_loaded() };
             }

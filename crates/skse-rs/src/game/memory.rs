@@ -25,11 +25,7 @@ type AllocateFn = unsafe extern "C" fn(
     alignment: u32,
     aligned: bool,
 ) -> *mut u8;
-type DeallocateFn = unsafe extern "C" fn(
-    mm: *mut MemoryManager,
-    ptr: *mut u8,
-    aligned: bool,
-);
+type DeallocateFn = unsafe extern "C" fn(mm: *mut MemoryManager, ptr: *mut u8, aligned: bool);
 
 /// Resolve the `MemoryManager` singleton.
 ///

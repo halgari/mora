@@ -9,7 +9,7 @@ use crate::game::form::TESForm;
 /// `BGSKeyword` partial layout. Size 0x28 per CommonLibSSE-NG.
 #[repr(C)]
 pub struct BGSKeyword {
-    pub base: TESForm,        // 0x00 — inline TESForm
+    pub base: TESForm,         // 0x00 — inline TESForm
     pub form_editor_id: usize, // 0x20 — BSFixedString is a single pointer
 }
 

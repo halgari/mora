@@ -11,11 +11,11 @@
 use std::sync::OnceLock;
 
 use skse_rs::ffi::SKSEInterface;
-use skse_rs::game::form::{lookup_by_id, TESForm};
+use skse_rs::game::form::{TESForm, lookup_by_id};
 use skse_rs::game::keyword::BGSKeyword;
-use skse_rs::game::keyword_form::{add_keyword, BGSKeywordForm};
+use skse_rs::game::keyword_form::{BGSKeywordForm, add_keyword};
 use skse_rs::relocation;
-use skse_rs::{declare_plugin, LoadOutcome, Logger, PluginVersion, SksePlugin};
+use skse_rs::{LoadOutcome, Logger, PluginVersion, SksePlugin, declare_plugin};
 
 // Known FormIDs in Skyrim.esm (mod index 0x00).
 const IRON_SWORD_FID: u32 = 0x0001_2EB7;
@@ -66,10 +66,7 @@ impl SksePlugin for SkseRsSmoke {
         let logger = Logger::open(Self::NAME)?;
         logger.write_line("Hello from skse-rs").ok();
         logger
-            .write_line(&format!(
-                "SKSE runtime: 0x{:08x}",
-                skse.runtime_version
-            ))
+            .write_line(&format!("SKSE runtime: 0x{:08x}", skse.runtime_version))
             .ok();
 
         match relocation::resolve_default_library_path() {
@@ -107,9 +104,7 @@ impl SksePlugin for SkseRsSmoke {
                 return;
             }
             Err(e) => {
-                logger
-                    .write_line(&format!("lookup_by_id failed: {e}"))
-                    .ok();
+                logger.write_line(&format!("lookup_by_id failed: {e}")).ok();
                 return;
             }
         };
@@ -128,9 +123,7 @@ impl SksePlugin for SkseRsSmoke {
                 return;
             }
             Err(e) => {
-                logger
-                    .write_line(&format!("lookup_by_id failed: {e}"))
-                    .ok();
+                logger.write_line(&format!("lookup_by_id failed: {e}")).ok();
                 return;
             }
         };

@@ -20,7 +20,7 @@ fn fixture_bytes() -> Vec<u8> {
     b.extend_from_slice(&1170i32.to_le_bytes()); // patch
     b.extend_from_slice(&0i32.to_le_bytes()); // build
     b.extend_from_slice(&2i32.to_le_bytes()); // name_len
-    b.extend_from_slice(b"AE");               // name (ignored by parser)
+    b.extend_from_slice(b"AE"); // name (ignored by parser)
     b.extend_from_slice(&8i32.to_le_bytes()); // pointer_size
     b.extend_from_slice(&3i32.to_le_bytes()); // count
 
@@ -120,10 +120,10 @@ fn real_address_library_parses_if_present() {
     let expanded: Vec<std::path::PathBuf> = paths
         .iter()
         .map(|p| {
-            if let Some(stripped) = p.strip_prefix("~/") {
-                if let Some(home) = dirs_home() {
-                    return home.join(stripped);
-                }
+            if let Some(stripped) = p.strip_prefix("~/")
+                && let Some(home) = dirs_home()
+            {
+                return home.join(stripped);
             }
             std::path::PathBuf::from(p)
         })
@@ -138,7 +138,8 @@ fn real_address_library_parses_if_present() {
     assert_eq!(lib.runtime_version.0, 1);
     assert_eq!(lib.runtime_version.1, 6);
     // TESDataHandler::Singleton is always present in AE
-    lib.resolve(400269).expect("id 400269 (TESDataHandler::Singleton) must resolve");
+    lib.resolve(400269)
+        .expect("id 400269 (TESDataHandler::Singleton) must resolve");
     eprintln!(
         "real_address_library_parses_if_present: {} pairs, sanity-resolved id 400269",
         lib.len()

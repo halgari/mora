@@ -77,7 +77,9 @@ impl Relocation {
         let lib = LIBRARY.get().ok_or(RelocationError::NotInitialized)?;
         let offset = lib.resolve(id)?;
         let base = image_base_address().ok_or(RelocationError::ImageBase)?;
-        Ok(Relocation { addr: base + offset as usize })
+        Ok(Relocation {
+            addr: base + offset as usize,
+        })
     }
 
     /// Raw address as `usize`.
@@ -122,11 +124,7 @@ fn image_base_address() -> Option<usize> {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     unsafe {
         let h = GetModuleHandleW(core::ptr::null());
-        if h.is_null() {
-            None
-        } else {
-            Some(h as usize)
-        }
+        if h.is_null() { None } else { Some(h as usize) }
     }
 }
 
