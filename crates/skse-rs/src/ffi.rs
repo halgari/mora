@@ -106,13 +106,13 @@ impl Default for PluginInfo {
 /// Size: 0x30 bytes.
 #[repr(C)]
 pub struct SKSEInterface {
-    pub skse_version: u32,                                                      // 0x00
-    pub runtime_version: u32,                                                   // 0x04
-    pub editor_version: u32,                                                    // 0x08
-    pub is_editor: u32,                                                         // 0x0C
-    pub query_interface: unsafe extern "C" fn(u32) -> *mut c_void,              // 0x10
-    pub get_plugin_handle: unsafe extern "C" fn() -> u32,                      // 0x18
-    pub get_release_index: unsafe extern "C" fn() -> u32,                      // 0x20
+    pub skse_version: u32,                                         // 0x00
+    pub runtime_version: u32,                                      // 0x04
+    pub editor_version: u32,                                       // 0x08
+    pub is_editor: u32,                                            // 0x0C
+    pub query_interface: unsafe extern "C" fn(u32) -> *mut c_void, // 0x10
+    pub get_plugin_handle: unsafe extern "C" fn() -> u32,          // 0x18
+    pub get_release_index: unsafe extern "C" fn() -> u32,          // 0x20
     pub get_plugin_info: unsafe extern "C" fn(*const c_char) -> *const c_void, // 0x28
 }
 
@@ -133,18 +133,15 @@ const _: () = assert!(core::mem::offset_of!(SKSEInterface, get_plugin_info) == 0
 pub struct SKSEMessagingInterface {
     pub interface_version: u32, // 0x00
     _pad: u32,                  // 0x04 — natural padding before 8-byte pointer
-    pub register_listener: unsafe extern "C" fn(
-        handle: u32,
-        sender: *const c_char,
-        callback: *mut c_void,
-    ) -> bool,                                                       // 0x08
+    pub register_listener:
+        unsafe extern "C" fn(handle: u32, sender: *const c_char, callback: *mut c_void) -> bool, // 0x08
     pub dispatch: unsafe extern "C" fn(
         handle: u32,
         msg_type: u32,
         data: *mut c_void,
         data_len: u32,
         receiver: *const c_char,
-    ) -> bool,                                                       // 0x10
+    ) -> bool, // 0x10
     pub get_event_dispatcher: unsafe extern "C" fn(u32) -> *mut c_void, // 0x18
 }
 

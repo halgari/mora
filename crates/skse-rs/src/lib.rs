@@ -127,9 +127,7 @@ macro_rules! declare_plugin {
         /// of the DLL.
         #[allow(non_snake_case)]
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn SKSEPlugin_Load(
-            skse: *const $crate::ffi::SKSEInterface,
-        ) -> bool {
+        pub unsafe extern "C" fn SKSEPlugin_Load(skse: *const $crate::ffi::SKSEInterface) -> bool {
             if skse.is_null() {
                 return false;
             }

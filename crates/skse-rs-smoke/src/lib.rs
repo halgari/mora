@@ -12,7 +12,7 @@
 #![allow(non_snake_case)]
 
 use skse_rs::ffi::SKSEInterface;
-use skse_rs::{declare_plugin, LoadOutcome, Logger, PluginVersion, SksePlugin};
+use skse_rs::{LoadOutcome, Logger, PluginVersion, SksePlugin, declare_plugin};
 
 struct SkseRsSmoke;
 
@@ -35,7 +35,9 @@ impl SksePlugin for SkseRsSmoke {
                 skse.runtime_version
             ))
             .ok();
-        logger.write_line(&format!("plugin log: {}", logger.path().display())).ok();
+        logger
+            .write_line(&format!("plugin log: {}", logger.path().display()))
+            .ok();
         Ok(())
     }
 }

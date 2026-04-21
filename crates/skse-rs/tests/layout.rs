@@ -15,10 +15,16 @@ fn plugin_version_data_is_0x350_bytes() {
 fn plugin_version_data_field_offsets_match_spec() {
     // Offsets from docs/src/skse-rs-ffi-reference.md
     assert_eq!(std::mem::offset_of!(PluginVersionData, data_version), 0x000);
-    assert_eq!(std::mem::offset_of!(PluginVersionData, plugin_version), 0x004);
+    assert_eq!(
+        std::mem::offset_of!(PluginVersionData, plugin_version),
+        0x004
+    );
     assert_eq!(std::mem::offset_of!(PluginVersionData, plugin_name), 0x008);
     assert_eq!(std::mem::offset_of!(PluginVersionData, author), 0x108);
-    assert_eq!(std::mem::offset_of!(PluginVersionData, support_email), 0x208);
+    assert_eq!(
+        std::mem::offset_of!(PluginVersionData, support_email),
+        0x208
+    );
     assert_eq!(std::mem::offset_of!(PluginVersionData, flags_a), 0x304);
     assert_eq!(std::mem::offset_of!(PluginVersionData, flags_b), 0x308);
     assert_eq!(

@@ -78,12 +78,7 @@ fn resolve_log_dir() -> Result<PathBuf, LogInitError> {
 
     let mut path_ptr: *mut u16 = core::ptr::null_mut();
     let hr = unsafe {
-        SHGetKnownFolderPath(
-            &FOLDERID_Documents,
-            0,
-            std::ptr::null_mut(),
-            &mut path_ptr,
-        )
+        SHGetKnownFolderPath(&FOLDERID_Documents, 0, std::ptr::null_mut(), &mut path_ptr)
     };
     if hr != S_OK {
         return Err(LogInitError::PathResolution(format!(
