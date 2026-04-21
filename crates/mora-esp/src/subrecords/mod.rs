@@ -1,1 +1,8 @@
-//! Stub. Populated in later tasks of Plan 5.
+//! Typed subrecord parsers.
+//!
+//! Each module exposes a `parse(&[u8]) -> Result<T, Err>` function.
+//! Callers obtain subrecord bytes from `SubrecordIter` and pass to
+//! the typed parser.
+
+pub mod edid;
+pub mod kwda;
