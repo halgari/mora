@@ -1,0 +1,20 @@
+[package]
+name = "mora-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The MoraRuntime SKSE plugin DLL."
+publish = false
+
+[lib]
+name = "MoraRuntime"
+crate-type = ["cdylib"]
+
+[dependencies]
+mora-core = { path = "../mora-core" }
+skse-rs = { path = "../skse-rs" }
+memmap2.workspace = true
+postcard.workspace = true
+tracing.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "mora-kid"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "KID INI parser and distributor frontend for Mora."
+publish = false
+
+[dependencies]
+mora-core = { path = "../mora-core" }
+mora-esp = { path = "../mora-esp" }
+thiserror.workspace = true
+miette = { workspace = true }
+tracing.workspace = true
