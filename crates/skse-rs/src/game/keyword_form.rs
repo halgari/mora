@@ -171,5 +171,5 @@ pub const ARMOR_KEYWORD_FORM_OFFSET: isize = 0x168;
 /// cares about are exposed.
 pub mod form_type {
     pub const WEAPON: u8 = 0x29; // 41, TESObjectWEAP
-    pub const ARMOR: u8 = 0x1A;  // 26, TESObjectARMO
+    pub const ARMOR: u8 = 0x1A; // 26, TESObjectARMO
 }

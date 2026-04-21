@@ -111,11 +111,9 @@ impl SksePlugin for SkseRsSmoke {
         // Cast the TESObjectWEAP pointer to its BGSKeywordForm sub-object.
         // Offset is documented + derived in
         // skse_rs::game::keyword_form::WEAPON_KEYWORD_FORM_OFFSET.
-        let keyword_form: *mut BGSKeywordForm =
-            unsafe {
-                (iron_sword as *mut u8)
-                    .offset(skse_rs::game::keyword_form::WEAPON_KEYWORD_FORM_OFFSET)
-            } as *mut BGSKeywordForm;
+        let keyword_form: *mut BGSKeywordForm = unsafe {
+            (iron_sword as *mut u8).offset(skse_rs::game::keyword_form::WEAPON_KEYWORD_FORM_OFFSET)
+        } as *mut BGSKeywordForm;
 
         match unsafe { add_keyword(keyword_form, kw) } {
             Ok(true) => logger.write_line("AddKeyword result: added").ok(),
