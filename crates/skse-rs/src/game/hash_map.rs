@@ -215,12 +215,13 @@ mod tests {
             entries: buckets.as_mut_ptr(),
         };
 
-        let mut seen: Vec<(u32, *mut TESForm)> =
+        let seen: Vec<(u32, *mut TESForm)> =
             unsafe { map.iter().collect() };
-        seen.sort_by_key(|(k, _)| *k);
         assert_eq!(
             seen,
-            vec![(0x100, fake_a), (0x200, fake_b), (0x300, fake_c)]
+            vec![(0x100, fake_a), (0x200, fake_b), (0x300, fake_c)],
+            "iteration must visit bucket 0 first (entry A then B via chain), \
+             then bucket 2 (entry C). Any other order indicates a bug."
         );
     }
 
