@@ -67,35 +67,6 @@ fn run_golden_scenario(name: &str) {
     let plugins_txt = workspace_root.join("tests/golden-data/plugins.txt");
     let world = EspWorld::open(&data_dir, &plugins_txt).expect("open world");
 
-    // DIAGNOSTIC: dump WEAP records per plugin_index to trace mis-attribution.
-    if std::env::var("MORA_DUMP_LOAD_ORDER").is_ok() {
-        use std::collections::HashMap;
-        let mut by_plugin: HashMap<usize, (u32, Vec<String>)> = HashMap::new();
-        for wr in world.records(mora_esp::signature::WEAP) {
-            let entry = by_plugin.entry(wr.plugin_index).or_insert((0, Vec::new()));
-            entry.0 += 1;
-            if entry.1.len() < 3 {
-                entry.1.push(format!(
-                    "raw=0x{:08x} resolved=0x{:08x}",
-                    wr.record.form_id, wr.resolved_form_id.0
-                ));
-            }
-        }
-        eprintln!("[{name}] WEAP records per plugin_index:");
-        let mut keys: Vec<_> = by_plugin.keys().copied().collect();
-        keys.sort();
-        for k in keys {
-            let (count, samples) = &by_plugin[&k];
-            let pname = world
-                .plugins
-                .get(k)
-                .map(|p| p.filename.as_str())
-                .unwrap_or("?");
-            let slot = world.load_order.lookup(pname);
-            eprintln!("  idx={k} {pname} slot={slot:?} count={count} samples={samples:?}");
-        }
-    }
-
     let chance = DeterministicChance::kid_compatible();
     let distributor = KidDistributor::new(rules).with_exclusive_groups(groups);
     let mut sink = PatchSink::new();
