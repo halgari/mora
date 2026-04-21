@@ -97,3 +97,55 @@ fn unexpected_pointer_size_rejected() {
         other => panic!("expected UnexpectedPointerSize(4); got {other:?}"),
     }
 }
+
+/// If the developer has a local Skyrim install with a current Address
+/// Library bin, load it and confirm it parses + resolves a
+/// known-good id (TESDataHandler::Singleton, AE id 400269). Skipped
+/// silently when the file isn't present (CI case).
+#[test]
+fn real_address_library_parses_if_present() {
+    const CANDIDATES: &[&str] = &[
+        // Common Proton Steam install path on Linux
+        "~/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data/SKSE/Plugins/versionlib-1-6-1170-0.bin",
+        "~/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data/SKSE/Plugins/version-1-6-1170-0.bin",
+        // Developer-configurable via env var
+    ];
+    let env_path = std::env::var("MORA_SKYRIM_DATA")
+        .ok()
+        .map(|d| format!("{}/SKSE/Plugins/versionlib-1-6-1170-0.bin", d));
+    let mut paths: Vec<String> = CANDIDATES.iter().map(|s| s.to_string()).collect();
+    if let Some(p) = env_path {
+        paths.insert(0, p);
+    }
+    let expanded: Vec<std::path::PathBuf> = paths
+        .iter()
+        .map(|p| {
+            if let Some(stripped) = p.strip_prefix("~/") {
+                if let Some(home) = dirs_home() {
+                    return home.join(stripped);
+                }
+            }
+            std::path::PathBuf::from(p)
+        })
+        .collect();
+    let Some(found) = expanded.iter().find(|p| p.exists()) else {
+        eprintln!("real_address_library_parses_if_present: no bin found, skipping");
+        return;
+    };
+
+    let lib = skse_rs::address_library::AddressLibrary::load(found).expect("parse real bin");
+    // AE version header
+    assert_eq!(lib.runtime_version.0, 1);
+    assert_eq!(lib.runtime_version.1, 6);
+    // TESDataHandler::Singleton is always present in AE
+    lib.resolve(400269).expect("id 400269 (TESDataHandler::Singleton) must resolve");
+    eprintln!(
+        "real_address_library_parses_if_present: {} pairs, sanity-resolved id 400269",
+        lib.len()
+    );
+}
+
+/// Minimal $HOME lookup without adding a dirs-crate dep.
+fn dirs_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(std::path::PathBuf::from)
+}
