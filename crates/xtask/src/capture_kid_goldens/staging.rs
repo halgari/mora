@@ -16,16 +16,19 @@ pub struct AssembleInputs<'a> {
 /// Assemble a staged mod-dir at `inputs.output`. Resulting layout:
 ///
 /// ```text
-/// <output>/Data/SKSE/Plugins/
-///   KID.dll
-///   KID.ini
-///   MoraGoldenHarness.dll
-///   <scenario>_KID.ini
+/// <output>/Data/
+///   <scenario>_KID.ini      ← KID scans Data/ directly (NOT Data/SKSE/Plugins)
+///   SKSE/Plugins/
+///     KID.dll
+///     KID.ini                 (KID's own global config — also under SKSE/Plugins)
+///     MoraGoldenHarness.dll
 /// ```
 ///
 /// Only files that contain `_kid` AND end in `.ini` (case-insensitive)
 /// are copied from the scenario directory; READMEs and other non-ini
-/// fixtures are skipped. This matches `mora-kid::ini::discover_kid_ini_files`.
+/// fixtures are skipped. This matches `mora-kid::ini::discover_kid_ini_files`
+/// and KID 3.4.0's `LookupConfigs.cpp` which explicitly scans `Data/`
+/// (not `Data/SKSE/Plugins/`) for `_KID.ini` files.
 pub fn assemble_mod_dir(inputs: &AssembleInputs<'_>) -> Result<()> {
     if !inputs.harness_dll.is_file() {
         bail!(
@@ -46,15 +49,19 @@ pub fn assemble_mod_dir(inputs: &AssembleInputs<'_>) -> Result<()> {
         );
     }
 
-    let plugins = inputs.output.join("Data").join("SKSE").join("Plugins");
+    let data = inputs.output.join("Data");
+    let plugins = data.join("SKSE").join("Plugins");
     std::fs::create_dir_all(&plugins).with_context(|| format!("creating {}", plugins.display()))?;
 
-    // Core fixtures.
+    // DLLs go under SKSE/Plugins (standard SKSE plugin location).
     std::fs::copy(inputs.kid_dll, plugins.join("KID.dll"))?;
     std::fs::copy(inputs.kid_ini, plugins.join("KID.ini"))?;
     std::fs::copy(inputs.harness_dll, plugins.join("MoraGoldenHarness.dll"))?;
 
-    // Scenario INIs: copy every *_KID.ini, skip the rest.
+    // Scenario INIs go DIRECTLY under Data/ — KID's LookupConfigs.cpp
+    // calls distribution::get_configs("Data\\", "_KID") which scans
+    // the Data root for files matching *_KID*.ini. Placing them in
+    // SKSE/Plugins was the M4 bug that caused empty captures.
     for entry in std::fs::read_dir(inputs.scenario_ini_dir)? {
         let entry = entry?;
         if !entry.file_type()?.is_file() {
@@ -70,7 +77,7 @@ pub fn assemble_mod_dir(inputs: &AssembleInputs<'_>) -> Result<()> {
         if !(lower.ends_with(".ini") && lower.contains("_kid")) {
             continue;
         }
-        std::fs::copy(entry.path(), plugins.join(&name))?;
+        std::fs::copy(entry.path(), data.join(&name))?;
     }
     Ok(())
 }

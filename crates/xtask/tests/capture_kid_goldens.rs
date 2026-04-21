@@ -10,7 +10,7 @@ use xtask::capture_kid_goldens::manifest::{
 use xtask::capture_kid_goldens::staging::{AssembleInputs, assemble_mod_dir};
 
 #[test]
-fn assemble_mod_dir_copies_all_fixtures_into_plugins_dir() {
+fn assemble_mod_dir_copies_dlls_under_plugins_and_inis_under_data() {
     let tmp = tempdir().unwrap();
     let src = tmp.path().join("src");
     let scenario_ini_dir = src.join("scenario");
@@ -45,17 +45,29 @@ fn assemble_mod_dir_copies_all_fixtures_into_plugins_dir() {
     })
     .unwrap();
 
-    let plugins = out.join("Data").join("SKSE").join("Plugins");
+    // DLLs live under Data/SKSE/Plugins.
+    let data = out.join("Data");
+    let plugins = data.join("SKSE").join("Plugins");
     assert!(plugins.join("KID.dll").is_file());
     assert!(plugins.join("KID.ini").is_file());
     assert!(plugins.join("MoraGoldenHarness.dll").is_file());
-    assert!(plugins.join("example_KID.ini").is_file());
+
+    // Scenario INIs go DIRECTLY under Data/ — this is what KID 3.4.0's
+    // distribution::get_configs("Data\\", "_KID") scans. Putting them
+    // under SKSE/Plugins causes KID to log "No .ini files with _KID
+    // suffix were found within the Data folder, aborting..." and
+    // produce empty captures.
+    assert!(data.join("example_KID.ini").is_file());
     assert!(
-        plugins.join("base_kid_extra.ini").is_file(),
+        data.join("base_kid_extra.ini").is_file(),
         "staging must match mora-kid's discovery predicate (contains _kid AND ends .ini)"
     );
-    // README / non-INI fixtures must not be copied.
+    // Scenario INIs must NOT end up under SKSE/Plugins (negative assertion).
+    assert!(!plugins.join("example_KID.ini").exists());
+    assert!(!plugins.join("base_kid_extra.ini").exists());
+    // README / non-INI fixtures must not be copied anywhere.
     assert!(!plugins.join("notes.md").exists());
+    assert!(!data.join("notes.md").exists());
 }
 
 #[test]
