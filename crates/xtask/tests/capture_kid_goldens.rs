@@ -117,17 +117,21 @@ fn write_for_scenario_emits_readable_manifest() {
     let kid_dll = tmp.path().join("KID.dll");
     fs::write(&kid_dll, b"fake").unwrap();
 
-    // The function reads ESPs from MORA_SKYRIM_DATA; point it at an
-    // empty dir so the hashes map is empty but the manifest still writes.
+    // Pass an empty data dir explicitly; no env mutation, no race.
     let data = tmp.path().join("data");
     fs::create_dir_all(&data).unwrap();
-    unsafe {
-        std::env::set_var("MORA_SKYRIM_DATA", &data);
-    }
 
-    write_for_scenario(&out, &kid_dll).unwrap();
+    write_for_scenario(&out, &kid_dll, &data).unwrap();
 
     let manifest = fs::read_to_string(out.join("manifest.json")).unwrap();
     assert!(manifest.contains("\"captured_at\""), "got: {manifest}");
+    assert!(manifest.contains("\"kid_version\""), "got: {manifest}");
+    assert!(manifest.contains("\"skyrim_version\""), "got: {manifest}");
     assert!(manifest.contains("\"esp_hashes\""), "got: {manifest}");
+    // Skyrim.esm is absent, so skyrim_version must be the literal
+    // "unknown" (no sha256: prefix) — proves Fix 1.
+    assert!(
+        manifest.contains("\"skyrim_version\": \"unknown\""),
+        "got: {manifest}"
+    );
 }

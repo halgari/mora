@@ -64,12 +64,8 @@ pub fn hash_data_dir(data_dir: &Path) -> Result<BTreeMap<String, String>> {
     Ok(out)
 }
 
-pub fn write_for_scenario(expected_dir: &Path, kid_dll: &Path) -> Result<()> {
-    let data_dir = std::env::var("MORA_SKYRIM_DATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("/skyrim-base/Data"));
-
-    let esp_hashes = hash_data_dir(&data_dir)?;
+pub fn write_for_scenario(expected_dir: &Path, kid_dll: &Path, data_dir: &Path) -> Result<()> {
+    let esp_hashes = hash_data_dir(data_dir)?;
     let kid_version = read_peek_kid_version(kid_dll).unwrap_or_else(|| "unknown".to_string());
     // Skyrim version: placeholder. Bethesda doesn't expose a cheap
     // version byte for SkyrimSE.exe from the runner context; we record
@@ -77,7 +73,7 @@ pub fn write_for_scenario(expected_dir: &Path, kid_dll: &Path) -> Result<()> {
     // already in esp_hashes).
     let skyrim_version = esp_hashes
         .get("Skyrim.esm")
-        .cloned()
+        .map(|h| format!("sha256:{}", &h[..16]))
         .unwrap_or_else(|| "unknown".to_string());
 
     let captured_at = now_iso8601();
@@ -85,7 +81,7 @@ pub fn write_for_scenario(expected_dir: &Path, kid_dll: &Path) -> Result<()> {
     let manifest = serde_json::json!({
         "captured_at": captured_at,
         "kid_version": kid_version,
-        "skyrim_version": format!("sha256:{}", &skyrim_version.chars().take(16).collect::<String>()),
+        "skyrim_version": skyrim_version,
         "esp_hashes": esp_hashes,
     });
 

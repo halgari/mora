@@ -115,8 +115,13 @@ fn capture_one_scenario(
             .with_context(|| format!("copying {} -> {}", src.display(), dst.display()))?;
     }
 
-    // Manifest — filled in by Task 8.
-    manifest::write_for_scenario(&expected_out, kid_dll)?;
+    // Manifest: pin the capture to the specific Skyrim data dir. Task 13's
+    // test helper re-hashes the same files via MORA_SKYRIM_DATA and skips
+    // if hashes diverge.
+    let data_dir = std::env::var("MORA_SKYRIM_DATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("/skyrim-base/Data"));
+    manifest::write_for_scenario(&expected_out, kid_dll, &data_dir)?;
 
     eprintln!("[capture] {name}: OK");
     Ok(())
