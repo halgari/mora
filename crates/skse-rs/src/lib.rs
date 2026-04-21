@@ -124,6 +124,21 @@ macro_rules! declare_plugin {
             true
         }
 
+        /// Generated SKSE messaging callback. Dispatches `kDataLoaded`
+        /// to the plugin's `on_data_loaded` method; ignores all other
+        /// SKSE messages.
+        ///
+        /// # Safety
+        /// Called by SKSE on the main thread.
+        #[allow(non_snake_case)]
+        unsafe extern "C" fn __skse_rs_messaging_callback(
+            msg: *mut $crate::ffi::SKSEMessage,
+        ) {
+            if unsafe { $crate::messaging::is_data_loaded(msg) } {
+                unsafe { <$plugin_ty as $crate::SksePlugin>::on_data_loaded() };
+            }
+        }
+
         /// Real entry point — SKSE calls this with a valid interface.
         ///
         /// # Safety
@@ -137,7 +152,24 @@ macro_rules! declare_plugin {
             }
             // SAFETY: SKSE guarantees this pointer is valid for the DLL lifetime.
             let skse_ref: &'static $crate::ffi::SKSEInterface = unsafe { &*skse };
+            // Run user on_load first so it can set up logging / load
+            // address libraries before we register the messaging listener.
             match unsafe { <$plugin_ty as $crate::SksePlugin>::on_load(skse_ref) } {
+                Ok(()) => {}
+                Err(_) => return false,
+            }
+            // Register kDataLoaded listener.
+            let messaging = match unsafe { $crate::messaging::get_messaging(skse_ref) } {
+                Ok(m) => m,
+                Err(_) => return false,
+            };
+            match unsafe {
+                $crate::messaging::register_listener(
+                    skse_ref,
+                    messaging,
+                    __skse_rs_messaging_callback,
+                )
+            } {
                 Ok(()) => true,
                 Err(_) => false,
             }

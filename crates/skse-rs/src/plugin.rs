@@ -46,4 +46,18 @@ pub trait SksePlugin {
     /// # Safety
     /// `skse` must point to a valid `SKSEInterface` provided by SKSE.
     unsafe fn on_load(skse: &'static SKSEInterface) -> LoadOutcome;
+
+    /// Called from the messaging-interface callback when SKSE
+    /// broadcasts `kDataLoaded` — i.e., after all plugins and forms
+    /// have loaded but before gameplay starts. Default: no-op.
+    ///
+    /// Override this to do game-state interaction (form lookups,
+    /// AddKeyword calls, etc.). Returning without panicking is
+    /// sufficient; errors should be logged.
+    ///
+    /// # Safety
+    /// Runs on the main thread during SKSE kDataLoaded. The game form
+    /// database is populated. Safe access to game state requires
+    /// appropriate locks (see `game::lock::ReadGuard`).
+    unsafe fn on_data_loaded() {}
 }
