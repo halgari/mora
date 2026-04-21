@@ -39,19 +39,30 @@ pub fn load_library_from_path(path: &std::path::Path) -> Result<(), RelocationEr
     Ok(())
 }
 
+/// Known Address Library filenames, ordered newest-first. The first
+/// one that exists wins. Add new entries here when Skyrim patches.
+const KNOWN_VERSIONLIB_FILES: &[&str] = &[
+    "versionlib-1-6-1179-0.bin",
+    "versionlib-1-6-1170-0.bin",
+    "versionlib-1-6-1130-0.bin",
+    "versionlib-1-6-640-0.bin",
+    "versionlib-1-6-629-0.bin",
+];
+
 /// Resolve the well-known SKSE Plugins path, using `%MORA_SKYRIM_DATA%`
-/// if set, else the first candidate that exists.
+/// if set, else the plugin's working directory. Iterates the known
+/// versionlib filenames newest-first.
 pub fn resolve_default_library_path() -> Option<PathBuf> {
-    if let Ok(data) = std::env::var("MORA_SKYRIM_DATA") {
-        let p = PathBuf::from(data).join("SKSE/Plugins/versionlib-1-6-1170-0.bin");
+    let root: PathBuf = match std::env::var("MORA_SKYRIM_DATA") {
+        Ok(data) => PathBuf::from(data),
+        // On Windows, the plugin's working directory is the game's Data dir.
+        Err(_) => PathBuf::from("."),
+    };
+    for name in KNOWN_VERSIONLIB_FILES {
+        let p = root.join("SKSE/Plugins").join(name);
         if p.exists() {
             return Some(p);
         }
-    }
-    // On Windows, the plugin's working directory is the game's Data dir.
-    let p = PathBuf::from("SKSE/Plugins/versionlib-1-6-1170-0.bin");
-    if p.exists() {
-        return Some(p);
     }
     None
 }
