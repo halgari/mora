@@ -159,3 +159,105 @@ mod tests {
         assert_eq!(slot.compose_form_id(0x00FF_FABC), 0xFE_12_3A_BC);
     }
 }
+
+/// Remap a plugin-local FormID (high byte = local mod index) into a
+/// fully-resolved FormID using the plugin's master list + the live
+/// load order.
+///
+/// `raw_form_id`: 32-bit FormID from a record or reference subrecord.
+/// `masters`: plugin's master list (in local-index order).
+/// `self_name`: the plugin's own filename (used when the local index
+/// equals `masters.len()` — which means "this plugin's own forms").
+/// `load_order`: the resolved runtime load order.
+///
+/// Returns `None` if the local index is out of range or the referenced
+/// plugin is not in the load order.
+pub fn remap_form_id(
+    raw_form_id: u32,
+    masters: &[String],
+    self_name: &str,
+    load_order: &LoadOrder,
+) -> Option<u32> {
+    let local_index = (raw_form_id >> 24) as usize;
+    let local_id = raw_form_id & 0x00FF_FFFF;
+
+    let referenced_name = if local_index < masters.len() {
+        &masters[local_index]
+    } else if local_index == masters.len() {
+        self_name
+    } else {
+        return None;
+    };
+
+    let slot = load_order.lookup(referenced_name)?;
+    Some(slot.compose_form_id(local_id))
+}
+
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+
+    fn build_order() -> LoadOrder {
+        build(
+            &["Skyrim.esm", "Update.esm"],
+            &["MyMod.esp", "MyLight.esl"],
+            &|n| n.ends_with(".esl"),
+        )
+    }
+
+    #[test]
+    fn remap_via_master_zero() {
+        // MyMod.esp references Skyrim.esm via local index 0.
+        // raw 0x00_ABCDEF → Skyrim.esm (full slot 0x00), local 0xABCDEF
+        //   → 0x00_ABCDEF
+        let order = build_order();
+        let masters = vec!["Skyrim.esm".to_string(), "Update.esm".to_string()];
+        let out = remap_form_id(0x00_AB_CD_EF, &masters, "MyMod.esp", &order).unwrap();
+        assert_eq!(out, 0x00_AB_CD_EF);
+    }
+
+    #[test]
+    fn remap_via_master_one() {
+        // Update.esm → slot 0x01, local 0xABCDEF → 0x01_ABCDEF
+        let order = build_order();
+        let masters = vec!["Skyrim.esm".to_string(), "Update.esm".to_string()];
+        let out = remap_form_id(0x01_AB_CD_EF, &masters, "MyMod.esp", &order).unwrap();
+        assert_eq!(out, 0x01_AB_CD_EF);
+    }
+
+    #[test]
+    fn remap_self_reference() {
+        // raw 0x02_XYZ with masters = [Skyrim, Update] → local index 2 = self = MyMod.esp
+        // MyMod.esp is the first user plugin → full slot 0x02.
+        let order = build_order();
+        let masters = vec!["Skyrim.esm".to_string(), "Update.esm".to_string()];
+        let out = remap_form_id(0x02_AB_CD_EF, &masters, "MyMod.esp", &order).unwrap();
+        assert_eq!(out, 0x02_AB_CD_EF);
+    }
+
+    #[test]
+    fn remap_to_esl() {
+        // MyLight.esl is in the light pool at slot 0.
+        let order = build_order();
+        // If MyMod.esp adds MyLight.esl as a master (hypothetically),
+        // then local index 2 = MyLight.esl.
+        let masters = vec![
+            "Skyrim.esm".to_string(),
+            "Update.esm".to_string(),
+            "MyLight.esl".to_string(),
+        ];
+        // raw 0x02_ABC with local index 2 (MyLight.esl).
+        // ESL composes as FE | slot(0) << 12 | local & 0xFFF
+        //   → 0xFE_00_0A_BC
+        let out = remap_form_id(0x02_00_0A_BC, &masters, "MyMod.esp", &order).unwrap();
+        assert_eq!(out, 0xFE_00_0A_BC);
+    }
+
+    #[test]
+    fn remap_out_of_range_returns_none() {
+        let order = build_order();
+        let masters = vec!["Skyrim.esm".to_string()];
+        // Local index 5, but only 1 master + self = valid indices are 0, 1
+        assert!(remap_form_id(0x05_00_00_01, &masters, "MyMod.esp", &order).is_none());
+    }
+}
