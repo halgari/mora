@@ -1,7 +1,0 @@
-namespace test.nazeem
-
-requires mod("Skyrim.esm")
-
-# Rename every NPC to Nazeem
-skyrim/set(NPC, :Name, "Nazeem"):
-    form/npc(NPC)

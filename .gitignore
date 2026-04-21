@@ -1,16 +1,20 @@
-build/
-.xmake/
-.xwin-cache/
-*.obj
-*.dll
-*.lib
-*.exe
-*.pdb
-MoraCache/
-SkyPatcher
-.superpowers/
-.worktrees/
-docs/site/
-docs/site/
-compile_commands.json
-.claude/
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Secrets / local state
+.env
+.env.local
+
+# Build artifacts (legacy; retained to prevent accidental re-commit during transition)
+/build/
+/compile_commands.json

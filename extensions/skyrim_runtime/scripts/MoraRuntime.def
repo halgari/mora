@@ -1,5 +1,0 @@
-LIBRARY MoraRuntime
-EXPORTS
-    SKSEPlugin_Version DATA
-    SKSEPlugin_Load
-    DllMain
