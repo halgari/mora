@@ -172,17 +172,15 @@ fn compute_post_state(
     let mut weapons: BTreeMap<FormId, BTreeSet<FormId>> = BTreeMap::new();
     let mut armors: BTreeMap<FormId, BTreeSet<FormId>> = BTreeMap::new();
 
+    // ESP override semantics: iterate in load order (early to late) and
+    // REPLACE the keyword set per form each time, so the last plugin
+    // defining a form wins. Unioning would incorrectly accumulate
+    // keywords that Skyrim discards when a later plugin overrides.
     for (fid, w) in world.weapons().flatten() {
-        let set = weapons.entry(fid).or_default();
-        for kw in &w.keywords {
-            set.insert(*kw);
-        }
+        weapons.insert(fid, w.keywords.iter().copied().collect());
     }
     for (fid, a) in world.armors().flatten() {
-        let set = armors.entry(fid).or_default();
-        for kw in &a.keywords {
-            set.insert(*kw);
-        }
+        armors.insert(fid, a.keywords.iter().copied().collect());
     }
 
     for patch in patches {
