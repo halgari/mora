@@ -1,8 +1,0 @@
-# SYNTAX TEST "source.mora"
-
-# this is a comment
-# <- comment.line.number-sign.mora
-# ^^^^^^^^^^^^^^^^^^ comment.line.number-sign.mora
-
-namespace test  # trailing
-#               ^ comment.line.number-sign.mora

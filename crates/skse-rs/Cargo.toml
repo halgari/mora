@@ -1,0 +1,18 @@
+[package]
+name = "skse-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Clean-room Rust SKSE plugin framework for Skyrim SE/AE. Not a binding to CommonLibSSE-NG."
+readme = "README.md"
+keywords = ["skyrim", "skse", "modding"]
+categories = ["external-ffi-bindings", "game-development"]
+
+[lib]
+# rlib by default; downstream crates that need a cdylib for Skyrim build their own.
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true

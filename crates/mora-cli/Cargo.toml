@@ -1,0 +1,23 @@
+[package]
+name = "mora-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The `mora` compiler CLI."
+publish = false
+
+[[bin]]
+name = "mora"
+path = "src/main.rs"
+
+[dependencies]
+mora-core = { path = "../mora-core" }
+mora-esp = { path = "../mora-esp" }
+mora-kid = { path = "../mora-kid" }
+anyhow.workspace = true
+clap.workspace = true
+miette.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "mora-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Shared types, patch format, chance RNG, and Distributor trait for Mora."
+publish = false
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+postcard.workspace = true
+tracing.workspace = true

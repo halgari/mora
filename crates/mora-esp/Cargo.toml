@@ -1,0 +1,16 @@
+[package]
+name = "mora-esp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Memory-mapped ESP/ESL/ESM parser and load-order resolver for Mora."
+publish = false
+
+[dependencies]
+mora-core = { path = "../mora-core" }
+thiserror.workspace = true
+memmap2.workspace = true
+rayon.workspace = true
+tracing.workspace = true
