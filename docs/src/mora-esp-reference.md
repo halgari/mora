@@ -168,3 +168,132 @@ reusable builders:
 
 Tests compose these into full plugin byte buffers, write to tmp
 files, mmap-load, and assert.
+
+---
+
+# Plan 8b additions — WEAP + ARMO subrecord layouts
+
+Binary layouts for the subrecords Plan 8b parses, to activate KID
+trait predicates on Weapon + Armor. Sources: xEdit
+`wbDefinitionsTES5.pas` (primary) + CommonLibSSE-NG headers
+(cross-reference). Discrepancies resolved in favor of xEdit (which
+is wire-format authoritative).
+
+All offsets are from the start of the subrecord payload (after the
+6-byte subrecord header).
+
+## WEAP DATA — value + weight + damage
+
+Total size: **10 bytes**
+
+| Offset | Size | Field  | Type | Notes        |
+|--------|------|--------|------|--------------|
+| 0x00   | 4    | value  | u32  | gold value   |
+| 0x04   | 4    | weight | f32  | item weight  |
+| 0x08   | 2    | damage | u16  | base damage  |
+
+## WEAP DNAM — animation type + reach + speed (plus much more we skip)
+
+Total size: **100 bytes** (wire format). The runtime C++ struct in
+CommonLibSSE-NG is smaller (56 bytes) because it stores some fields
+out-of-line; the file blob is the flat 100-byte version.
+
+| Offset | Size | Field          | Type | M3 use               |
+|--------|------|----------------|------|----------------------|
+| 0x00   | 1    | animation_type | u8   | WeaponAnimType enum  |
+| 0x01   | 3    | _padding       | —    | skip                 |
+| 0x04   | 4    | speed          | f32  | skip (M3+)           |
+| 0x08   | 4    | reach          | f32  | skip (M3+)           |
+| 0x0C+  |      | (many more)    |      | skip for M3          |
+
+### `animation_type` enum (u8)
+
+```
+0 = HandToHandMelee
+1 = OneHandSword
+2 = OneHandDagger
+3 = OneHandAxe
+4 = OneHandMace
+5 = TwoHandSword
+6 = TwoHandAxe
+7 = Bow
+8 = Staff
+9 = Crossbow
+```
+
+## WEAP EITM — enchantment
+
+**Total size: 4 bytes.** Single FormID pointing to an ENCH form.
+Subrecord absent → weapon is unenchanted.
+
+EAMT (u16, enchantment capacity) may also appear on WEAP per
+`wbEnchantment(True)` — Mora reads it only as "if present, skip".
+
+## WEAP CNAM — template
+
+**Total size: 4 bytes.** FormID pointing to another WEAP. Optional.
+When present, many fields on this record are inherited from the
+template.
+
+## ARMO DATA — value + weight
+
+Total size: **8 bytes**
+
+| Offset | Size | Field  | Type | Notes                          |
+|--------|------|--------|------|--------------------------------|
+| 0x00   | 4    | value  | i32  | gold value (signed on disk)    |
+| 0x04   | 4    | weight | f32  | item weight                    |
+
+## ARMO DNAM — armor rating
+
+Total size: **4 bytes**
+
+| Offset | Size | Field        | Type | Notes                                  |
+|--------|------|--------------|------|----------------------------------------|
+| 0x00   | 4    | armor_rating | i32  | stored as display × 100 (divide on read) |
+
+Mora reads as i32, converts to `f32 / 100.0` before exposing.
+
+## ARMO BOD2 — biped slots + armor type (SSE primary)
+
+Total size: **8 bytes**
+
+| Offset | Size | Field              | Type | Notes                                    |
+|--------|------|--------------------|------|------------------------------------------|
+| 0x00   | 4    | biped_object_slots | u32  | bitmask; bit N = slot (30 + N)           |
+| 0x04   | 4    | armor_type         | u32  | 0=LightArmor, 1=HeavyArmor, 2=Clothing   |
+
+Body-slot bit → slot-number mapping (selected):
+- bit 0 → slot 30 (Head)
+- bit 2 → slot 32 (Body)
+- bit 3 → slot 33 (Hands)
+- bit 7 → slot 37 (Feet)
+- bit 9 → slot 39 (Shield)
+- bit 12 → slot 42 (Circlet)
+- bit 31 → slot 61 (FX01)
+
+## ARMO BODT — legacy format (pre-SSE plugins)
+
+Total size: **12 bytes**
+
+| Offset | Size | Field              | Type | Notes                       |
+|--------|------|--------------------|------|-----------------------------|
+| 0x00   | 4    | biped_object_slots | u32  | same bitmask as BOD2        |
+| 0x04   | 1    | general_flags      | u8   | skip (NonPlayable lives in record header now) |
+| 0x05   | 3    | _padding           | —    | skip                        |
+| 0x08   | 4    | armor_type         | u32  | same enum as BOD2           |
+
+Mora's parser reads whichever of BOD2 / BODT appears (BOD2 preferred
+if both are present — which shouldn't happen in well-formed plugins).
+
+## ARMO EITM — enchantment
+
+**Total size: 4 bytes.** Same format as WEAP EITM. No `EAMT`
+sibling on ARMO per xEdit (`wbEnchantment` without `True`).
+
+## ARMO TNAM — template armor (NOT `CNAM`)
+
+**Total size: 4 bytes.** FormID pointing to another ARMO. Armor's
+template subrecord signature is **`TNAM`**, not `CNAM` like weapon —
+a common source of parser bugs.
+

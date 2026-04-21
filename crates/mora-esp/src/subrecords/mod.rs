@@ -4,5 +4,11 @@
 //! Callers obtain subrecord bytes from `SubrecordIter` and pass to
 //! the typed parser.
 
+pub mod armor_data;
+pub mod armor_dnam;
+pub mod biped_object;
 pub mod edid;
+pub mod form_id_ref;
 pub mod kwda;
+pub mod weapon_data;
+pub mod weapon_dnam;

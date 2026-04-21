@@ -50,6 +50,11 @@ pub const XXXX: Signature = Signature::new(b"XXXX");
 pub const KYWD: Signature = Signature::new(b"KYWD");
 pub const CNAM: Signature = Signature::new(b"CNAM");
 pub const SNAM: Signature = Signature::new(b"SNAM");
+pub const DNAM: Signature = Signature::new(b"DNAM");
+pub const EITM: Signature = Signature::new(b"EITM");
+pub const TNAM: Signature = Signature::new(b"TNAM");
+pub const BOD2: Signature = Signature::new(b"BOD2");
+pub const BODT: Signature = Signature::new(b"BODT");
 
 #[cfg(test)]
 mod tests {
