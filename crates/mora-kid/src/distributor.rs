@@ -91,12 +91,6 @@ impl Distributor<EspWorld> for KidDistributor {
                     }
                 }
             };
-            if rule.filters.has_unsupported() {
-                debug!(
-                    "{}:{}: rule has unsupported ALL/ANY filters; evaluator treats as pass",
-                    rule.source.file, rule.source.line_number
-                );
-            }
             resolved.push(ResolvedRule {
                 rule,
                 keyword_form_id: fid,

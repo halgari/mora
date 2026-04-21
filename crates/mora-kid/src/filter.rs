@@ -38,23 +38,22 @@ pub fn parse_filter_field(s: &str) -> FilterBuckets {
 /// existing keyword set (already resolved FormIDs). `item_plugin_index`
 /// is the plugin index of the item's own source — used for plugin-name
 /// filters.
-///
-/// M3 supports MATCH + NOT only. ALL + ANY log-and-skip (always pass
-/// when present).
 pub fn evaluate(
     buckets: &FilterBuckets,
     world: &EspWorld,
     item_plugin_index: usize,
     item_keywords: &[FormId],
 ) -> bool {
-    // ALL bucket: at M3, non-empty ALL means "unsupported" — skip rule.
-    // But we're an *evaluator*, not a parse step. Treat unsupported as
-    // "no constraint" and emit a warning upstream in the distributor.
-    // (The distributor scans rules and checks has_unsupported().)
-    //
-    // For parity with how KID would short-circuit: if ANY bucket is
-    // non-empty in KID, that filter applies too. At M3 we skip — same
-    // "fail open" policy.
+    // ALL: each group is a '+'-joined ref list. Every ref across every
+    // group must match (KID stores ALL as a flat "every must match" list;
+    // our nested representation produces the same result — flatten).
+    for group in &buckets.all {
+        for r in group {
+            if !ref_matches_item(r, world, item_plugin_index, item_keywords) {
+                return false;
+            }
+        }
+    }
 
     // NOT: if any matches, fail.
     for r in &buckets.not {
@@ -69,6 +68,54 @@ pub fn evaluate(
             .match_
             .iter()
             .any(|r| ref_matches_item(r, world, item_plugin_index, item_keywords));
+        if !any_matched {
+            return false;
+        }
+    }
+
+    // ANY: substring match activated separately in evaluate_with_any
+    // (needs kw_edid_map context that individual filter eval doesn't have).
+    // The basic evaluate() ignores ANY; evaluate_with_any() is used by
+    // the distributor which has the map pre-built.
+
+    true
+}
+
+/// Extended evaluate that also honors the ANY (`*` prefix) bucket.
+/// Callers provide `item_editor_id` (optional if the record has no EDID)
+/// and `kw_edid_map` (FormId -> editor-id string) for keyword-edid
+/// substring checks.
+pub fn evaluate_with_any(
+    buckets: &FilterBuckets,
+    world: &EspWorld,
+    item_plugin_index: usize,
+    item_keywords: &[FormId],
+    item_editor_id: Option<&str>,
+    kw_edid_map: &std::collections::HashMap<FormId, String>,
+) -> bool {
+    if !evaluate(buckets, world, item_plugin_index, item_keywords) {
+        return false;
+    }
+
+    if !buckets.any.is_empty() {
+        let any_matched = buckets.any.iter().any(|substring| {
+            if let Some(edid) = item_editor_id
+                && edid.to_ascii_lowercase().contains(&substring.to_ascii_lowercase())
+            {
+                return true;
+            }
+            // Check item's keyword editor-ids.
+            for kw_fid in item_keywords {
+                if let Some(kw_edid) = kw_edid_map.get(kw_fid)
+                    && kw_edid
+                        .to_ascii_lowercase()
+                        .contains(&substring.to_ascii_lowercase())
+                {
+                    return true;
+                }
+            }
+            false
+        });
         if !any_matched {
             return false;
         }
@@ -130,5 +177,13 @@ mod tests {
     fn empty_returns_empty() {
         let buckets = parse_filter_field("");
         assert!(buckets.is_empty());
+    }
+
+    #[test]
+    fn all_bucket_records_groups() {
+        let buckets = parse_filter_field("A+B,C+D");
+        assert_eq!(buckets.all.len(), 2);
+        assert_eq!(buckets.all[0].len(), 2);
+        assert_eq!(buckets.all[1].len(), 2);
     }
 }

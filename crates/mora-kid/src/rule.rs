@@ -55,9 +55,6 @@ impl FilterBuckets {
         self.match_.is_empty() && self.not.is_empty() && self.all.is_empty() && self.any.is_empty()
     }
 
-    pub fn has_unsupported(&self) -> bool {
-        !self.all.is_empty() || !self.any.is_empty()
-    }
 }
 
 /// A parsed KID rule.
