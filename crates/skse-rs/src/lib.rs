@@ -29,6 +29,7 @@ pub mod address_library;
 pub mod ffi;
 pub mod log;
 pub mod plugin;
+pub mod relocation;
 pub mod version;
 
 pub use log::{LogInitError, Logger};
