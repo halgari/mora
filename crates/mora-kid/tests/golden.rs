@@ -200,6 +200,12 @@ fn compute_post_state(
 ) {
     let mut weapons: BTreeMap<FormId, BTreeSet<FormId>> = BTreeMap::new();
     let mut armors: BTreeMap<FormId, BTreeSet<FormId>> = BTreeMap::new();
+    // Per-form template pointer (CNAM for WEAP, TNAM for ARMO), captured
+    // from the LAST plugin to define the form. Used after the override
+    // pass to flatten template-keyword inheritance the way Skyrim does
+    // at runtime.
+    let mut weapon_templates: BTreeMap<FormId, FormId> = BTreeMap::new();
+    let mut armor_templates: BTreeMap<FormId, FormId> = BTreeMap::new();
 
     // ESP override semantics: iterate in load order (early to late) and
     // REPLACE the keyword set per form each time, so the last plugin
@@ -207,10 +213,34 @@ fn compute_post_state(
     // keywords that Skyrim discards when a later plugin overrides.
     for (fid, w) in world.weapons().flatten() {
         weapons.insert(fid, w.keywords.iter().copied().collect());
+        match w.template_weapon {
+            Some(t) => {
+                weapon_templates.insert(fid, t);
+            }
+            None => {
+                weapon_templates.remove(&fid);
+            }
+        }
     }
     for (fid, a) in world.armors().flatten() {
         armors.insert(fid, a.keywords.iter().copied().collect());
+        match a.template_armor {
+            Some(t) => {
+                armor_templates.insert(fid, t);
+            }
+            None => {
+                armor_templates.remove(&fid);
+            }
+        }
     }
+
+    // Skyrim merges template KWDA into the derived form's keyword list
+    // at runtime (BGSKeywordForm::AddKeywords from template). Walk each
+    // template chain and union the keywords into the derived form.
+    // Capped depth prevents infinite recursion on cyclic templates
+    // (which shouldn't exist but defensive is cheap).
+    flatten_templates(&mut weapons, &weapon_templates);
+    flatten_templates(&mut armors, &armor_templates);
 
     for patch in patches {
         match patch {
@@ -229,6 +259,41 @@ fn compute_post_state(
     armors.retain(|_, v| !v.is_empty());
 
     (weapons, armors)
+}
+
+/// For each form with a template pointer, walk the chain and union the
+/// ancestor's keyword set into the form's own keyword set. Skyrim does
+/// this at runtime via `BGSKeywordForm::AddKeywords` during load of the
+/// derived form. Depth cap is a safety against cycles.
+fn flatten_templates(
+    keywords: &mut BTreeMap<FormId, BTreeSet<FormId>>,
+    templates: &BTreeMap<FormId, FormId>,
+) {
+    const MAX_DEPTH: usize = 16;
+    let fids: Vec<FormId> = keywords.keys().copied().collect();
+    for fid in fids {
+        let mut cur = fid;
+        let mut inherited: BTreeSet<FormId> = BTreeSet::new();
+        for _ in 0..MAX_DEPTH {
+            let Some(&next) = templates.get(&cur) else {
+                break;
+            };
+            if next == fid {
+                break; // cycle back to start
+            }
+            if let Some(parent_kws) = keywords.get(&next) {
+                for kw in parent_kws {
+                    inherited.insert(*kw);
+                }
+            }
+            cur = next;
+        }
+        if let Some(own) = keywords.get_mut(&fid) {
+            for kw in inherited {
+                own.insert(kw);
+            }
+        }
+    }
 }
 
 fn load_jsonl(path: &Path) -> BTreeMap<FormId, BTreeSet<FormId>> {
