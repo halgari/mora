@@ -89,7 +89,12 @@ macro_rules! declare_plugin {
                     <$plugin_ty as $crate::SksePlugin>::SUPPORT_EMAIL,
                 ),
                 flags_a: 0,
-                flags_b: $crate::ffi::flags_b::ADDRESS_LIBRARY,
+                // ADDRESS_LIBRARY: relocations go through Address Library.
+                // STRUCTS_POST629: declares compat with Skyrim 1.6.629+ (AE
+                // runtime layout). Required by SKSE to load the DLL on the
+                // AE runtime when `compatible_versions` is otherwise empty.
+                flags_b: $crate::ffi::flags_b::ADDRESS_LIBRARY
+                    | $crate::ffi::flags_b::STRUCTS_POST629,
                 compatible_versions: [0; 16],
                 xse_minimum: 0,
             };

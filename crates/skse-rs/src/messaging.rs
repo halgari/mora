@@ -26,8 +26,15 @@ pub unsafe fn get_messaging(
     Ok(unsafe { &*ptr })
 }
 
-/// Register a listener for SKSE messages. `callback` receives every
-/// SKSE broadcast message — it must filter on `msg.msg_type`.
+/// Register a listener for SKSE *system* messages (kPostLoad,
+/// kPostLoadGame, kDataLoaded, kNewGame, kSaveGame, kPreLoadGame,
+/// kDeleteGame). `callback` receives every SKSE broadcast message — it
+/// must filter on `msg.msg_type`.
+///
+/// Subscribes to sender `"SKSE"` (the canonical SKSE system-message
+/// sender). Passing a null sender registers for messages from *no
+/// specific plugin*, which silently drops system broadcasts. Every
+/// sample SKSE plugin registers for `"SKSE"`.
 ///
 /// # Safety
 /// The callback must not store the message pointer past its own
@@ -39,7 +46,15 @@ pub unsafe fn register_listener(
 ) -> Result<(), LoadError> {
     let handle = unsafe { (skse.get_plugin_handle)() };
     let callback_void = callback as *mut core::ffi::c_void;
-    let ok = unsafe { (messaging.register_listener)(handle, core::ptr::null(), callback_void) };
+    // "SKSE\0" as the sender so we receive kDataLoaded et al.
+    const SKSE_SENDER: &[u8] = b"SKSE\0";
+    let ok = unsafe {
+        (messaging.register_listener)(
+            handle,
+            SKSE_SENDER.as_ptr() as *const core::ffi::c_char,
+            callback_void,
+        )
+    };
     if ok {
         Ok(())
     } else {

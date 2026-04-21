@@ -39,19 +39,73 @@ pub fn load_library_from_path(path: &std::path::Path) -> Result<(), RelocationEr
     Ok(())
 }
 
-/// Resolve the well-known SKSE Plugins path, using `%MORA_SKYRIM_DATA%`
-/// if set, else the first candidate that exists.
-pub fn resolve_default_library_path() -> Option<PathBuf> {
-    if let Ok(data) = std::env::var("MORA_SKYRIM_DATA") {
-        let p = PathBuf::from(data).join("SKSE/Plugins/versionlib-1-6-1170-0.bin");
+/// Derive the expected Address Library filename from a packed SKSE
+/// `runtime_version` u32.
+///
+/// Bit layout (SKSE `MAKE_EXE_VERSION_EX`):
+/// - bits 31..24: major
+/// - bits 23..16: minor
+/// - bits 15..04: build (12 bits)
+/// - bits  3..00: sub-version
+///
+/// Example: `0x010649B1` → `versionlib-1-6-1179-0.bin`.
+pub fn versionlib_filename_for(runtime_version: u32) -> String {
+    let major = (runtime_version >> 24) & 0xFF;
+    let minor = (runtime_version >> 16) & 0xFF;
+    let build = (runtime_version >> 4) & 0xFFF;
+    format!("versionlib-{}-{}-{}-0.bin", major, minor, build)
+}
+
+/// Resolve the versionlib path for a specific runtime version,
+/// searching the standard roots (`MORA_SKYRIM_DATA`, `./Data`, `.`).
+/// Returns `None` if the exact version's file isn't present.
+pub fn resolve_versionlib_for(runtime_version: u32) -> Option<PathBuf> {
+    let filename = versionlib_filename_for(runtime_version);
+    let roots: Vec<PathBuf> = match std::env::var("MORA_SKYRIM_DATA") {
+        Ok(data) => vec![PathBuf::from(data)],
+        Err(_) => vec![PathBuf::from("Data"), PathBuf::from(".")],
+    };
+    for root in &roots {
+        let p = root.join("SKSE/Plugins").join(&filename);
         if p.exists() {
             return Some(p);
         }
     }
-    // On Windows, the plugin's working directory is the game's Data dir.
-    let p = PathBuf::from("SKSE/Plugins/versionlib-1-6-1170-0.bin");
-    if p.exists() {
-        return Some(p);
+    None
+}
+
+/// Known Address Library filenames, ordered newest-first. The first
+/// one that exists wins. Add new entries here when Skyrim patches.
+const KNOWN_VERSIONLIB_FILES: &[&str] = &[
+    "versionlib-1-6-1179-0.bin",
+    "versionlib-1-6-1170-0.bin",
+    "versionlib-1-6-1130-0.bin",
+    "versionlib-1-6-640-0.bin",
+    "versionlib-1-6-629-0.bin",
+];
+
+/// Resolve the well-known SKSE Plugins path, using `%MORA_SKYRIM_DATA%`
+/// if set, else the plugin's working directory. Iterates the known
+/// versionlib filenames newest-first.
+///
+/// When `MORA_SKYRIM_DATA` is set, it points directly at the Data
+/// directory, so the versionlib lives at `<data>/SKSE/Plugins/...`.
+/// When unset, CWD at runtime is the game install root (where
+/// `SkyrimSE.exe` lives), so we probe both `./SKSE/Plugins/...` AND
+/// `./Data/SKSE/Plugins/...` — the latter is the real location; the
+/// former is a legacy fallback.
+pub fn resolve_default_library_path() -> Option<PathBuf> {
+    let candidate_roots: Vec<PathBuf> = match std::env::var("MORA_SKYRIM_DATA") {
+        Ok(data) => vec![PathBuf::from(data)],
+        Err(_) => vec![PathBuf::from("Data"), PathBuf::from(".")],
+    };
+    for root in &candidate_roots {
+        for name in KNOWN_VERSIONLIB_FILES {
+            let p = root.join("SKSE/Plugins").join(name);
+            if p.exists() {
+                return Some(p);
+            }
+        }
     }
     None
 }
@@ -134,4 +188,27 @@ fn image_base_address() -> Option<usize> {
     // `Relocation::id` returns the raw rva. Useful for testing the
     // resolver plumbing without a real game binary.
     Some(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn versionlib_filename_for_1_6_1179() {
+        // 0x010649B1 = 1.6.1179.1 per SKSE MAKE_EXE_VERSION_EX.
+        assert_eq!(
+            versionlib_filename_for(0x0106_49B1),
+            "versionlib-1-6-1179-0.bin"
+        );
+    }
+
+    #[test]
+    fn versionlib_filename_for_older_runtime() {
+        // 1.6.640 = 0x0106_2800.
+        assert_eq!(
+            versionlib_filename_for(0x0106_2800),
+            "versionlib-1-6-640-0.bin"
+        );
+    }
 }

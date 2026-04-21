@@ -47,3 +47,21 @@ NoTypeHere =
 
     assert!(matches!(rules[3].record_type, RecordType::Other(ref s) if s == "Potion"));
 }
+
+#[test]
+fn scenario_traits_weapon_all_parses_to_one_rule() {
+    let path = std::path::Path::new(
+        "../../tests/golden-data/kid-inis/traits_weapon_all/traits_weapon_all_KID.ini",
+    );
+    let parsed = mora_kid::ini::parse_file(path).unwrap();
+    assert_eq!(parsed.rules.len(), 1, "got: {parsed:?}");
+}
+
+#[test]
+fn scenario_traits_armor_all_parses_to_one_rule() {
+    let path = std::path::Path::new(
+        "../../tests/golden-data/kid-inis/traits_armor_all/traits_armor_all_KID.ini",
+    );
+    let parsed = mora_kid::ini::parse_file(path).unwrap();
+    assert_eq!(parsed.rules.len(), 1, "got: {parsed:?}");
+}

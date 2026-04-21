@@ -1,15 +1,29 @@
 //! `cargo xtask <cmd>` — dev-workflow orchestration.
-//!
-//! Commands are added as milestones require them:
-//!   - M4: `capture-kid-goldens`
-//!   - M5: `stage-runner-image`
-//!   - later: `build-windows-dlls` and similar
-//!
-//! For now this is a stub that prints available commands (none yet).
 
 use anyhow::Result;
+use clap::{Parser, Subcommand};
+
+use xtask::capture_kid_goldens;
+
+#[derive(Parser)]
+#[command(name = "xtask", about = "Mora dev-workflow orchestration")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Capture KID ground-truth dumps for one or more scenarios by
+    /// running the real KID SKSE plugin against the scenario's INI in
+    /// a real Skyrim under Proton, then extracting the harness's JSONL
+    /// output into `tests/golden-data/expected/<scenario>/`.
+    CaptureKidGoldens(capture_kid_goldens::Args),
+}
 
 fn main() -> Result<()> {
-    eprintln!("xtask: no commands implemented yet (M0 stub)");
-    std::process::exit(0);
+    let cli = Cli::parse();
+    match cli.command {
+        Command::CaptureKidGoldens(args) => capture_kid_goldens::run(args),
+    }
 }

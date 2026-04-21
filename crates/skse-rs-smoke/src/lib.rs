@@ -21,33 +21,6 @@ use skse_rs::{LoadOutcome, Logger, PluginVersion, SksePlugin, declare_plugin};
 const IRON_SWORD_FID: u32 = 0x0001_2EB7;
 const WEAP_MATERIAL_IRON_FID: u32 = 0x0001_E718;
 
-// Offset of the `BGSKeywordForm` sub-object within a `TESObjectWEAP`.
-//
-// Verified by summing base-class sizes from CommonLibSSE-NG static_asserts
-// (TESObjectWEAP.h, and each base class header). Inheritance order:
-//
-//   Base class                  size    running offset
-//   TESBoundObject              0x30    0x000
-//   TESFullName                 0x10    0x030
-//   TESModelTextureSwap         0x38    0x040
-//   TESIcon                     0x10    0x078
-//   TESEnchantableForm          0x18    0x088
-//   TESValueForm                0x10    0x0A0
-//   TESWeightForm               0x10    0x0B0
-//   TESAttackDamageForm         0x10    0x0C0
-//   BGSDestructibleObjectForm   0x10    0x0D0
-//   BGSEquipType                0x10    0x0E0
-//   BGSPreloadable              0x08    0x0F0
-//   BGSMessageIcon              0x18    0x0F8
-//   BGSPickupPutdownSounds      0x18    0x110
-//   BGSBlockBashData            0x18    0x128
-//   BGSKeywordForm              0x18    0x140  <-- starts here
-//   TESDescription              ...     0x158
-//
-// Cross-check: sizeof(TESObjectWEAP) == 0x220 per static_assert in
-// TESObjectWEAP.h; the field layout beyond 0x158 accounts for the rest.
-const WEAPON_KEYWORD_FORM_OFFSET: isize = 0x140;
-
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
 struct SkseRsSmoke;
@@ -136,10 +109,11 @@ impl SksePlugin for SkseRsSmoke {
         let kw: *mut BGSKeyword = kw_form as *mut BGSKeyword;
 
         // Cast the TESObjectWEAP pointer to its BGSKeywordForm sub-object.
-        // WEAPON_KEYWORD_FORM_OFFSET is verified above via base-class size sums.
-        let keyword_form: *mut BGSKeywordForm =
-            unsafe { (iron_sword as *mut u8).offset(WEAPON_KEYWORD_FORM_OFFSET) }
-                as *mut BGSKeywordForm;
+        // Offset is documented + derived in
+        // skse_rs::game::keyword_form::WEAPON_KEYWORD_FORM_OFFSET.
+        let keyword_form: *mut BGSKeywordForm = unsafe {
+            (iron_sword as *mut u8).offset(skse_rs::game::keyword_form::WEAPON_KEYWORD_FORM_OFFSET)
+        } as *mut BGSKeywordForm;
 
         match unsafe { add_keyword(keyword_form, kw) } {
             Ok(true) => logger.write_line("AddKeyword result: added").ok(),

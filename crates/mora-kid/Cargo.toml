@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "KID INI parser and distributor frontend for Mora."
+build = "build.rs"
 publish = false
 
 [dependencies]
@@ -14,3 +15,10 @@ mora-esp = { path = "../mora-esp" }
 thiserror.workspace = true
 miette = { workspace = true }
 tracing.workspace = true
+
+[build-dependencies]
+anyhow.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+sha2.workspace = true

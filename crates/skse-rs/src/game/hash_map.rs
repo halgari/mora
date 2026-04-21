@@ -1,13 +1,17 @@
 //! `BSTHashMap<FormID, *mut TESForm>` read-only binding.
 //!
-//! M1-minimal: only lookup is implemented. Insert, delete, iterate,
-//! and capacity-growth paths are all out of scope.
+//! M1-minimal: lookup and read-only iteration are implemented. Insert,
+//! delete, and capacity-growth paths are all out of scope.
 //!
 //! Algorithm ported from `CommonLibSSE-NG` `BSTScatterTable::do_find`.
 
 use crate::game::form::TESForm;
 
-/// The sentinel Bethesda uses to mark end-of-chain.
+/// The 4-byte value of Bethesda's end-of-chain sentinel constant
+/// `BSTScatterTableSentinel = { 0xDE, 0xAD, 0xBE, 0xEF }`. At runtime,
+/// `FormHashMap::sentinel` stores the *address* of this global; chain
+/// walks compare against that pointer (not this literal). Kept as a
+/// documentation anchor and for synthetic tests.
 pub const SENTINEL: usize = 0xDEADBEEF;
 
 /// Layout of `BSTHashMap<FormID, *mut TESForm>`. Size 0x30.
@@ -62,10 +66,86 @@ impl FormHashMap {
             if cur.key == form_id {
                 return cur.value;
             }
-            if cur.next as usize == SENTINEL {
+            if (cur.next as *const ()) == self.sentinel {
                 return core::ptr::null_mut();
             }
             entry = cur.next;
+        }
+    }
+}
+
+/// Iterator over every `(form_id, *mut TESForm)` pair in a
+/// `FormHashMap`. Walks the `entries` bucket array linearly, yielding
+/// each used slot (where `next != null`) exactly once.
+///
+/// Chain `next` pointers are intentionally not followed — see the
+/// note on `Iterator::next` below. That means iteration visits every
+/// used slot in bucket-index order, regardless of which chain it
+/// belongs to.
+pub struct FormHashMapIter<'a> {
+    map: &'a FormHashMap,
+    /// Next bucket index to visit.
+    bucket: u32,
+    /// Unused marker that keeps the iterator `!Send + !Sync` — the
+    /// caller must hold the map's read lock for the duration of
+    /// iteration, and a raw pointer field structurally enforces
+    /// thread confinement.
+    _not_send: core::marker::PhantomData<*mut HashMapEntry>,
+}
+
+impl<'a> Iterator for FormHashMapIter<'a> {
+    type Item = (u32, *mut TESForm);
+
+    /// Iteration strategy: walk every slot in `entries[0..capacity]`.
+    /// Each *used* slot (where `next != null`) yields its
+    /// `(key, value)`.
+    ///
+    /// We deliberately do NOT follow `next` pointers here: Bethesda's
+    /// `BSTScatterTable` stores chain continuations IN the same
+    /// `entries` array (chained via `next`), which means every chain
+    /// element is ALSO reachable via its own bucket index. Following
+    /// chains during iteration would yield each non-bucket-home entry
+    /// twice — once via its chain predecessor, once when the outer
+    /// walk reaches its own slot. `next`-following is correct for
+    /// `lookup`, wrong for iteration.
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.map.entries.is_null() || self.map.capacity == 0 {
+            return None;
+        }
+        while self.bucket < self.map.capacity {
+            let b = unsafe { self.map.entries.add(self.bucket as usize) };
+            let b_ref = unsafe { &*b };
+            self.bucket += 1;
+            // Empty slots have `next == null` (Bethesda convention).
+            if b_ref.next.is_null() {
+                continue;
+            }
+            return Some((b_ref.key, b_ref.value));
+        }
+        None
+    }
+}
+
+impl FormHashMap {
+    /// Walk every form in the map.
+    ///
+    /// # Safety
+    /// * The caller must acquire the map's read lock **before** calling
+    ///   `iter()` and must not release it until both the iterator and
+    ///   every `*mut TESForm` pointer obtained from it are no longer in
+    ///   use. The `'a` lifetime ties the iterator to the *map borrow*;
+    ///   it does not borrow the lock, so the compiler will not enforce
+    ///   this ordering.
+    /// * The map's `entries` pointer must be non-null and point to
+    ///   `capacity` contiguous `HashMapEntry` elements (guaranteed by
+    ///   SKSE for `allForms` after `kDataLoaded`).
+    /// * The caller must not mutate the map while the iterator is live
+    ///   (no concurrent insert, delete, or rehash).
+    pub unsafe fn iter(&self) -> FormHashMapIter<'_> {
+        FormHashMapIter {
+            map: self,
+            bucket: 0,
+            _not_send: core::marker::PhantomData,
         }
     }
 }
@@ -97,6 +177,68 @@ mod tests {
     fn layout_sizes() {
         assert_eq!(std::mem::size_of::<FormHashMap>(), 0x30);
         assert_eq!(std::mem::size_of::<HashMapEntry>(), 0x18);
+    }
+
+    #[test]
+    fn iter_visits_every_used_slot_exactly_once() {
+        // Build a 4-bucket table representing a map where:
+        //   - bucket 0 holds entry A (key=0x100, natural home)
+        //   - bucket 1 holds entry B (key=0x200, displaced into a
+        //     neighboring slot because its natural home is taken)
+        //   - bucket 2 holds entry C (key=0x300)
+        //   - bucket 3 is empty
+        //
+        // Bucket 0's chain terminates by pointing at bucket 1 (entry B),
+        // which in turn points at SENTINEL. Iteration must yield each
+        // used slot EXACTLY ONCE in bucket-index order (A, B, C) — it
+        // must NOT re-yield B via the bucket walk after already seeing
+        // it via bucket 0's chain (which would duplicate).
+        let fake_a = 0xAAAA_AAAAusize as *mut TESForm;
+        let fake_b = 0xBBBB_BBBBusize as *mut TESForm;
+        let fake_c = 0xCCCC_CCCCusize as *mut TESForm;
+
+        let mut buckets: Vec<HashMapEntry> = (0..4)
+            .map(|_| HashMapEntry {
+                key: 0,
+                _pad: 0,
+                value: core::ptr::null_mut(),
+                next: core::ptr::null_mut(),
+            })
+            .collect();
+        // Bucket 0: entry A. Chain pointer → bucket 1 (entry B).
+        buckets[0].key = 0x100;
+        buckets[0].value = fake_a;
+        // Bucket 1: entry B, end-of-chain.
+        buckets[1].key = 0x200;
+        buckets[1].value = fake_b;
+        buckets[1].next = SENTINEL as *mut HashMapEntry;
+        // After buckets[1] is filled, wire buckets[0].next to point at it.
+        buckets[0].next = &mut buckets[1] as *mut HashMapEntry;
+        // Bucket 2: entry C, end-of-chain.
+        buckets[2].key = 0x300;
+        buckets[2].value = fake_c;
+        buckets[2].next = SENTINEL as *mut HashMapEntry;
+        // Bucket 3: empty (next == null).
+
+        let map = FormHashMap {
+            _pad00: 0,
+            _pad08: 0,
+            capacity: 4,
+            free: 0,
+            good: 0,
+            sentinel: SENTINEL as *const (),
+            _alloc_pad: 0,
+            entries: buckets.as_mut_ptr(),
+        };
+
+        let seen: Vec<(u32, *mut TESForm)> = unsafe { map.iter().collect() };
+        assert_eq!(
+            seen,
+            vec![(0x100, fake_a), (0x200, fake_b), (0x300, fake_c)],
+            "iteration must visit each used slot once in bucket-index order. \
+             Duplicate yields indicate the iterator is following `next` \
+             pointers as well as walking buckets (wrong — see docs)."
+        );
     }
 
     #[test]

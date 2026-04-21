@@ -72,8 +72,10 @@ jobs:
       - id: check
         shell: bash
         run: |
-          # True if any tests/integration/<case>/rust-ready.marker exists.
-          if compgen -G "tests/integration/**/rust-ready.marker" > /dev/null; then
+          # True if any live-integration case OR captured golden scenario exists.
+          # Either triggers the self-hosted skyrim-integration job.
+          if compgen -G "tests/integration/**/rust-ready.marker" > /dev/null \
+              || compgen -G "tests/golden-data/expected/*/manifest.json" > /dev/null; then
               echo "has_rust_ready=true" >> "$GITHUB_OUTPUT"
           else
               echo "has_rust_ready=false" >> "$GITHUB_OUTPUT"
@@ -94,7 +96,11 @@ jobs:
       - name: Build Linux artifacts
         run: cargo build --release --workspace
       - name: Cross-compile Windows DLLs
-        run: cargo xwin build --release --target x86_64-pc-windows-msvc -p mora-runtime -p mora-test-harness
+        run: cargo xwin build --release --target x86_64-pc-windows-msvc -p mora-runtime -p mora-test-harness -p mora-golden-harness
+      - name: KID golden tests
+        env:
+          MORA_SKYRIM_DATA: /skyrim-base/Data
+        run: cargo test --package mora-kid --test golden
       - name: Placeholder — full orchestration lands in M5
         run: |
           echo "Skyrim integration pipeline will be implemented in M5."

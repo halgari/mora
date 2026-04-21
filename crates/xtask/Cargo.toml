@@ -1,3 +1,6 @@
+[lib]
+path = "src/lib.rs"
+
 [package]
 name = "xtask"
 version.workspace = true
@@ -10,3 +13,10 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
