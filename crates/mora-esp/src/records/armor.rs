@@ -2,7 +2,13 @@
 //!
 //! M2 exposes the subset mora-kid needs:
 //! - `editor_id` (EDID subrecord)
-//! - `keywords` (KWDA subrecord — local FormIDs)
+//! - `keywords` (KWDA subrecord, resolved to runtime FormIDs)
+//!
+//! Keyword FormIDs are resolved at parse time against the active load
+//! order; unresolvable keywords (referenced plugin not in load order)
+//! are silently dropped, matching KID behavior.
+
+use mora_core::FormId;
 
 use crate::compression::{DecompressError, decompress};
 use crate::reader::ReadError;
@@ -10,6 +16,7 @@ use crate::record::Record;
 use crate::signature::{EDID, KWDA};
 use crate::subrecord::SubrecordIter;
 use crate::subrecords::{edid, kwda};
+use crate::world::EspWorld;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ArmorError {
@@ -23,10 +30,14 @@ pub enum ArmorError {
 #[derive(Debug, Default)]
 pub struct ArmorRecord {
     pub editor_id: Option<String>,
-    pub keywords: Vec<u32>,
+    pub keywords: Vec<FormId>,
 }
 
-pub fn parse(record: &Record<'_>) -> Result<ArmorRecord, ArmorError> {
+pub fn parse(
+    record: &Record<'_>,
+    plugin_index: usize,
+    world: &EspWorld,
+) -> Result<ArmorRecord, ArmorError> {
     let body_owned: Option<Vec<u8>> = if record.is_compressed() {
         Some(decompress(record.body)?)
     } else {
@@ -40,7 +51,13 @@ pub fn parse(record: &Record<'_>) -> Result<ArmorRecord, ArmorError> {
         let sub = sub?;
         match sub.signature {
             s if s == EDID => a.editor_id = Some(edid::parse(sub.data)?),
-            s if s == KWDA => a.keywords = kwda::parse(sub.data)?,
+            s if s == KWDA => {
+                let local_ids = kwda::parse(sub.data)?;
+                a.keywords = local_ids
+                    .into_iter()
+                    .filter_map(|raw| world.resolve_in_plugin(plugin_index, raw))
+                    .collect();
+            }
             _ => {}
         }
     }

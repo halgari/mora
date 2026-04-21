@@ -9,6 +9,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use fixtures::*;
+use mora_core::FormId;
 use mora_esp::records::{armor, weapon};
 use mora_esp::signature::{ARMO, WEAP};
 use mora_esp::{EspPlugin, EspWorld};
@@ -39,9 +40,6 @@ fn parses_single_plugin_with_weapon() {
     let plugin = EspPlugin::open(&path).unwrap();
     assert!(plugin.is_esm());
     assert_eq!(plugin.filename, "TestPlugin.esm");
-
-    // Manually walk the body to find the WEAP group and iterate.
-    // (Full EspWorld end-to-end is tested below.)
 }
 
 #[test]
@@ -61,7 +59,7 @@ fn esp_world_iterates_weapons_across_plugins() {
             GroupBuilder::new(b"WEAP").add(
                 RecordBuilder::new(b"WEAP", 0x0001_BBBB)
                     .add(SubrecordBuilder::new(b"EDID", edid_payload("SwordB")))
-                    .add(SubrecordBuilder::new(b"KWDA", kwda_payload(&[0x0002_E718]))),
+                    .add(SubrecordBuilder::new(b"KWDA", kwda_payload(&[0x0000_E718]))),
             ),
         )
         .bytes();
@@ -89,17 +87,17 @@ fn esp_world_iterates_weapons_across_plugins() {
 }
 
 #[test]
-fn weapon_parse_extracts_editor_id_and_keywords() {
+fn weapon_parse_extracts_editor_id_and_resolves_keywords() {
     let plugin_bytes = PluginBuilder::new()
         .esm()
         .add_group(
             GroupBuilder::new(b"WEAP").add(
                 RecordBuilder::new(b"WEAP", 0x0001_2EB7)
                     .add(SubrecordBuilder::new(b"EDID", edid_payload("IronSword")))
-                    .add(SubrecordBuilder::new(
-                        b"KWDA",
-                        kwda_payload(&[0x0001_E718, 0x0002_1234]),
-                    )),
+                    // Keyword 0x0001_E718 has local mod index 0x00 which equals
+                    // len(masters) == 0 → self-reference. Resolves to the plugin's
+                    // own slot.
+                    .add(SubrecordBuilder::new(b"KWDA", kwda_payload(&[0x0001_E718]))),
             ),
         )
         .bytes();
@@ -110,10 +108,52 @@ fn weapon_parse_extracts_editor_id_and_keywords() {
     std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
     let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();
 
+    let iron_index = world
+        .plugins
+        .iter()
+        .position(|p| p.filename == "IronPlugin.esm")
+        .expect("IronPlugin.esm in world");
+
+    // IronPlugin.esm is the only plugin → LoadSlot::Full(0x00). Self-reference
+    // resolves local id unchanged into slot 0x00.
+    let expected_keyword = FormId(0x0001_E718);
+
     for w in world.records(WEAP) {
-        let parsed = weapon::parse(&w.record).unwrap();
+        let parsed = weapon::parse(&w.record, w.plugin_index, &world).unwrap();
         assert_eq!(parsed.editor_id.as_deref(), Some("IronSword"));
-        assert_eq!(parsed.keywords, vec![0x0001_E718, 0x0002_1234]);
+        assert_eq!(parsed.keywords, vec![expected_keyword]);
+        assert_eq!(w.plugin_index, iron_index);
+    }
+}
+
+#[test]
+fn weapon_keywords_unresolvable_are_silently_dropped() {
+    // Keyword with local mod index 5 in a plugin with no masters → out of range.
+    // Parser drops it silently to match KID behavior.
+    let plugin_bytes = PluginBuilder::new()
+        .esm()
+        .add_group(
+            GroupBuilder::new(b"WEAP").add(
+                RecordBuilder::new(b"WEAP", 0x0001_2EB7)
+                    .add(SubrecordBuilder::new(b"EDID", edid_payload("DropKwSword")))
+                    .add(SubrecordBuilder::new(
+                        b"KWDA",
+                        kwda_payload(&[0x0001_E718, 0x05_12_34_56]),
+                    )),
+            ),
+        )
+        .bytes();
+
+    let path = write_tmp("DropKwPlugin.esm", &plugin_bytes);
+    let plugin = EspPlugin::open(&path).unwrap();
+    let plugins_txt = path.parent().unwrap().join("plugins-dropkw.txt");
+    std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
+    let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();
+
+    for w in world.records(WEAP) {
+        let parsed = weapon::parse(&w.record, w.plugin_index, &world).unwrap();
+        // First keyword (local idx 0 = self) resolves; second (local idx 5) is out of range.
+        assert_eq!(parsed.keywords, vec![FormId(0x0001_E718)]);
     }
 }
 
@@ -141,8 +181,35 @@ fn armor_parse_smoke() {
     let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();
 
     for a in world.records(ARMO) {
-        let parsed = armor::parse(&a.record).unwrap();
+        let parsed = armor::parse(&a.record, a.plugin_index, &world).unwrap();
         assert_eq!(parsed.editor_id.as_deref(), Some("IronHelmet"));
-        assert_eq!(parsed.keywords, vec![0x0001_E719]);
+        assert_eq!(parsed.keywords, vec![FormId(0x0001_E719)]);
     }
+}
+
+#[test]
+fn world_weapons_typed_iterator() {
+    let plugin_bytes = PluginBuilder::new()
+        .esm()
+        .add_group(
+            GroupBuilder::new(b"WEAP").add(
+                RecordBuilder::new(b"WEAP", 0x0001_2EB7)
+                    .add(SubrecordBuilder::new(b"EDID", edid_payload("IronSword")))
+                    .add(SubrecordBuilder::new(b"KWDA", kwda_payload(&[0x0001_E718]))),
+            ),
+        )
+        .bytes();
+
+    let path = write_tmp("IronTyped.esm", &plugin_bytes);
+    let plugin = EspPlugin::open(&path).unwrap();
+    let plugins_txt = path.parent().unwrap().join("plugins-iron-typed.txt");
+    std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
+    let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();
+
+    let weapons: Vec<_> = world.weapons().collect::<Result<_, _>>().unwrap();
+    assert_eq!(weapons.len(), 1);
+    let (fid, w) = &weapons[0];
+    assert_eq!(*fid, FormId(0x0001_2EB7));
+    assert_eq!(w.editor_id.as_deref(), Some("IronSword"));
+    assert_eq!(w.keywords, vec![FormId(0x0001_E718)]);
 }

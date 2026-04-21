@@ -6,13 +6,16 @@
 
 use std::path::Path;
 
+use mora_core::FormId;
+
 use crate::group::{GROUP_HEADER_SIZE, read_group};
 use crate::load_order::{LoadOrder, build as build_load_order, remap_form_id};
 use crate::plugin::{EspPlugin, EspPluginError};
 use crate::plugins_txt;
 use crate::reader::ReadError;
 use crate::record::{Record, read_record};
-use crate::signature::Signature;
+use crate::records::{armor, weapon};
+use crate::signature::{ARMO, Signature, WEAP};
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorldError {
@@ -28,7 +31,7 @@ pub enum WorldError {
 /// plugin index for downstream consumers that want to know provenance.
 pub struct WorldRecord<'a> {
     pub plugin_index: usize,
-    pub resolved_form_id: u32,
+    pub resolved_form_id: FormId,
     pub record: Record<'a>,
 }
 
@@ -83,8 +86,30 @@ impl EspWorld {
         })
     }
 
+    /// Resolve a plugin-local FormID (high byte = index into the
+    /// plugin's master list, or `== len(masters)` for self-reference)
+    /// to a fully-qualified runtime `FormId`. Returns `None` if the
+    /// referenced plugin is not in the active load order.
+    ///
+    /// `plugin_index` is the index into `self.plugins` of the source
+    /// plugin that contains the local FormID.
+    pub fn resolve_in_plugin(&self, plugin_index: usize, raw_local: u32) -> Option<FormId> {
+        let plugin = self.plugins.get(plugin_index)?;
+        remap_form_id(
+            raw_local,
+            &plugin.header.masters,
+            &plugin.filename,
+            &self.load_order,
+        )
+        .map(FormId)
+    }
+
     /// Iterate records of the given signature across all active
-    /// plugins, in load order. FormIDs are remapped to live values.
+    /// plugins, in load order. Record FormIDs are resolved against
+    /// the active load order; keyword / reference FormIDs inside
+    /// the record bodies are NOT — the typed record accessors
+    /// (`WorldRecord -> WeaponRecord` via `weapons()`, etc.) handle
+    /// that.
     pub fn records(&self, sig: Signature) -> impl Iterator<Item = WorldRecord<'_>> + '_ {
         self.plugins.iter().enumerate().flat_map(move |(idx, p)| {
             scan_top_level_group(p, sig).map(move |r| {
@@ -93,10 +118,33 @@ impl EspWorld {
                         .unwrap_or(r.form_id);
                 WorldRecord {
                     plugin_index: idx,
-                    resolved_form_id: resolved,
+                    resolved_form_id: FormId(resolved),
                     record: r,
                 }
             })
+        })
+    }
+
+    /// Iterate all weapons, parsed and resolved. Each item is
+    /// `(record_form_id, parsed_weapon)`. Keywords inside
+    /// `WeaponRecord::keywords` are already resolved `FormId`s.
+    pub fn weapons(
+        &self,
+    ) -> impl Iterator<Item = Result<(FormId, weapon::WeaponRecord), weapon::WeaponError>> + '_
+    {
+        self.records(WEAP).map(move |wr| {
+            let parsed = weapon::parse(&wr.record, wr.plugin_index, self)?;
+            Ok((wr.resolved_form_id, parsed))
+        })
+    }
+
+    /// Iterate all armors, parsed and resolved.
+    pub fn armors(
+        &self,
+    ) -> impl Iterator<Item = Result<(FormId, armor::ArmorRecord), armor::ArmorError>> + '_ {
+        self.records(ARMO).map(move |wr| {
+            let parsed = armor::parse(&wr.record, wr.plugin_index, self)?;
+            Ok((wr.resolved_form_id, parsed))
         })
     }
 }
