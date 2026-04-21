@@ -7,3 +7,5 @@
 pub mod edid;
 pub mod kwda;
 pub mod form_id_ref;
+pub mod weapon_data;
+pub mod weapon_dnam;
