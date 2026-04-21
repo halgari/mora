@@ -25,6 +25,7 @@
 //! Plan 3 adds: Address Library parser, relocation layer, game type
 //! layouts, `TESDataHandler` form lookup, `AddKeyword` re-implementation.
 
+pub mod address_library;
 pub mod ffi;
 pub mod log;
 pub mod plugin;
