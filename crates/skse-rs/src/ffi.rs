@@ -78,10 +78,10 @@ pub mod flags_b {
 #[repr(C)]
 pub struct PluginInfo {
     pub info_version: u32,   // 0x00
-    _pad: u32,               // 0x04 — natural padding before 8-byte pointer
+    pub _pad: u32,           // 0x04 — natural padding before 8-byte pointer
     pub name: *const c_char, // 0x08
     pub version: u32,        // 0x10
-    _pad2: u32,              // 0x14 — trailing padding for 8-byte struct alignment
+    pub _pad2: u32,          // 0x14 — trailing padding for 8-byte struct alignment
 }
 
 const _: () = assert!(core::mem::size_of::<PluginInfo>() == 0x18);
