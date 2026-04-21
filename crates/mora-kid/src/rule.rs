@@ -90,3 +90,14 @@ impl SourceLocation {
         line_number: 0,
     };
 }
+
+/// A parsed `ExclusiveGroup = Name|kw1,kw2,...` line.
+///
+/// Group members are kept as raw `Reference`s (unresolved); the
+/// distributor resolves them against the EspWorld at setup time.
+#[derive(Debug, Clone)]
+pub struct ExclusiveGroup {
+    pub name: String,
+    pub members: Vec<Reference>,
+    pub source: SourceLocation,
+}
