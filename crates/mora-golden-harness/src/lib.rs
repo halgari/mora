@@ -185,7 +185,8 @@ impl SksePlugin for MoraGoldenHarness {
         logger
             .write_line(&format!("SKSE runtime: 0x{:08x}", skse.runtime_version))
             .ok();
-        match relocation::resolve_default_library_path() {
+        let expected_name = relocation::versionlib_filename_for(skse.runtime_version);
+        match relocation::resolve_versionlib_for(skse.runtime_version) {
             Some(p) => match relocation::load_library_from_path(&p) {
                 Ok(()) => {
                     logger
@@ -200,7 +201,9 @@ impl SksePlugin for MoraGoldenHarness {
             },
             None => {
                 logger
-                    .write_line("Address Library file not found at any known path")
+                    .write_line(&format!(
+                        "Address Library file {expected_name} not found under SKSE/Plugins/"
+                    ))
                     .ok();
             }
         }

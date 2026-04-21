@@ -143,28 +143,28 @@ pub const WEAPON_KEYWORD_FORM_OFFSET: isize = 0x140;
 
 /// Offset of the `BGSKeywordForm` sub-object within a `TESObjectARMO`.
 ///
-/// Verified the same way as [`WEAPON_KEYWORD_FORM_OFFSET`]:
+/// Derived from CommonLibSSE-NG's `include/RE/T/TESObjectARMO.h` inline
+/// offset comments (AE runtime 1.6.x layout):
 ///
-/// | Base class                  | size   | running offset |
-/// |-----------------------------|--------|----------------|
-/// | TESBoundObject              | 0x30   | 0x000          |
-/// | TESFullName                 | 0x10   | 0x030          |
-/// | TESRaceForm                 | 0x08   | 0x040          |
-/// | BGSBipedObjectForm          | 0x10   | 0x048          |
-/// | TESEnchantableForm          | 0x18   | 0x058          |
-/// | TESValueForm                | 0x10   | 0x070          |
-/// | TESWeightForm               | 0x10   | 0x080          |
-/// | BGSDestructibleObjectForm   | 0x10   | 0x090          |
-/// | BGSEquipType                | 0x10   | 0x0A0          |
-/// | BGSPreloadable              | 0x08   | 0x0B0          |
-/// | BGSPickupPutdownSounds      | 0x18   | 0x0B8          |
-/// | BGSBlockBashData            | 0x18   | 0x0D0          |
-/// | TESDescription              | 0x10   | 0x0E8          |
-/// | BGSBipedModelResource       | 0x70   | 0x0F8          |
-/// | BGSKeywordForm              | 0x18   | **0x168**      |
+/// | Base class                  | running offset |
+/// |-----------------------------|----------------|
+/// | TESBoundObject              | 0x000          |
+/// | TESFullName                 | 0x030          |
+/// | TESRaceForm                 | 0x040          |
+/// | TESEnchantableForm          | 0x050          |
+/// | TESValueForm                | 0x068          |
+/// | TESWeightForm               | 0x078          |
+/// | BGSDestructibleObjectForm   | 0x088          |
+/// | BGSPickupPutdownSounds      | 0x098          |
+/// | TESBipedModelForm           | 0x0B0          |
+/// | BGSEquipType                | 0x1A0          |
+/// | BGSBipedObjectForm          | 0x1B0          |
+/// | BGSBlockBashData            | 0x1C0          |
+/// | BGSKeywordForm              | **0x1D8**      |
+/// | TESDescription              | 0x1F0          |
 ///
-/// Cross-check: `sizeof(TESObjectARMO) == 0x1F8` per static_assert.
-pub const ARMOR_KEYWORD_FORM_OFFSET: isize = 0x168;
+/// Cross-check: `static_assert(sizeof(TESObjectARMO) == 0x228);`.
+pub const ARMOR_KEYWORD_FORM_OFFSET: isize = 0x1D8;
 
 /// `FormType` byte values used by `TESForm::form_type`. Matches the
 /// Bethesda `FormType` enum; only the two variants the golden harness

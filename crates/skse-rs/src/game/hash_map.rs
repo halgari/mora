@@ -7,7 +7,11 @@
 
 use crate::game::form::TESForm;
 
-/// The sentinel Bethesda uses to mark end-of-chain.
+/// The 4-byte value of Bethesda's end-of-chain sentinel constant
+/// `BSTScatterTableSentinel = { 0xDE, 0xAD, 0xBE, 0xEF }`. At runtime,
+/// `FormHashMap::sentinel` stores the *address* of this global; chain
+/// walks compare against that pointer (not this literal). Kept as a
+/// documentation anchor and for synthetic tests.
 pub const SENTINEL: usize = 0xDEADBEEF;
 
 /// Layout of `BSTHashMap<FormID, *mut TESForm>`. Size 0x30.
@@ -62,7 +66,7 @@ impl FormHashMap {
             if cur.key == form_id {
                 return cur.value;
             }
-            if cur.next as usize == SENTINEL {
+            if (cur.next as *const ()) == self.sentinel {
                 return core::ptr::null_mut();
             }
             entry = cur.next;
@@ -120,8 +124,11 @@ impl<'a> Iterator for FormHashMapIter<'a> {
         let entry = unsafe { &*self.current };
         let out = (entry.key, entry.value);
         // Advance to next entry in the chain.
-        if (entry.next as usize) == SENTINEL {
-            // End of chain; force next call to move to the next bucket.
+        if (entry.next as *const ()) == self.map.sentinel {
+            // End of chain (Bethesda stores the address of the module-
+            // global `BSTScatterTableSentinel` in `_sentinel` and points
+            // end-of-chain entries here). Force next call to advance the
+            // bucket index.
             self.current = core::ptr::null_mut();
         } else {
             self.current = entry.next;
