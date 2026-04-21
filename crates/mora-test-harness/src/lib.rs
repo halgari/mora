@@ -4,3 +4,6 @@
 //!
 //! Populated in milestone M5 (ports the existing C++ harness's protocol
 //! to Rust).
+
+// The cdylib output must be named MoraTestHarness (SKSE plugin convention).
+#![allow(non_snake_case)]
