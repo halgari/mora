@@ -128,7 +128,10 @@ mod tests {
     #[test]
     fn anim_types() {
         let t = WeaponTraits::parse("OneHandSword,Bow").unwrap();
-        assert_eq!(t.anim_types, vec![WeaponAnimType::OneHandSword, WeaponAnimType::Bow]);
+        assert_eq!(
+            t.anim_types,
+            vec![WeaponAnimType::OneHandSword, WeaponAnimType::Bow]
+        );
     }
 
     #[test]
@@ -167,4 +170,3 @@ mod tests {
         assert!(matches!(err, TraitParseError::Unknown(_)));
     }
 }
-

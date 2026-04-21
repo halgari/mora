@@ -11,8 +11,8 @@
 //! Same M3 caveat as weapon traits: predicates requiring subrecord
 //! data not yet exposed on ArmorRecord log-and-skip at evaluate time.
 
-use crate::traits_weapon::parse_range;
 use crate::TraitParseError;
+use crate::traits_weapon::parse_range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArmorType {
@@ -153,4 +153,3 @@ mod tests {
         assert_eq!(t.ar_range, Some((20.0, 100.0)));
     }
 }
-

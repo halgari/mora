@@ -16,10 +16,7 @@ pub enum Reference {
     EditorId(String),
     /// FormID (3-byte local) paired with the defining plugin name,
     /// e.g. `"0x01E718~Skyrim.esm"` or `"0x1E718~Skyrim.esm"`.
-    FormIdWithPlugin {
-        local_id: u32,
-        plugin: String,
-    },
+    FormIdWithPlugin { local_id: u32, plugin: String },
     /// A plugin filename (no form), used as a file filter.
     PluginName(String),
     /// A bare hex FormID with no plugin qualifier. Load-order-sensitive.
@@ -72,7 +69,10 @@ impl Reference {
 
 fn parse_hex(s: &str) -> Option<u32> {
     let s = s.trim();
-    let stripped = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let stripped = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     if stripped.is_empty() || !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }

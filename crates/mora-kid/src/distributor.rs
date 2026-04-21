@@ -42,8 +42,10 @@ impl Distributor<EspWorld> for KidDistributor {
         chance: &DeterministicChance,
         sink: &mut PatchSink,
     ) -> Result<DistributorStats, Self::Error> {
-        let mut stats = DistributorStats::default();
-        stats.rules_evaluated = self.rules.len() as u64;
+        let mut stats = DistributorStats {
+            rules_evaluated: self.rules.len() as u64,
+            ..Default::default()
+        };
 
         // Pre-resolve each rule's keyword FormId + editor-ID string.
         struct ResolvedRule<'a> {

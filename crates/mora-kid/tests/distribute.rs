@@ -11,7 +11,10 @@ fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("mora-kid-dist-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
-    std::fs::File::create(&path).unwrap().write_all(bytes).unwrap();
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(bytes)
+        .unwrap();
     path
 }
 
@@ -109,10 +112,7 @@ fn open_world_named(suffix: &str) -> (EspWorld, std::path::PathBuf) {
 fn distributes_keyword_to_weapon() {
     let (world, _) = open_world_named("weap");
 
-    let rules = parse_ini_content(
-        "WeapMaterialIron = Weapon\n",
-        "test.ini",
-    );
+    let rules = parse_ini_content("WeapMaterialIron = Weapon\n", "test.ini");
     let dist = KidDistributor::new(rules);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
@@ -133,10 +133,7 @@ fn distributes_keyword_to_weapon() {
 #[test]
 fn distributes_keyword_to_armor() {
     let (world, _) = open_world_named("armo");
-    let rules = parse_ini_content(
-        "WeapMaterialIron = Armor\n",
-        "test.ini",
-    );
+    let rules = parse_ini_content("WeapMaterialIron = Armor\n", "test.ini");
     let dist = KidDistributor::new(rules);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();

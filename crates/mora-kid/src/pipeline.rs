@@ -23,12 +23,9 @@ pub enum CompileError {
 ///
 /// `data_dir` is scanned for INI files; `world` supplies the loaded
 /// plugins.
-pub fn compile(
-    data_dir: &Path,
-    world: &EspWorld,
-) -> Result<Vec<Patch>, CompileError> {
-    let ini_paths = ini::discover_kid_ini_files(data_dir)
-        .map_err(|e| CompileError::Ini(IniError::Io(e)))?;
+pub fn compile(data_dir: &Path, world: &EspWorld) -> Result<Vec<Patch>, CompileError> {
+    let ini_paths =
+        ini::discover_kid_ini_files(data_dir).map_err(|e| CompileError::Ini(IniError::Io(e)))?;
     let mut all_rules = Vec::new();
     for p in &ini_paths {
         let rules = ini::parse_file(p)?;

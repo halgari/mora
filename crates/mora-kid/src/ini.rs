@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
+use crate::TraitParseError;
 use crate::filter::parse_filter_field;
 use crate::reference::Reference;
 use crate::rule::{FilterBuckets, KidRule, RecordType, SourceLocation, Traits};
 use crate::traits_armor::ArmorTraits;
 use crate::traits_weapon::WeaponTraits;
-use crate::TraitParseError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IniError {
@@ -61,7 +61,10 @@ pub fn parse_ini_content(content: &str, file_name: &str) -> Vec<KidRule> {
     for (idx, raw) in content.lines().enumerate() {
         let line_number = idx + 1;
         let line = raw.trim();
-        if line.is_empty() || line.starts_with(';') || line.starts_with('#') || line.starts_with('[')
+        if line.is_empty()
+            || line.starts_with(';')
+            || line.starts_with('#')
+            || line.starts_with('[')
         {
             continue;
         }

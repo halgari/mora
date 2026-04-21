@@ -10,7 +10,10 @@ fn write_tmp_plugin(name: &str, bytes: &[u8]) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("mora-kid-ref-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
-    std::fs::File::create(&path).unwrap().write_all(bytes).unwrap();
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(bytes)
+        .unwrap();
     path
 }
 

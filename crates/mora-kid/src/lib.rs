@@ -14,7 +14,7 @@ pub mod traits_armor;
 pub mod traits_weapon;
 
 pub use distributor::{KidDistributor, KidError};
-pub use pipeline::{compile, CompileError};
+pub use pipeline::{CompileError, compile};
 pub use reference::Reference;
 pub use rule::{KidRule, RecordType};
 
