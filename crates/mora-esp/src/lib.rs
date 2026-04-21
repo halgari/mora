@@ -10,6 +10,7 @@
 pub mod compression;
 pub mod group;
 pub mod load_order;
+pub mod load_order_hash;
 pub mod plugin;
 pub mod plugins_txt;
 pub mod reader;
