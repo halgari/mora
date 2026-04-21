@@ -25,6 +25,7 @@ pub enum AddressLibraryError {
 }
 
 /// A loaded, sorted `(id, offset)` address table.
+#[derive(Debug)]
 pub struct AddressLibrary {
     /// Parsed runtime version from the header: `(major, minor, patch, build)`.
     pub runtime_version: (i32, i32, i32, i32),
