@@ -6,8 +6,10 @@ Each follow-up below is a self-contained tracking doc: symptom, shortest repro, 
 
 ## Index
 
+- **[F0 — Captured goldens don't reflect KID's distribution](./f0-capture-doesnt-reflect-kid.md)** — **BLOCKER**. Despite KID running and loading our scenario INIs, the captured goldens show vanilla state (no keywords added). Discovered while investigating F1. F1/F2/F3 can't be properly verified until F0 is resolved.
+
 - **[F1 — ANY-bucket filter semantics](./f1-any-bucket-filter.md)**
-  `*Kw1,*Kw2` matches a different weapon set in mora-kid vs real KID. Worst offender; ~200 affected forms in `filter_keyword_any`. Highest-leverage follow-up — likely reveals mismatched bucketing logic that cascades to other scenarios.
+  `*Kw1,*Kw2` matches a different weapon set in mora-kid vs real KID. Worst offender; ~200 affected forms in `filter_keyword_any`. Highest-leverage follow-up — likely reveals mismatched bucketing logic that cascades to other scenarios. **Partial fix landed in F1 branch:** xtask staging moved scenario INIs from `Data/SKSE/Plugins/` to `Data/` (KID only scans `Data/`). KID now finds the INIs — but F0 remains.
 
 - **[F2 — Armor template inheritance edge cases](./f2-armor-template-inheritance.md)**
   The test helper now walks `TNAM` chains and unions template keywords (landed in M4). A residual ~8 armors in the `0x8b6a2..0x8b6a9` range still have mora reporting extra keywords vs golden — the inheritance chain either overreaches or follows a TNAM Skyrim doesn't. Smallest-scope bug.
