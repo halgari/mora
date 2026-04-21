@@ -30,6 +30,7 @@ pub mod log;
 pub mod plugin;
 pub mod version;
 
+pub use log::{LogInitError, Logger};
 pub use plugin::{LoadError, LoadOutcome, SksePlugin};
 pub use version::{PluginVersion, RuntimeVersion};
 
