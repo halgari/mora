@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, rust-kid-pivot]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -11,449 +11,73 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
 jobs:
-  linux:
-    name: Linux (xmake + gtest)
-    # skyrim-runner:local bakes gcc-13, xmake v3.0.8, python3-yaml, and
-    # XMAKE_ROOT=y at the image level — no per-run install needed.
-    runs-on: [self-hosted, linux]
+  fmt:
+    name: Fmt
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          # CLI11 + zlib + CommonLibSSE-NG live under extern/ — the
-          # Linux build only needs CLI11, but pulling them all keeps
-          # the checkout behavior uniform with windows-xcompile.
-          submodules: recursive
+          components: rustfmt
+      - run: cargo fmt --check
 
-      - name: Restore file mtimes (xmake cache correctness)
-        # actions/checkout@v4 stamps every file mtime to "now", which
-        # defeats xmake 3.0.8's mtime-based rebuild detection — cached
-        # .o files look older than their sources and get rebuilt.
-        # Resetting source mtimes to their last-commit time makes them
-        # older than cached objects so xmake reuses them.
-        run: |
-          python3 "$GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
-          git submodule foreach --recursive "python3 $GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
-
-      # Cache xmake's package dir + the per-platform object and dep
-      # trees so incremental rebuilds can reuse unchanged objects.
-      # - key is sha-suffixed so every run uploads a fresh cache;
-      # - restore-keys falls back to the most recent cache sharing the
-      #   same xmake.lua hash (and finally any linux cache).
-      # xmake tracks source-hash invalidation in build/.deps/, so stale
-      # objects are correctly rebuilt when a source file changes.
-      - name: Cache xmake packages + objects
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.xmake
-            build/.packages
-            build/.objs
-            build/.deps
-          key: xmake-linux-${{ hashFiles('xmake.lua') }}-${{ github.sha }}
-          restore-keys: |
-            xmake-linux-${{ hashFiles('xmake.lua') }}-
-            xmake-linux-
-
-      - name: Configure
-        # -pthread: std::thread link on gcc's libstdc++
-        # -Wno-dangling-reference: gcc-13 false positive in some TUs
-        run: xmake f -y -m releasedbg --cxflags="-pthread -Wno-dangling-reference" --ldflags=-pthread
-
-      - name: Build
-        run: xmake build -y
-
-      - name: Run tests
-        run: xmake test -v
-
-      # Reused by the skyrim-integration job (see `needs:` below) so it
-      # doesn't have to rebuild the native linux mora on the Skyrim
-      # runner pool. v3 compiles natively on Linux and emits a flat
-      # binary (mora_runtime.bin) that MoraRuntime.dll reads in-game.
-      - name: Upload native linux mora
-        uses: actions/upload-artifact@v4
-        with:
-          name: mora-linux
-          path: build/linux/x86_64/releasedbg/mora
-          if-no-files-found: error
-
-  extension:
-    name: VS Code extension (.vsix)
-    runs-on: [self-hosted, linux]
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: editors/vscode/package-lock.json
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Install dependencies
-        working-directory: editors/vscode
-        run: npm ci
-
-      - name: Verify version matches xmake.lua
-        run: |
-          xmake_version=$(grep -oP 'set_version\("\K[^"]+' xmake.lua)
-          pkg_version=$(node -p "require('./editors/vscode/package.json').version")
-          echo "xmake.lua version:    $xmake_version"
-          echo "package.json version: $pkg_version"
-          if [ "$xmake_version" != "$pkg_version" ]; then
-            echo "::error::xmake.lua and editors/vscode/package.json version mismatch"
-            exit 1
-          fi
-
-      - name: Compile TypeScript
-        working-directory: editors/vscode
-        run: npm run compile
-
-      - name: Run grammar tests
-        working-directory: editors/vscode
-        run: npm run test:grammar
-
-      - name: Package .vsix
-        working-directory: editors/vscode
-        run: npm run package
-
-      - name: Upload .vsix artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mora-vscode-vsix
-          path: editors/vscode/mora-vscode-*.vsix
-          if-no-files-found: error
-
-  windows-xcompile:
-    # Cross-compile mora.exe on the self-hosted Linux runner using
-    # clang-cl + lld-link + xwin sysroot. No Visual Studio, no Windows
-    # runner, no wine.
-    #
-    # skyrim-runner:local bakes the whole toolchain: clang / lld / llvm,
-    # xmake v3.0.8, xwin binary, and a pre-splatted sysroot at /opt/xwin
-    # (XWIN_PATH env set at the image level). No per-run install needed.
-    name: Windows (clang-cl cross-compile on self-hosted linux)
-    runs-on: [self-hosted, linux]
-    needs: extension
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-targets
+
+  windows-cross:
+    name: Windows cross-compile (cargo-xwin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          submodules: recursive
-
-      - name: Restore file mtimes (xmake cache correctness)
-        # actions/checkout@v4 stamps every file mtime to "now", which
-        # defeats xmake 3.0.8's mtime-based rebuild detection — cached
-        # .o files look older than their sources and get rebuilt.
-        # Resetting source mtimes to their last-commit time makes them
-        # older than cached objects so xmake reuses them.
-        run: |
-          python3 "$GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
-          git submodule foreach --recursive "python3 $GITHUB_WORKSPACE/scripts/git-restore-mtime.py"
-
-      # See ci.yml's `linux` job for the cache-key rationale.
-      - name: Cache xmake packages + objects
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.xmake
-            build/.packages
-            build/.objs
-            build/.deps
-          key: xmake-xcompile-${{ hashFiles('xmake.lua') }}-${{ github.sha }}
-          restore-keys: |
-            xmake-xcompile-${{ hashFiles('xmake.lua') }}-
-            xmake-xcompile-
-
-      - name: Configure (windows / clang-cl + xwin)
-        # No --toolchain flag — project sets it via set_toolchains inside
-        # the is_plat("windows") block. Both xmake 2.9.9 and 3.0.8 have
-        # known --toolchain=xwin-clang-cl CLI issues (package include
-        # dirs / project-toolchain lookup respectively); keeping the
-        # toolchain selection inside xmake.lua sidesteps both.
-        run: xmake f -p windows -a x64 -m release -y
-
-      - name: Build SKSE DLLs (MoraRuntime + MoraTestHarness)
-        # v3 architecture: mora.exe (the CLI compiler) is Linux-native;
-        # the Windows side is the SKSE runtime DLL that loads the
-        # parquet-derived snapshot at game DataLoaded, plus a harness
-        # DLL used by the integration-test pipeline. xmake accepts
-        # one target per build invocation — split into two steps.
-        run: |
-          xmake build -y mora_runtime
-          xmake build -y mora_test_harness
-
-      - name: List built binaries
-        run: ls -lh build/windows/x64/release/
-
-      - name: Download VS Code extension .vsix
-        uses: actions/download-artifact@v4
-        with:
-          name: mora-vscode-vsix
-          path: dist/vsix
-
-      - name: Package release archive
-        run: |
-          set -euo pipefail
-          proj=$GITHUB_WORKSPACE
-          ref=${GITHUB_REF:-}
-          if [[ "$ref" == refs/tags/v* ]]; then
-            version=${ref#refs/tags/v}
-          else
-            version="0.0.0-${GITHUB_SHA::7}"
-          fi
-          echo "Release version: $version"
-          stage="$proj/dist/Mora-$version-windows"
-          # Data/-rooted layout so MO2 / Vortex auto-detect the archive
-          # as a Skyrim mod. v3 ships:
-          #   • Data/SKSE/Plugins/MoraRuntime.dll     — applies snapshots at DataLoaded
-          #   • Data/SKSE/Plugins/MoraTestHarness.dll — TCP form introspection (CI)
-          #   • Data/tools/Mora/mora-vscode-*.vsix   — VS Code extension
-          # The CLI compiler (mora.exe) is Linux-native in v3; the Linux
-          # artifact is uploaded separately from the `linux` job.
-          mkdir -p "$stage/Data/SKSE/Plugins" "$stage/Data/tools/Mora"
-          cp "$proj/build/windows/x64/release/MoraRuntime.dll" "$stage/Data/SKSE/Plugins/"
-          cp "$proj/build/windows/x64/release/MoraTestHarness.dll" "$stage/Data/SKSE/Plugins/"
-          vsix=$(ls "$proj/dist/vsix"/mora-vscode-*.vsix | head -1)
-          if [[ -z "$vsix" ]]; then
-            echo "::error::VS Code .vsix not found in dist/vsix"
-            exit 1
-          fi
-          cp "$vsix" "$stage/Data/tools/Mora/$(basename "$vsix")"
-          echo "Bundled $(basename "$vsix") into release archive"
-          zip="$proj/dist/Mora-$version-windows.zip"
-          (cd "$stage" && zip -r "$zip" .)
-          echo "Packaged $zip"
-          find "$stage" -type f | sed "s|$stage/||"
-          echo "MORA_VERSION=$version" >> "$GITHUB_ENV"
-          echo "MORA_ZIP=$zip"         >> "$GITHUB_ENV"
-
-      - name: Upload release archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: Mora-windows
-          path: dist/Mora-*-windows.zip
-          if-no-files-found: error
-
-      # ─────────────────────────────────────────────────────────────
-      # Publish to Nexus Mods — only on tag pushes (refs/tags/v*).
-      # Requires two repo-level config items:
-      #   • secret  NEXUS_API_KEY       — your Nexus API key
-      #   • variable NEXUS_FILE_GROUP_ID — found on the mod's Files tab,
-      #                                   "API Info" in the edit dropdown
-      # Uses the official v3 Upload API via Nexus-Mods/upload-action.
-      # ─────────────────────────────────────────────────────────────
-      - name: Publish to Nexus Mods
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: Nexus-Mods/upload-action@v1.0.0-beta.4
-        with:
-          api_key:       ${{ secrets.NEXUS_API_KEY }}
-          file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
-          filename:      ${{ env.MORA_ZIP }}
-          version:       ${{ env.MORA_VERSION }}
-          display_name:  Mora ${{ env.MORA_VERSION }}
-          file_category: main
-          description:   |
-            Mora ${{ env.MORA_VERSION }} — Windows x64 build.
-
-            Archive layout (extract into your Skyrim SE install root,
-            or install via MO2 / Vortex with data-dir = Data/):
-              • Data/SKSE/Plugins/MoraRuntime.dll     — loads the compile-time snapshot at DataLoaded
-              • Data/SKSE/Plugins/MoraTestHarness.dll — TCP form introspection (optional; CI)
-              • Data/tools/Mora/mora-vscode-*.vsix   — VS Code extension (sideload)
-
-            The CLI compiler (`mora`) is Linux-native in v3 and uploaded
-            separately as a Linux artifact.
-
-            Built by GitHub Actions from commit ${{ github.sha }}
-            (cross-compiled on Ubuntu with clang-cl + xwin).
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-xwin
+        run: cargo install cargo-xwin --locked
+      - name: Cross-compile check
+        run: cargo xwin check --target x86_64-pc-windows-msvc --workspace
 
   skyrim-integration:
-    name: Skyrim integration (${{ matrix.case }})
-    needs: [linux, windows-xcompile]
-    # Fork PRs must never reach the skyrim-runner pool — they can
-    # execute arbitrary code in the runner container. Same guard
-    # pattern as skyrim-runner/examples/pr-test.yml.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Gated until M5 wires a Rust harness into tests/integration/.
+    # A case is "Rust-ready" when it contains a Rust-compatible check.sh
+    # plus the required KID INIs instead of .mora sources. Until at least
+    # one case meets that bar, this job is skipped.
+    name: Skyrim integration (self-hosted)
     runs-on: [self-hosted, linux, unraid, skyrim]
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        case:
-          - weapon_damage
-          - nazeem
-          - weapon_setters
-          - armor_setters
-          - npc_setters
-          - leveled_list_setters
+    if: ${{ hashFiles('tests/integration/**/rust-ready.marker') != '' }}
+    needs: [test, windows-cross]
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: Mora-windows
-          path: dist/
-
-      # ── mora compiler: reuse the artifact built by the `linux` job ──
-      # In v3 the compiler is Linux-native; Windows ships only the
-      # SKSE DLLs. Running mora natively (rather than mora.exe under
-      # Proton/wine) sidesteps the Proton stdout quagmire and wine64
-      # segfaults seen on this container.
-      - name: Download native linux mora
-        uses: actions/download-artifact@v4
-        with:
-          name: mora-linux
-          path: bin
-
-      - name: Make mora executable
-        run: chmod +x bin/mora
-
-      - name: Stage mod-under-test and compile mora rules (native linux)
-        env:
-          CASE: ${{ matrix.case }}
+      - name: Build Linux artifacts
+        run: cargo build --release --workspace
+      - name: Cross-compile Windows DLLs
+        run: cargo xwin build --release --target x86_64-pc-windows-msvc -p mora-runtime -p mora-test-harness
+      - name: Placeholder — full orchestration lands in M5
         run: |
-          set -euo pipefail
-
-          # Unpack the Windows release zip. v3's archive layout (see the
-          # windows-xcompile packaging step above):
-          #   Data/SKSE/Plugins/MoraRuntime.dll
-          #   Data/SKSE/Plugins/MoraTestHarness.dll
-          #   Data/tools/Mora/mora-vscode-*.vsix
-          unzip -q dist/Mora-*-windows.zip -d artifacts/
-          RELEASE_DIR=artifacts
-
-          # Stage the mod-dir that run-skyrim-test.sh will overlay onto
-          # /skyrim-base + /skyrim-baseline. MoraRuntime.dll reads
-          # mora_runtime.bin from its own directory (see
-          # extensions/skyrim_runtime/src/rt/plugin_entry.cpp: it
-          # resolves `<DLL-dir>/mora_runtime.bin`), so the snapshot
-          # must sit next to the DLL.
-          STAGE="$GITHUB_WORKSPACE/mod-under-test"
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE/Data/SKSE/Plugins"
-          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraRuntime.dll" \
-             "$STAGE/Data/SKSE/Plugins/MoraRuntime.dll"
-          cp "$RELEASE_DIR/Data/SKSE/Plugins/MoraTestHarness.dll" \
-             "$STAGE/Data/SKSE/Plugins/MoraTestHarness.dll"
-
-          # Synthesize a plugins.txt matching a clean GOG AE install's
-          # runtime load order — the runner image doesn't ship a real
-          # Plugins.txt in any standard location, and mora's directory-
-          # walk fallback mis-orders CC content so compile-time FormIDs
-          # diverge from runtime. Order mirrors engine behavior for a
-          # user with an empty Plugins.txt:
-          #   1. Bethesda hardcoded base masters, canonical order.
-          #   2. Creation Club plugins listed in Skyrim.ccc.
-          #   3. Anything else in Data/ alphabetically.
-          GEN_TXT="$GITHUB_WORKSPACE/plugins.gen.txt"
-          : > "$GEN_TXT"
-
-          for p in Skyrim.esm Update.esm Dawnguard.esm HearthFires.esm Dragonborn.esm; do
-            [[ -f "/skyrim-base/Data/$p" ]] && echo "*$p" >> "$GEN_TXT"
-          done
-
-          CCC_FILE=""
-          for cand in /skyrim-base/Skyrim.ccc /skyrim-base/skyrim.ccc; do
-            [[ -f "$cand" ]] && CCC_FILE="$cand" && break
-          done
-
-          if [[ -n "$CCC_FILE" ]]; then
-            echo "Found CC manifest: $CCC_FILE ($(wc -l < "$CCC_FILE") entries)"
-            awk '{sub(/\r$/,""); gsub(/^[[:space:]]+|[[:space:]]+$/,""); if (length) print "*" $0}' \
-              "$CCC_FILE" >> "$GEN_TXT"
-          else
-            echo "::warning::No Skyrim.ccc on runner — CC load order may mismatch runtime"
-          fi
-
-          # Dedup + append any remaining Data/ plugins. Skyrim.ccc's
-          # casing occasionally drifts from on-disk (e.g.
-          # ccMTYSSE001-KnightsoftheNine.esl vs ...OfTheNine.esl).
-          # Wine at runtime is case-insensitive; a compile-time case-
-          # sensitive check would silently drop mismatched entries and
-          # throw off ESL indices for every subsequent light plugin.
-          # Map filenames via a case-insensitive index to the on-disk
-          # casing.
-          python3 - "$GEN_TXT" /skyrim-base/Data <<'PY'
-          import os, sys
-          gen = sys.argv[1]
-          data_dir = sys.argv[2]
-          try:
-              disk_files = os.listdir(data_dir)
-          except FileNotFoundError:
-              disk_files = []
-          by_lower = {f.lower(): f for f in disk_files}
-
-          seen_lower = set()
-          with open(gen) as f:
-              lines = [ln.rstrip("\n") for ln in f if ln.strip()]
-          out = []
-          for ln in lines:
-              name = ln.lstrip("*").strip()
-              key = name.lower()
-              if key in seen_lower:
-                  continue
-              actual = by_lower.get(key)
-              if not actual:
-                  continue
-              seen_lower.add(key)
-              out.append("*" + actual)
-
-          for entry in sorted(disk_files, key=str.lower):
-              if not entry.lower().endswith((".esm", ".esp", ".esl")):
-                  continue
-              if entry.lower() in seen_lower:
-                  continue
-              seen_lower.add(entry.lower())
-              out.append("*" + entry)
-          with open(gen, "w") as f:
-              f.write("\n".join(out) + "\n")
-          PY
-
-          echo "Generated plugins.txt ($(wc -l < "$GEN_TXT") entries):"
-          head -20 "$GEN_TXT"
-          echo "  ..."
-          tail -5 "$GEN_TXT"
-          PLUGINS_ARG=(--plugins-txt "$GEN_TXT")
-
-          MORA_BIN="$GITHUB_WORKSPACE/bin/mora"
-
-          # v3: emit the flat-binary snapshot that MoraRuntime.dll reads
-          # directly. The parquet sink is additionally available
-          # (`--sink parquet.snapshot=...`) for external tooling but
-          # isn't needed by the runtime.
-          "$MORA_BIN" compile \
-            "tests/integration/${CASE}/rules.mora" \
-            --data-dir /skyrim-base/Data \
-            "${PLUGINS_ARG[@]}" \
-            --output "$STAGE/Data/SKSE/Plugins" \
-            --sink "skyrim_runtime.snapshot=$STAGE/Data/SKSE/Plugins"
-
-          # Sanity: mora_runtime.bin must exist AND contain at least one
-          # row. The v3 header is 16 bytes when empty (magic + version +
-          # num_rows=0 + string_pool_size=0); anything > 16 means the
-          # compile step emitted at least one effect fact. Narrow target-
-          # specific rules (the *_setters cases scope to a single
-          # FormID) bottom out in the low 100s of bytes; broadcast rules
-          # (nazeem, weapon_damage) end up in the hundreds of KB.
-          BIN="$STAGE/Data/SKSE/Plugins/mora_runtime.bin"
-          test -s "$BIN"
-          bin_size=$(stat -c %s "$BIN")
-          echo "mora_runtime.bin size: $bin_size bytes"
-          if (( bin_size <= 16 )); then
-            echo "::error::mora_runtime.bin is $bin_size bytes — compiler emitted no effect facts"
-            exit 1
-          fi
-          ls -la "$STAGE/Data/SKSE/Plugins"
-
-      - name: Run Skyrim integration test
-        env:
-          TEST_HOOK:    ${{ github.workspace }}/tests/integration/${{ matrix.case }}/check.sh
-          TEST_TIMEOUT: "600"
-          LOG_DIR:      /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}
-        run: /usr/local/bin/run-skyrim-test.sh "$GITHUB_WORKSPACE/mod-under-test"
-
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: skyrim-logs-${{ matrix.case }}-${{ github.run_attempt }}
-          path: /tmp/skyrim-logs-${{ github.run_id }}-${{ matrix.case }}/
-          if-no-files-found: warn
+          echo "Skyrim integration pipeline will be implemented in M5."
+          echo "When implemented, this step will iterate rust-ready cases,"
+          echo "stage mod-dirs, invoke /usr/local/bin/run-skyrim-test.sh,"
+          echo "and assert via check.sh hooks."
