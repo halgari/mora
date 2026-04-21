@@ -14,3 +14,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 skse-rs = { path = "../skse-rs" }
+thiserror.workspace = true

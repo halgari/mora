@@ -513,6 +513,7 @@ name = "mora-golden-harness"
 version = "0.1.0"
 dependencies = [
  "skse-rs",
+ "thiserror",
 ]
 
 [[package]]
