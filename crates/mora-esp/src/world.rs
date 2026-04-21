@@ -14,8 +14,8 @@ use crate::plugin::{EspPlugin, EspPluginError};
 use crate::plugins_txt;
 use crate::reader::ReadError;
 use crate::record::{Record, read_record};
-use crate::records::{armor, weapon};
-use crate::signature::{ARMO, Signature, WEAP};
+use crate::records::{armor, keyword, weapon};
+use crate::signature::{ARMO, KYWD, Signature, WEAP};
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorldError {
@@ -146,6 +146,33 @@ impl EspWorld {
             let parsed = armor::parse(&wr.record, wr.plugin_index, self)?;
             Ok((wr.resolved_form_id, parsed))
         })
+    }
+
+    /// Iterate all KYWD records, parsed. Each item is
+    /// `(record_form_id, parsed_keyword)`.
+    pub fn keywords(
+        &self,
+    ) -> impl Iterator<Item = Result<(FormId, keyword::KeywordRecord), keyword::KeywordError>> + '_
+    {
+        self.records(KYWD).map(move |wr| {
+            let parsed = keyword::parse(&wr.record)?;
+            Ok((wr.resolved_form_id, parsed))
+        })
+    }
+
+    /// Resolve a keyword's editor-ID to its runtime FormId. Case
+    /// sensitivity matches KID: case-insensitive match.
+    /// Returns None if no keyword with that editor-ID is found.
+    pub fn resolve_keyword_by_editor_id(&self, editor_id: &str) -> Option<FormId> {
+        for entry in self.keywords() {
+            let Ok((fid, kw)) = entry else { continue };
+            if let Some(edid) = kw.editor_id.as_deref()
+                && edid.eq_ignore_ascii_case(editor_id)
+            {
+                return Some(fid);
+            }
+        }
+        None
     }
 }
 

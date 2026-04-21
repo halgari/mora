@@ -4,4 +4,5 @@
 //! from the subrecord stream, handling compressed records transparently.
 
 pub mod armor;
+pub mod keyword;
 pub mod weapon;
