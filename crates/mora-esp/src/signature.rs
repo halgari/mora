@@ -47,6 +47,8 @@ pub const DATA: Signature = Signature::new(b"DATA");
 pub const EDID: Signature = Signature::new(b"EDID");
 pub const KWDA: Signature = Signature::new(b"KWDA");
 pub const XXXX: Signature = Signature::new(b"XXXX");
+pub const CNAM: Signature = Signature::new(b"CNAM");
+pub const SNAM: Signature = Signature::new(b"SNAM");
 
 #[cfg(test)]
 mod tests {
