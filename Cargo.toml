@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/skse-rs",
+    "crates/mora-core",
+    "crates/mora-esp",
+    "crates/mora-kid",
+    "crates/mora-cli",
+    "crates/mora-runtime",
+    "crates/mora-test-harness",
+    "crates/xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+repository = "https://github.com/halgari/mora"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Shared utility crates. Versions pinned here; member crates refer via `workspace = true`.
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["use-std"] }
+clap = { version = "4", features = ["derive"] }
+miette = { version = "7", features = ["fancy"] }
+memmap2 = "0.9"
+blake3 = "1"
+rayon = "1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

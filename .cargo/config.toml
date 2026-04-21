@@ -1,0 +1,11 @@
+# Cross-compile configuration.
+#
+# Linux-hosted Windows builds use cargo-xwin, which provides the MSVC
+# toolchain + Windows SDK automatically. Run:
+#
+#   cargo xwin build --release --target x86_64-pc-windows-msvc
+#
+# No per-target linker overrides are needed — cargo-xwin handles that.
+
+[alias]
+xtask = "run --package xtask --"

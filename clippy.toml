@@ -1,0 +1,2 @@
+# Keep clippy strict but not pedantic-by-default.
+msrv = "1.85"
