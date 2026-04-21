@@ -1,4 +1,3 @@
-*_ResourcePack.esl
 *ccASVSSE001-ALMSIVI.esm
 *ccBGSSSE001-Fish.esm
 *ccBGSSSE002-ExoticArrows.esl
@@ -73,3 +72,4 @@
 *ccKRTSSE001_Altar.esl
 *ccCBHSSE001-Gaunt.esl
 *ccAFDSSE001-DweSanctuary.esm
+*_ResourcePack.esl
