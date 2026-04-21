@@ -1,0 +1,16 @@
+[package]
+name = "skse-rs-smoke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Smoke-test SKSE plugin built on skse-rs. Loads, logs, exits. No game interaction."
+publish = false
+
+[lib]
+name = "SkseRsSmoke"
+crate-type = ["cdylib"]
+
+[dependencies]
+skse-rs = { path = "../skse-rs" }

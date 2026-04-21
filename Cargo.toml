@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/skse-rs",
+    "crates/skse-rs-smoke",
     "crates/mora-core",
     "crates/mora-esp",
     "crates/mora-kid",
