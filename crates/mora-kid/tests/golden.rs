@@ -75,7 +75,10 @@ fn run_golden_scenario(name: &str) {
             let entry = by_plugin.entry(wr.plugin_index).or_insert((0, Vec::new()));
             entry.0 += 1;
             if entry.1.len() < 3 {
-                entry.1.push(format!("raw=0x{:08x} resolved=0x{:08x}", wr.record.form_id, wr.resolved_form_id.0));
+                entry.1.push(format!(
+                    "raw=0x{:08x} resolved=0x{:08x}",
+                    wr.record.form_id, wr.resolved_form_id.0
+                ));
             }
         }
         eprintln!("[{name}] WEAP records per plugin_index:");
@@ -83,7 +86,11 @@ fn run_golden_scenario(name: &str) {
         keys.sort();
         for k in keys {
             let (count, samples) = &by_plugin[&k];
-            let pname = world.plugins.get(k).map(|p| p.filename.as_str()).unwrap_or("?");
+            let pname = world
+                .plugins
+                .get(k)
+                .map(|p| p.filename.as_str())
+                .unwrap_or("?");
             let slot = world.load_order.lookup(pname);
             eprintln!("  idx={k} {pname} slot={slot:?} count={count} samples={samples:?}");
         }
