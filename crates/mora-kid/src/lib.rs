@@ -17,3 +17,10 @@ pub use distributor::{KidDistributor, KidError};
 pub use pipeline::{compile, CompileError};
 pub use reference::Reference;
 pub use rule::{KidRule, RecordType};
+
+/// Error from parsing a trait token.
+#[derive(Debug, thiserror::Error)]
+pub enum TraitParseError {
+    #[error("unknown trait: {0}")]
+    Unknown(String),
+}
