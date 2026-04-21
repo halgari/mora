@@ -70,6 +70,75 @@ impl FormHashMap {
     }
 }
 
+/// Iterator over every `(form_id, *mut TESForm)` pair in a
+/// `FormHashMap`. Walks every bucket in `entries`; for each non-empty
+/// bucket follows the `next` chain until hitting the `SENTINEL`
+/// terminator.
+pub struct FormHashMapIter<'a> {
+    map: &'a FormHashMap,
+    /// Index of the bucket currently being walked.
+    bucket: u32,
+    /// The next entry to yield. `null_mut` means "start a new bucket
+    /// at `self.bucket`".
+    current: *mut HashMapEntry,
+}
+
+impl<'a> FormHashMapIter<'a> {
+    fn advance_to_next_bucket(&mut self) {
+        while self.bucket < self.map.capacity {
+            let b = unsafe { self.map.entries.add(self.bucket as usize) };
+            let b_ref = unsafe { &*b };
+            // Empty buckets have next == null (Bethesda convention).
+            if !b_ref.next.is_null() {
+                self.current = b;
+                self.bucket += 1;
+                return;
+            }
+            self.bucket += 1;
+        }
+        // No more buckets.
+        self.current = core::ptr::null_mut();
+    }
+}
+
+impl<'a> Iterator for FormHashMapIter<'a> {
+    type Item = (u32, *mut TESForm);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_null() {
+            self.advance_to_next_bucket();
+            if self.current.is_null() {
+                return None;
+            }
+        }
+        let entry = unsafe { &*self.current };
+        let out = (entry.key, entry.value);
+        // Advance to next entry in the chain.
+        if (entry.next as usize) == SENTINEL {
+            // End of chain; force next call to move to the next bucket.
+            self.current = core::ptr::null_mut();
+        } else {
+            self.current = entry.next;
+        }
+        Some(out)
+    }
+}
+
+impl FormHashMap {
+    /// Walk every form in the map.
+    ///
+    /// # Safety
+    /// Caller must hold the map's read lock for the duration of iteration
+    /// and must not mutate the map while the iterator is live.
+    pub unsafe fn iter(&self) -> FormHashMapIter<'_> {
+        FormHashMapIter {
+            map: self,
+            bucket: 0,
+            current: core::ptr::null_mut(),
+        }
+    }
+}
+
 /// Bethesda's `BSCRC32<u32>` — standard CRC-32 (poly 0xEDB88320) over
 /// the raw little-endian bytes of the key.
 pub fn crc32_bethesda(form_id: u32) -> u32 {
@@ -97,6 +166,62 @@ mod tests {
     fn layout_sizes() {
         assert_eq!(std::mem::size_of::<FormHashMap>(), 0x30);
         assert_eq!(std::mem::size_of::<HashMapEntry>(), 0x18);
+    }
+
+    #[test]
+    fn iter_walks_synthetic_chain() {
+        // Build a 4-bucket table with two entries in bucket 0 (chain) and
+        // one entry in bucket 2; buckets 1 and 3 empty.
+        let fake_a = 0xAAAA_AAAAusize as *mut TESForm;
+        let fake_b = 0xBBBB_BBBBusize as *mut TESForm;
+        let fake_c = 0xCCCC_CCCCusize as *mut TESForm;
+
+        // The "extra" entry in bucket 0's chain lives outside the bucket
+        // array; allocate it on the heap so we can link to it.
+        let mut tail = Box::new(HashMapEntry {
+            key: 0x200,
+            _pad: 0,
+            value: fake_b,
+            next: SENTINEL as *mut HashMapEntry,
+        });
+
+        let mut buckets: Vec<HashMapEntry> = (0..4)
+            .map(|_| HashMapEntry {
+                key: 0,
+                _pad: 0,
+                value: core::ptr::null_mut(),
+                next: core::ptr::null_mut(),
+            })
+            .collect();
+        // Bucket 0: entry A with next -> tail (entry B, end-of-chain).
+        buckets[0].key = 0x100;
+        buckets[0].value = fake_a;
+        buckets[0].next = tail.as_mut();
+        // Bucket 1: empty (next == null).
+        // Bucket 2: entry C, end-of-chain.
+        buckets[2].key = 0x300;
+        buckets[2].value = fake_c;
+        buckets[2].next = SENTINEL as *mut HashMapEntry;
+        // Bucket 3: empty (next == null).
+
+        let map = FormHashMap {
+            _pad00: 0,
+            _pad08: 0,
+            capacity: 4,
+            free: 0,
+            good: 0,
+            sentinel: SENTINEL as *const (),
+            _alloc_pad: 0,
+            entries: buckets.as_mut_ptr(),
+        };
+
+        let mut seen: Vec<(u32, *mut TESForm)> =
+            unsafe { map.iter().collect() };
+        seen.sort_by_key(|(k, _)| *k);
+        assert_eq!(
+            seen,
+            vec![(0x100, fake_a), (0x200, fake_b), (0x300, fake_c)]
+        );
     }
 
     #[test]
