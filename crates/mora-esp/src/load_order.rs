@@ -53,13 +53,19 @@ impl LoadOrder {
     }
 }
 
-/// Bethesda implicit ESMs loaded before plugins.txt.
+/// Bethesda implicit ESMs and ESLs loaded before plugins.txt.
+///
+/// The five base-game masters are always loaded first. `_ResourcePack.esl`
+/// is AE's bundled resource archive; Skyrim 1.6.x loads it implicitly
+/// right after the base masters (before CC and user content) without a
+/// plugins.txt entry.
 pub const IMPLICIT_PLUGINS: &[&str] = &[
     "Skyrim.esm",
     "Update.esm",
     "Dawnguard.esm",
     "HearthFires.esm",
     "Dragonborn.esm",
+    "_ResourcePack.esl",
 ];
 
 /// Build a load order from (implicit plugins + active user plugins).
