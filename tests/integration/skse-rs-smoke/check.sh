@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# skse-rs-smoke: the pure-Rust plugin must load and write its log line.
-#
-# This case does not use the TCP harness — it validates only that the
-# plugin was loaded and ran its on_load. A later case (added by Plan 3)
-# will exercise real game state via the TCP harness.
+# skse-rs-smoke end-to-end:
+#   1. Plugin loaded and opened its log.
+#   2. Address Library resolved.
+#   3. kDataLoaded listener fired.
+#   4. Iron Sword + WeapMaterialIron looked up.
+#   5. add_keyword succeeded (added or already-present).
+#   6. Verify readback logged.
+#   7. Plugin wrote "smoke OK".
 
 set -uo pipefail
 
@@ -12,10 +15,8 @@ source "$HERE/../_lib/check_common.sh"
 
 trap stash_runtime_logs EXIT
 
-# Wait for Skyrim to reach the main menu.
 wait_for_main_menu || exit $?
 
-# Locate the plugin's log. Same My Games path the plugin uses.
 LOG="$SKYRIM_PROFILE_DIR/SKSE/SkseRsSmoke.log"
 
 if [[ ! -s "$LOG" ]]; then
@@ -23,11 +24,26 @@ if [[ ! -s "$LOG" ]]; then
     exit 1
 fi
 
-if ! grep -q "^Hello from skse-rs$" "$LOG"; then
-    _err "skse-rs-smoke: log does not contain expected greeting line"
-    _err "log contents:"
-    sed 's/^/  /' "$LOG" >&2
-    exit 1
-fi
+# Required lines, in order, as grep -F -q matches.
+REQUIRED=(
+    "Hello from skse-rs"
+    "SKSE runtime: 0x"
+    "Address Library loaded"
+    "kDataLoaded received"
+    "Iron Sword lookup: 0x00012EB7"
+    "WeapMaterialIron lookup: 0x0001E718"
+    "AddKeyword result: "
+    "verify readback: num_keywords ="
+    "smoke OK"
+)
+
+for line in "${REQUIRED[@]}"; do
+    if ! grep -F -q "$line" "$LOG"; then
+        _err "skse-rs-smoke: missing required line in log: $line"
+        _err "log contents:"
+        sed 's/^/  /' "$LOG" >&2
+        exit 1
+    fi
+done
 
 echo "[check] skse-rs-smoke: PASS"
