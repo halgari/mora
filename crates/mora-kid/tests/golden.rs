@@ -105,8 +105,9 @@ fn require_data_dir(scenario: &str) -> Option<PathBuf> {
     }
 }
 
-/// Returns `true` if the manifest is absent (treat as OK — no anchor),
-/// matches (OK), or if the data dir's hashes differ (skip, not fail).
+/// Returns `true` if every ESP in the manifest matches the data dir.
+/// Returns `false` (skip, not fail) if the manifest is absent, invalid,
+/// or if any hash mismatches — the local Skyrim install has drifted.
 fn verify_manifest(expected_dir: &Path, data_dir: &Path, scenario: &str) -> bool {
     let manifest_path = expected_dir.join("manifest.json");
     let Ok(bytes) = std::fs::read_to_string(&manifest_path) else {
