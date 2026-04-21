@@ -57,11 +57,7 @@ pub fn read_signature(bytes: &[u8], offset: usize) -> Result<(Signature, usize),
 }
 
 /// Read an exact `n`-byte slice at offset. Returns `(slice, new_offset)`.
-pub fn read_bytes<'a>(
-    bytes: &'a [u8],
-    offset: usize,
-    n: usize,
-) -> Result<(&'a [u8], usize), ReadError> {
+pub fn read_bytes(bytes: &[u8], offset: usize, n: usize) -> Result<(&[u8], usize), ReadError> {
     if offset + n > bytes.len() {
         return Err(ReadError::Truncated { offset, needed: n });
     }
@@ -75,10 +71,13 @@ pub fn read_cstr(bytes: &[u8], offset: usize, max_len: usize) -> Result<(&str, u
     let available = bytes.len().saturating_sub(offset);
     let search_len = available.min(max_len);
     let slice = &bytes[offset..offset + search_len];
-    let nul_pos = slice.iter().position(|&b| b == 0).ok_or(ReadError::Truncated {
-        offset,
-        needed: max_len + 1,
-    })?;
+    let nul_pos = slice
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or(ReadError::Truncated {
+            offset,
+            needed: max_len + 1,
+        })?;
     let s = core::str::from_utf8(&slice[..nul_pos]).map_err(|_| ReadError::Truncated {
         offset,
         needed: nul_pos,
@@ -110,7 +109,10 @@ mod tests {
     fn truncation_error() {
         let bytes = [0x01, 0x02];
         match le_u32(&bytes, 0) {
-            Err(ReadError::Truncated { needed: 4, offset: 0 }) => {}
+            Err(ReadError::Truncated {
+                needed: 4,
+                offset: 0,
+            }) => {}
             other => panic!("expected Truncated; got {other:?}"),
         }
     }

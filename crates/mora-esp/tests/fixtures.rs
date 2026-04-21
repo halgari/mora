@@ -2,6 +2,11 @@
 //!
 //! Composes ESP byte buffers in memory via builder structs. Designed
 //! for readable test bodies that focus on what's being asserted.
+//!
+//! Some builder methods (ESL, flags, …) exist as part of the public
+//! builder API but aren't called by every test suite. Suppress the
+//! dead-code + trait-name lints for test-only ergonomics.
+#![allow(dead_code, clippy::should_implement_trait)]
 
 pub const TES4_ESM_FLAG: u32 = 0x0000_0001;
 pub const TES4_ESL_FLAG: u32 = 0x0000_0200;

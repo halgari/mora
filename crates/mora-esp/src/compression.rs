@@ -12,7 +12,7 @@
 
 use std::io::Read;
 
-use crate::reader::{le_u32, ReadError};
+use crate::reader::{ReadError, le_u32};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecompressError {
@@ -95,7 +95,10 @@ mod tests {
         body.extend_from_slice(&999u32.to_le_bytes()); // wrong size
         body.extend_from_slice(&compressed);
         match decompress(&body) {
-            Err(DecompressError::SizeMismatch { expected: 999, actual: 5 }) => {}
+            Err(DecompressError::SizeMismatch {
+                expected: 999,
+                actual: 5,
+            }) => {}
             other => panic!("expected SizeMismatch; got {other:?}"),
         }
     }

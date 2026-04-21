@@ -3,7 +3,7 @@
 //! Also handles the `XXXX` override for subrecords whose payload
 //! size exceeds `u16::MAX`.
 
-use crate::reader::{le_u16, le_u32, read_signature, ReadError};
+use crate::reader::{ReadError, le_u16, le_u32, read_signature};
 use crate::signature::{Signature, XXXX};
 
 pub const SUBRECORD_HEADER_SIZE: usize = 6;
@@ -122,7 +122,7 @@ mod tests {
         // Large EDID payload (100,000 bytes of 0xAB).
         body.extend_from_slice(b"EDID");
         body.extend_from_slice(&0u16.to_le_bytes()); // header_size (will be overridden)
-        body.extend(std::iter::repeat(0xABu8).take(100_000));
+        body.extend(std::iter::repeat_n(0xABu8, 100_000));
 
         let subs: Vec<_> = SubrecordIter::new(&body).collect::<Result<_, _>>().unwrap();
         assert_eq!(subs.len(), 1);

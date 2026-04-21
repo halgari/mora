@@ -33,9 +33,7 @@ impl LoadSlot {
     pub fn compose_form_id(&self, local_id: u32) -> u32 {
         match self {
             LoadSlot::Full(b) => ((*b as u32) << 24) | (local_id & 0x00FF_FFFF),
-            LoadSlot::Light(slot) => {
-                (0xFEu32 << 24) | ((*slot as u32) << 12) | (local_id & 0x0FFF)
-            }
+            LoadSlot::Light(slot) => (0xFEu32 << 24) | ((*slot as u32) << 12) | (local_id & 0x0FFF),
         }
     }
 }
@@ -92,7 +90,13 @@ pub fn build(
     };
 
     for &name in implicit_present {
-        assign(name, is_esl(name), &mut order, &mut next_full, &mut next_light);
+        assign(
+            name,
+            is_esl(name),
+            &mut order,
+            &mut next_full,
+            &mut next_light,
+        );
     }
     for &name in active_user_plugins {
         // Skip if already present (user listed an implicit plugin
@@ -100,7 +104,13 @@ pub fn build(
         if order.lookup(name).is_some() {
             continue;
         }
-        assign(name, is_esl(name), &mut order, &mut next_full, &mut next_light);
+        assign(
+            name,
+            is_esl(name),
+            &mut order,
+            &mut next_full,
+            &mut next_light,
+        );
     }
 
     order
@@ -112,11 +122,7 @@ mod tests {
 
     #[test]
     fn full_slot_layout() {
-        let order = build(
-            &["Skyrim.esm", "Update.esm"],
-            &["UserMod.esp"],
-            &|_| false,
-        );
+        let order = build(&["Skyrim.esm", "Update.esm"], &["UserMod.esp"], &|_| false);
         assert_eq!(order.lookup("Skyrim.esm"), Some(&LoadSlot::Full(0x00)));
         assert_eq!(order.lookup("Update.esm"), Some(&LoadSlot::Full(0x01)));
         assert_eq!(order.lookup("UserMod.esp"), Some(&LoadSlot::Full(0x02)));
@@ -124,11 +130,9 @@ mod tests {
 
     #[test]
     fn esl_goes_to_light_pool() {
-        let order = build(
-            &["Skyrim.esm"],
-            &["LightMod.esl", "HeavyMod.esp"],
-            &|n| n.ends_with(".esl"),
-        );
+        let order = build(&["Skyrim.esm"], &["LightMod.esl", "HeavyMod.esp"], &|n| {
+            n.ends_with(".esl")
+        });
         assert_eq!(order.lookup("Skyrim.esm"), Some(&LoadSlot::Full(0x00)));
         assert_eq!(order.lookup("LightMod.esl"), Some(&LoadSlot::Light(0x000)));
         // HeavyMod.esp gets the NEXT full slot, which is 0x01 (light

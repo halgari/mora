@@ -135,10 +135,7 @@ fn armor_parse_smoke() {
     let plugins_txt = path.parent().unwrap().join("plugins-armor.txt");
     std::fs::write(
         &plugins_txt,
-        format!(
-            "*{}\n",
-            path.file_name().unwrap().to_str().unwrap()
-        ),
+        format!("*{}\n", path.file_name().unwrap().to_str().unwrap()),
     )
     .unwrap();
     let world = EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap();

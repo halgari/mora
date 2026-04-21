@@ -6,12 +6,12 @@
 
 use std::path::Path;
 
-use crate::group::{read_group, GROUP_HEADER_SIZE};
-use crate::load_order::{build as build_load_order, remap_form_id, LoadOrder};
+use crate::group::{GROUP_HEADER_SIZE, read_group};
+use crate::load_order::{LoadOrder, build as build_load_order, remap_form_id};
 use crate::plugin::{EspPlugin, EspPluginError};
 use crate::plugins_txt;
 use crate::reader::ReadError;
-use crate::record::{read_record, Record};
+use crate::record::{Record, read_record};
 use crate::signature::Signature;
 
 #[derive(Debug, thiserror::Error)]
@@ -88,13 +88,9 @@ impl EspWorld {
     pub fn records(&self, sig: Signature) -> impl Iterator<Item = WorldRecord<'_>> + '_ {
         self.plugins.iter().enumerate().flat_map(move |(idx, p)| {
             scan_top_level_group(p, sig).map(move |r| {
-                let resolved = remap_form_id(
-                    r.form_id,
-                    &p.header.masters,
-                    &p.filename,
-                    &self.load_order,
-                )
-                .unwrap_or(r.form_id);
+                let resolved =
+                    remap_form_id(r.form_id, &p.header.masters, &p.filename, &self.load_order)
+                        .unwrap_or(r.form_id);
                 WorldRecord {
                     plugin_index: idx,
                     resolved_form_id: resolved,
@@ -151,7 +147,9 @@ impl<'a> Iterator for GroupRecordIter<'a> {
                     return None;
                 }
                 let size = u32::from_le_bytes(
-                    self.bytes[self.offset + 4..self.offset + 8].try_into().unwrap(),
+                    self.bytes[self.offset + 4..self.offset + 8]
+                        .try_into()
+                        .unwrap(),
                 ) as usize;
                 self.offset += size.max(GROUP_HEADER_SIZE);
                 continue;

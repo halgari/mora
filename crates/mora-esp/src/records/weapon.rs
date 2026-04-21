@@ -7,7 +7,7 @@
 //! Fields not yet exposed (added when consumers need them):
 //! DNAM (damage, weight, value, reach, speed), NNAM (sound), etc.
 
-use crate::compression::{decompress, DecompressError};
+use crate::compression::{DecompressError, decompress};
 use crate::reader::ReadError;
 use crate::record::Record;
 use crate::signature::{EDID, KWDA};
@@ -39,8 +39,8 @@ pub fn parse(record: &Record<'_>) -> Result<WeaponRecord, WeaponError> {
     let body: &[u8] = body_owned.as_deref().unwrap_or(record.body);
 
     let mut w = WeaponRecord::default();
-    let mut iter = SubrecordIter::new(body);
-    while let Some(sub) = iter.next() {
+    let iter = SubrecordIter::new(body);
+    for sub in iter {
         let sub = sub?;
         match sub.signature {
             s if s == EDID => w.editor_id = Some(edid::parse(sub.data)?),

@@ -3,11 +3,11 @@
 //! Raw layout: sequence of 32-bit LE FormIDs (local — needs remapping
 //! via the containing plugin's master list).
 
-use crate::reader::{le_u32, ReadError};
+use crate::reader::{ReadError, le_u32};
 
 /// Parse a KWDA payload into a `Vec<u32>` of local FormIDs.
 pub fn parse(data: &[u8]) -> Result<Vec<u32>, ReadError> {
-    if data.len() % 4 != 0 {
+    if !data.len().is_multiple_of(4) {
         return Err(ReadError::Truncated {
             offset: data.len(),
             needed: 4 - (data.len() % 4),

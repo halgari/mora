@@ -4,7 +4,7 @@
 //! - `editor_id` (EDID subrecord)
 //! - `keywords` (KWDA subrecord — local FormIDs)
 
-use crate::compression::{decompress, DecompressError};
+use crate::compression::{DecompressError, decompress};
 use crate::reader::ReadError;
 use crate::record::Record;
 use crate::signature::{EDID, KWDA};
@@ -35,8 +35,8 @@ pub fn parse(record: &Record<'_>) -> Result<ArmorRecord, ArmorError> {
     let body: &[u8] = body_owned.as_deref().unwrap_or(record.body);
 
     let mut a = ArmorRecord::default();
-    let mut iter = SubrecordIter::new(body);
-    while let Some(sub) = iter.next() {
+    let iter = SubrecordIter::new(body);
+    for sub in iter {
         let sub = sub?;
         match sub.signature {
             s if s == EDID => a.editor_id = Some(edid::parse(sub.data)?),

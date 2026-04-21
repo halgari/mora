@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use memmap2::Mmap;
 
-use crate::tes4::{parse_tes4, Tes4Error, Tes4Header};
+use crate::tes4::{Tes4Error, Tes4Header, parse_tes4};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EspPluginError {
@@ -63,7 +63,7 @@ impl EspPlugin {
     pub fn body(&self) -> &[u8] {
         // Re-parse TES4 to find where its record ends. The TES4 record
         // header is 24 bytes; data_size tells us the body length.
-        use crate::record::{read_record, RECORD_HEADER_SIZE};
+        use crate::record::{RECORD_HEADER_SIZE, read_record};
         // We know parse_tes4 succeeded, so read_record won't fail.
         let (_rec, next) = read_record(&self.bytes, 0).expect("tes4 header already parsed");
         let _ = RECORD_HEADER_SIZE;

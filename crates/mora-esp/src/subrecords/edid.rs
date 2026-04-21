@@ -1,6 +1,6 @@
 //! `EDID` — editor ID (NUL-terminated ASCII string).
 
-use crate::reader::{read_cstr, ReadError};
+use crate::reader::{ReadError, read_cstr};
 
 /// Parse an EDID subrecord payload into an owned string.
 pub fn parse(data: &[u8]) -> Result<String, ReadError> {

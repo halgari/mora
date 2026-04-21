@@ -4,7 +4,7 @@
 //! exposes the record body slice. Subrecord iteration is handled
 //! in `subrecord.rs`; compression is `compression.rs`.
 
-use crate::reader::{le_u16, le_u32, read_signature, ReadError};
+use crate::reader::{ReadError, le_u16, le_u32, read_signature};
 use crate::signature::Signature;
 
 pub const RECORD_HEADER_SIZE: usize = 24;
@@ -47,10 +47,7 @@ impl<'a> Record<'a> {
 /// Parse a record header + body from `bytes` starting at `offset`.
 /// Returns `(record, new_offset)` — `new_offset` points to the byte
 /// after the record body.
-pub fn read_record<'a>(
-    bytes: &'a [u8],
-    offset: usize,
-) -> Result<(Record<'a>, usize), ReadError> {
+pub fn read_record<'a>(bytes: &'a [u8], offset: usize) -> Result<(Record<'a>, usize), ReadError> {
     let (signature, o) = read_signature(bytes, offset)?;
     let (data_size, o) = le_u32(bytes, o)?;
     let (flags, o) = le_u32(bytes, o)?;

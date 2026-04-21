@@ -1,7 +1,7 @@
 //! Group header (24 bytes) parser + top-level group iteration.
 
-use crate::reader::{le_u16, le_u32, read_signature, ReadError};
-use crate::signature::{Signature, GRUP};
+use crate::reader::{ReadError, le_u16, le_u32, read_signature};
+use crate::signature::{GRUP, Signature};
 
 pub const GROUP_HEADER_SIZE: usize = 24;
 

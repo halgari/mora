@@ -6,8 +6,8 @@
 //!   - MAST subrecords (master plugin filenames, in local-index order)
 //!   - CNAM (author), SNAM (description) — ignored by Mora
 
-use crate::reader::{le_f32, le_u32, read_cstr, ReadError};
-use crate::record::{read_record, RECORD_FLAG_LIGHT_MASTER, RECORD_FLAG_MASTER};
+use crate::reader::{ReadError, le_f32, le_u32, read_cstr};
+use crate::record::{RECORD_FLAG_LIGHT_MASTER, RECORD_FLAG_MASTER, read_record};
 use crate::signature::{CNAM, HEDR, MAST, SNAM, TES4};
 use crate::subrecord::SubrecordIter;
 
@@ -66,8 +66,8 @@ pub fn parse_tes4(bytes: &[u8]) -> Result<Tes4Header, Tes4Error> {
     let mut description = None;
     let mut hedr_seen = false;
 
-    let mut iter = SubrecordIter::new(rec.body);
-    while let Some(sub) = iter.next() {
+    let iter = SubrecordIter::new(rec.body);
+    for sub in iter {
         let sub = sub?;
         match sub.signature {
             s if s == HEDR => {
