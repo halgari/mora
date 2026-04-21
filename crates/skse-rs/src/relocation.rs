@@ -52,16 +52,24 @@ const KNOWN_VERSIONLIB_FILES: &[&str] = &[
 /// Resolve the well-known SKSE Plugins path, using `%MORA_SKYRIM_DATA%`
 /// if set, else the plugin's working directory. Iterates the known
 /// versionlib filenames newest-first.
+///
+/// When `MORA_SKYRIM_DATA` is set, it points directly at the Data
+/// directory, so the versionlib lives at `<data>/SKSE/Plugins/...`.
+/// When unset, CWD at runtime is the game install root (where
+/// `SkyrimSE.exe` lives), so we probe both `./SKSE/Plugins/...` AND
+/// `./Data/SKSE/Plugins/...` — the latter is the real location; the
+/// former is a legacy fallback.
 pub fn resolve_default_library_path() -> Option<PathBuf> {
-    let root: PathBuf = match std::env::var("MORA_SKYRIM_DATA") {
-        Ok(data) => PathBuf::from(data),
-        // On Windows, the plugin's working directory is the game's Data dir.
-        Err(_) => PathBuf::from("."),
+    let candidate_roots: Vec<PathBuf> = match std::env::var("MORA_SKYRIM_DATA") {
+        Ok(data) => vec![PathBuf::from(data)],
+        Err(_) => vec![PathBuf::from("Data"), PathBuf::from(".")],
     };
-    for name in KNOWN_VERSIONLIB_FILES {
-        let p = root.join("SKSE/Plugins").join(name);
-        if p.exists() {
-            return Some(p);
+    for root in &candidate_roots {
+        for name in KNOWN_VERSIONLIB_FILES {
+            let p = root.join("SKSE/Plugins").join(name);
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
     None

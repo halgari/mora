@@ -185,12 +185,24 @@ impl SksePlugin for MoraGoldenHarness {
         logger
             .write_line(&format!("SKSE runtime: 0x{:08x}", skse.runtime_version))
             .ok();
-        if let Some(p) = relocation::resolve_default_library_path()
-            && let Err(e) = relocation::load_library_from_path(&p)
-        {
-            logger
-                .write_line(&format!("Address Library load FAILED: {e}"))
-                .ok();
+        match relocation::resolve_default_library_path() {
+            Some(p) => match relocation::load_library_from_path(&p) {
+                Ok(()) => {
+                    logger
+                        .write_line(&format!("Address Library loaded from {}", p.display()))
+                        .ok();
+                }
+                Err(e) => {
+                    logger
+                        .write_line(&format!("Address Library load FAILED: {e}"))
+                        .ok();
+                }
+            },
+            None => {
+                logger
+                    .write_line("Address Library file not found at any known path")
+                    .ok();
+            }
         }
         let _ = LOGGER.set(logger);
         Ok(())
