@@ -4,12 +4,14 @@
 //! filter pipeline against the record, runs the deterministic chance
 //! roll, emits `Patch::AddKeyword` patches to the sink.
 
+use std::collections::{HashMap, HashSet};
+
 use mora_core::{DeterministicChance, Distributor, DistributorStats, FormId, Patch, PatchSink};
 use mora_esp::EspWorld;
 use tracing::{debug, warn};
 
 use crate::filter;
-use crate::rule::{KidRule, RecordType, Traits};
+use crate::rule::{ExclusiveGroup, KidRule, RecordType, Traits};
 
 #[derive(Debug, thiserror::Error)]
 pub enum KidError {
@@ -17,15 +19,24 @@ pub enum KidError {
     UnresolvedKeyword(crate::reference::Reference),
 }
 
-/// KidDistributor — consumes a list of parsed rules + an EspWorld,
-/// emits patches.
+/// KidDistributor — consumes a list of parsed rules + optional
+/// exclusive groups + an EspWorld, emits patches.
 pub struct KidDistributor {
     pub rules: Vec<KidRule>,
+    pub exclusive_groups: Vec<ExclusiveGroup>,
 }
 
 impl KidDistributor {
     pub fn new(rules: Vec<KidRule>) -> Self {
-        KidDistributor { rules }
+        KidDistributor {
+            rules,
+            exclusive_groups: Vec::new(),
+        }
+    }
+
+    pub fn with_exclusive_groups(mut self, groups: Vec<ExclusiveGroup>) -> Self {
+        self.exclusive_groups = groups;
+        self
     }
 }
 
@@ -47,6 +58,37 @@ impl Distributor<EspWorld> for KidDistributor {
             ..Default::default()
         };
 
+        // Pre-build keyword FormId -> editor-id map for chance seeding and
+        // ANY-filter substring checks.
+        let mut kw_edid_map: HashMap<FormId, String> = HashMap::new();
+        for entry in world.keywords() {
+            if let Ok((fid, kw)) = entry
+                && let Some(edid) = kw.editor_id
+            {
+                kw_edid_map.insert(fid, edid);
+            }
+        }
+
+        // Resolve exclusive groups: each group's members -> FormIds.
+        // Build kw_fid -> Vec<group_idx> lookup.
+        let mut kw_to_groups: HashMap<FormId, Vec<usize>> = HashMap::new();
+        for (idx, group) in self.exclusive_groups.iter().enumerate() {
+            for member in &group.members {
+                if let Some(fid) = member.resolve_form(world) {
+                    kw_to_groups.entry(fid).or_default().push(idx);
+                } else {
+                    debug!(
+                        "{}:{}: exclusive-group '{}' member {:?} did not resolve — skipped",
+                        group.source.file, group.source.line_number, group.name, member
+                    );
+                }
+            }
+        }
+
+        // Per-form applied-group tracker. Keyed by target form; value is
+        // the set of group indices that already have a keyword applied.
+        let mut applied_groups: HashMap<FormId, HashSet<usize>> = HashMap::new();
+
         // Pre-resolve each rule's keyword FormId + editor-ID string.
         struct ResolvedRule<'a> {
             rule: &'a KidRule,
@@ -62,34 +104,18 @@ impl Distributor<EspWorld> for KidDistributor {
                 );
                 continue;
             };
-            // Resolve the editor-id for chance seeding. If the rule key
-            // was already an EditorId, use that string directly; else
-            // look it up via the world.
             let edid = match &rule.keyword {
                 crate::reference::Reference::EditorId(s) => s.clone(),
-                _ => {
-                    // Find the editor-id of this keyword FormId.
-                    let mut out = None;
-                    for entry in world.keywords() {
-                        if let Ok((entry_fid, kw)) = entry
-                            && entry_fid == fid
-                            && let Some(edid) = kw.editor_id.clone()
-                        {
-                            out = Some(edid);
-                            break;
-                        }
+                _ => match kw_edid_map.get(&fid) {
+                    Some(s) => s.clone(),
+                    None => {
+                        warn!(
+                            "{}:{}: keyword {:?} resolved to {fid} but editor-id not found",
+                            rule.source.file, rule.source.line_number, rule.keyword
+                        );
+                        continue;
                     }
-                    match out {
-                        Some(s) => s,
-                        None => {
-                            warn!(
-                                "{}:{}: keyword {:?} resolved to {fid} but editor-id not found",
-                                rule.source.file, rule.source.line_number, rule.keyword
-                            );
-                            continue;
-                        }
-                    }
-                }
+                },
             };
             resolved.push(ResolvedRule {
                 rule,
@@ -99,9 +125,7 @@ impl Distributor<EspWorld> for KidDistributor {
         }
 
         // Iterate weapons via world.records(WEAP) so we get the exact
-        // source plugin_index — world.weapons() drops it, and
-        // reconstructing it from the resolved FormId's high byte is
-        // unreliable for ESL plugins (which all share 0xFE).
+        // source plugin_index.
         for wr in world.records(mora_esp::signature::WEAP) {
             let form_id = wr.resolved_form_id;
             let plugin_index = wr.plugin_index;
@@ -115,12 +139,17 @@ impl Distributor<EspWorld> for KidDistributor {
                 if !matches!(rr.rule.record_type, RecordType::Weapon) {
                     continue;
                 }
-                if !filter::evaluate(&rr.rule.filters, world, plugin_index, &weapon.keywords) {
+                if !filter::evaluate_with_any(
+                    &rr.rule.filters,
+                    world,
+                    plugin_index,
+                    &weapon.keywords,
+                    weapon.editor_id.as_deref(),
+                    &kw_edid_map,
+                ) {
                     stats.rejected_by_filter += 1;
                     continue;
                 }
-                // M3: trait evaluation log-and-skip (Weapon trait predicates
-                // require DNAM/OBND subrecord data not yet on WeaponRecord).
                 if let Traits::Weapon(wt) = &rr.rule.traits
                     && !wt.anim_types.is_empty()
                 {
@@ -129,20 +158,35 @@ impl Distributor<EspWorld> for KidDistributor {
                         rr.rule.source.file, rr.rule.source.line_number
                     );
                 }
+                // ExclusiveGroup check.
+                if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id)
+                    && let Some(applied_set) = applied_groups.get(&form_id)
+                    && groups.iter().any(|g| applied_set.contains(g))
+                {
+                    stats.rejected_by_exclusive_group += 1;
+                    continue;
+                }
                 // Chance roll.
                 if !chance.passes(&rr.keyword_editor_id, form_id, rr.rule.chance) {
                     stats.rejected_by_chance += 1;
                     continue;
                 }
+                // Emit + record applied-group.
                 sink.push(Patch::AddKeyword {
                     target: form_id,
                     keyword: rr.keyword_form_id,
                 });
                 stats.patches_emitted += 1;
+                if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id) {
+                    let set = applied_groups.entry(form_id).or_default();
+                    for g in groups {
+                        set.insert(*g);
+                    }
+                }
             }
         }
 
-        // Iterate armors (same structure).
+        // Iterate armors (mirror of the weapon loop).
         for wr in world.records(mora_esp::signature::ARMO) {
             let form_id = wr.resolved_form_id;
             let plugin_index = wr.plugin_index;
@@ -155,7 +199,14 @@ impl Distributor<EspWorld> for KidDistributor {
                 if !matches!(rr.rule.record_type, RecordType::Armor) {
                     continue;
                 }
-                if !filter::evaluate(&rr.rule.filters, world, plugin_index, &armor.keywords) {
+                if !filter::evaluate_with_any(
+                    &rr.rule.filters,
+                    world,
+                    plugin_index,
+                    &armor.keywords,
+                    armor.editor_id.as_deref(),
+                    &kw_edid_map,
+                ) {
                     stats.rejected_by_filter += 1;
                     continue;
                 }
@@ -167,6 +218,13 @@ impl Distributor<EspWorld> for KidDistributor {
                         rr.rule.source.file, rr.rule.source.line_number
                     );
                 }
+                if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id)
+                    && let Some(applied_set) = applied_groups.get(&form_id)
+                    && groups.iter().any(|g| applied_set.contains(g))
+                {
+                    stats.rejected_by_exclusive_group += 1;
+                    continue;
+                }
                 if !chance.passes(&rr.keyword_editor_id, form_id, rr.rule.chance) {
                     stats.rejected_by_chance += 1;
                     continue;
@@ -176,12 +234,18 @@ impl Distributor<EspWorld> for KidDistributor {
                     keyword: rr.keyword_form_id,
                 });
                 stats.patches_emitted += 1;
+                if let Some(groups) = kw_to_groups.get(&rr.keyword_form_id) {
+                    let set = applied_groups.entry(form_id).or_default();
+                    for g in groups {
+                        set.insert(*g);
+                    }
+                }
             }
         }
 
         // Warn for Other record types.
         for rr in &resolved {
-            if let RecordType::Other(ref t) = rr.rule.record_type {
+            if let RecordType::Other(t) = &rr.rule.record_type {
                 warn!(
                     "{}:{}: record type {:?} not supported at M3 (Weapon+Armor only)",
                     rr.rule.source.file, rr.rule.source.line_number, t

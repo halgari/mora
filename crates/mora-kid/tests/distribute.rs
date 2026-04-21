@@ -112,8 +112,8 @@ fn open_world_named(suffix: &str) -> (EspWorld, std::path::PathBuf) {
 fn distributes_keyword_to_weapon() {
     let (world, _) = open_world_named("weap");
 
-    let rules = parse_ini_content("WeapMaterialIron = Weapon\n", "test.ini");
-    let dist = KidDistributor::new(rules);
+    let parsed = parse_ini_content("WeapMaterialIron = Weapon\n", "test.ini");
+    let dist = KidDistributor::new(parsed.rules).with_exclusive_groups(parsed.exclusive_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     let stats = dist.lower(&world, &chance, &mut sink).unwrap();
@@ -133,8 +133,8 @@ fn distributes_keyword_to_weapon() {
 #[test]
 fn distributes_keyword_to_armor() {
     let (world, _) = open_world_named("armo");
-    let rules = parse_ini_content("WeapMaterialIron = Armor\n", "test.ini");
-    let dist = KidDistributor::new(rules);
+    let parsed = parse_ini_content("WeapMaterialIron = Armor\n", "test.ini");
+    let dist = KidDistributor::new(parsed.rules).with_exclusive_groups(parsed.exclusive_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     let stats = dist.lower(&world, &chance, &mut sink).unwrap();
@@ -153,8 +153,8 @@ fn distributes_keyword_to_armor() {
 #[test]
 fn unresolved_keyword_skips_rule() {
     let (world, _) = open_world_named("unresolved");
-    let rules = parse_ini_content("NonExistentKeyword = Weapon\n", "test.ini");
-    let dist = KidDistributor::new(rules);
+    let parsed = parse_ini_content("NonExistentKeyword = Weapon\n", "test.ini");
+    let dist = KidDistributor::new(parsed.rules).with_exclusive_groups(parsed.exclusive_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     dist.lower(&world, &chance, &mut sink).unwrap();
@@ -164,8 +164,8 @@ fn unresolved_keyword_skips_rule() {
 #[test]
 fn unsupported_record_type_skips_rule() {
     let (world, _) = open_world_named("unsupported");
-    let rules = parse_ini_content("WeapMaterialIron = Potion\n", "test.ini");
-    let dist = KidDistributor::new(rules);
+    let parsed = parse_ini_content("WeapMaterialIron = Potion\n", "test.ini");
+    let dist = KidDistributor::new(parsed.rules).with_exclusive_groups(parsed.exclusive_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     dist.lower(&world, &chance, &mut sink).unwrap();
@@ -175,8 +175,8 @@ fn unsupported_record_type_skips_rule() {
 #[test]
 fn chance_zero_never_emits() {
     let (world, _) = open_world_named("chance0");
-    let rules = parse_ini_content("WeapMaterialIron = Weapon|||0\n", "test.ini");
-    let dist = KidDistributor::new(rules);
+    let parsed = parse_ini_content("WeapMaterialIron = Weapon|||0\n", "test.ini");
+    let dist = KidDistributor::new(parsed.rules).with_exclusive_groups(parsed.exclusive_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     dist.lower(&world, &chance, &mut sink).unwrap();
