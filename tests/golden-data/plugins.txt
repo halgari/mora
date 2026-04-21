@@ -13,7 +13,7 @@
 *ccBGSSSE019-StaffofSheogorath.esl
 *ccBGSSSE020-GrayCowl.esl
 *ccBGSSSE021-LordsMail.esl
-*ccMTYSSE001-KnightsoftheNine.esl
+*ccMTYSSE001-KnightsOfTheNine.esl
 *ccQDRSSE001-SurvivalMode.esl
 *ccTWBSSE001-PuzzleDungeon.esm
 *ccEEJSSE001-Hstead.esm
