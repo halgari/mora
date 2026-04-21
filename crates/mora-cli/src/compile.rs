@@ -76,7 +76,10 @@ pub fn run(args: CompileArgs) -> Result<()> {
     info!("Patches emitted:        {}", stats.patches_emitted);
     info!("Rejected by filter:     {}", stats.rejected_by_filter);
     info!("Rejected by chance:     {}", stats.rejected_by_chance);
-    info!("Rejected by excl-group: {}", stats.rejected_by_exclusive_group);
+    info!(
+        "Rejected by excl-group: {}",
+        stats.rejected_by_exclusive_group
+    );
 
     let file: PatchFile = sink.finalize();
 

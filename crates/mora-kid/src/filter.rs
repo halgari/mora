@@ -100,7 +100,9 @@ pub fn evaluate_with_any(
     if !buckets.any.is_empty() {
         let any_matched = buckets.any.iter().any(|substring| {
             if let Some(edid) = item_editor_id
-                && edid.to_ascii_lowercase().contains(&substring.to_ascii_lowercase())
+                && edid
+                    .to_ascii_lowercase()
+                    .contains(&substring.to_ascii_lowercase())
             {
                 return true;
             }

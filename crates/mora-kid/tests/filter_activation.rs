@@ -11,7 +11,10 @@ fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("mora-kid-plan8a-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
-    std::fs::File::create(&path).unwrap().write_all(bytes).unwrap();
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(bytes)
+        .unwrap();
     path
 }
 
@@ -115,10 +118,7 @@ fn build_plugin(
 fn open_world(suffix: &str, bytes: Vec<u8>) -> EspWorld {
     let path = write_tmp(&format!("{suffix}.esm"), &bytes);
     let plugin = EspPlugin::open(&path).unwrap();
-    let plugins_txt = path
-        .parent()
-        .unwrap()
-        .join(format!("plugins-{suffix}.txt"));
+    let plugins_txt = path.parent().unwrap().join(format!("plugins-{suffix}.txt"));
     std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
     EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap()
 }
@@ -174,10 +174,7 @@ fn any_filter_substring_matches_editor_id() {
 #[test]
 fn any_filter_substring_matches_keyword_editor_id() {
     let bytes = build_plugin(
-        &[
-            ("WeapMaterialIron", 0x0001_1200),
-            ("Target", 0x0001_1201),
-        ],
+        &[("WeapMaterialIron", 0x0001_1200), ("Target", 0x0001_1201)],
         &[
             (0x0001_2200, "Weapon1", vec![0x0001_1200]),
             (0x0001_2201, "Weapon2", vec![]),
@@ -194,10 +191,7 @@ fn any_filter_substring_matches_keyword_editor_id() {
 #[test]
 fn exclusive_group_prevents_second_application() {
     let bytes = build_plugin(
-        &[
-            ("KwA", 0x0001_1300),
-            ("KwB", 0x0001_1301),
-        ],
+        &[("KwA", 0x0001_1300), ("KwB", 0x0001_1301)],
         &[(0x0001_2300, "Sword", vec![])],
         &[],
     );
@@ -206,7 +200,12 @@ fn exclusive_group_prevents_second_application() {
     // puts both keywords in one group → only the first should apply.
     let ini = "ExclusiveGroup = Mats|KwA,KwB\nKwA = Weapon\nKwB = Weapon\n";
     let file = run(&world, ini);
-    assert_eq!(file.patches.len(), 1, "exclusive group should limit to 1 patch, got {:?}", file.patches);
+    assert_eq!(
+        file.patches.len(),
+        1,
+        "exclusive group should limit to 1 patch, got {:?}",
+        file.patches
+    );
     // Either KwA or KwB wins — both are valid (iteration order in
     // the hash map isn't strictly defined). Just assert the set.
     let kw = match file.patches[0] {
@@ -222,10 +221,7 @@ fn exclusive_group_prevents_second_application() {
 fn exclusive_group_independent_per_form() {
     // Two weapons, each gets its own independent "first keyword wins" treatment.
     let bytes = build_plugin(
-        &[
-            ("KwA", 0x0001_1400),
-            ("KwB", 0x0001_1401),
-        ],
+        &[("KwA", 0x0001_1400), ("KwB", 0x0001_1401)],
         &[
             (0x0001_2400, "Sword1", vec![]),
             (0x0001_2401, "Sword2", vec![]),

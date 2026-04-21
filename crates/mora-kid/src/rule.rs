@@ -54,7 +54,6 @@ impl FilterBuckets {
     pub fn is_empty(&self) -> bool {
         self.match_.is_empty() && self.not.is_empty() && self.all.is_empty() && self.any.is_empty()
     }
-
 }
 
 /// A parsed KID rule.
