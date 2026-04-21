@@ -73,6 +73,9 @@ fn capture_one_scenario(
     // Emit a check.sh that waits for the harness's .done sentinel.
     let check_sh = stage.path().join("check.sh");
     std::fs::write(&check_sh, CHECK_SH_TEMPLATE)?;
+    // `mut` is only needed on unix (where we call `set_mode`); the
+    // attribute keeps Windows cross-compile happy.
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut perms = std::fs::metadata(&check_sh)?.permissions();
     #[cfg(unix)]
     {
