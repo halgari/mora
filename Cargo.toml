@@ -16,7 +16,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
 repository = "https://github.com/halgari/mora"
-rust-version = "1.85"
+rust-version = "1.90"
 
 [workspace.dependencies]
 # Shared utility crates. Versions pinned here; member crates refer via `workspace = true`.
