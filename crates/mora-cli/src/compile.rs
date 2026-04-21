@@ -44,18 +44,26 @@ pub fn run(args: CompileArgs) -> Result<()> {
     info!("Discovered {} _KID.ini files", ini_paths.len());
 
     let mut all_rules = Vec::new();
+    let mut all_groups = Vec::new();
     for p in &ini_paths {
         match ini::parse_file(p) {
-            Ok(rules) => all_rules.extend(rules),
+            Ok(parsed) => {
+                all_rules.extend(parsed.rules);
+                all_groups.extend(parsed.exclusive_groups);
+            }
             Err(e) => {
                 warn!("{}: {}", p.display(), e);
             }
         }
     }
-    info!("Parsed {} rules", all_rules.len());
+    info!(
+        "Parsed {} rules, {} exclusive groups",
+        all_rules.len(),
+        all_groups.len()
+    );
 
     // Run distributor.
-    let distributor = KidDistributor::new(all_rules);
+    let distributor = KidDistributor::new(all_rules).with_exclusive_groups(all_groups);
     let chance = DeterministicChance::kid_compatible();
     let mut sink = PatchSink::new();
     sink.set_load_order_hash(load_hash);
@@ -68,6 +76,10 @@ pub fn run(args: CompileArgs) -> Result<()> {
     info!("Patches emitted:        {}", stats.patches_emitted);
     info!("Rejected by filter:     {}", stats.rejected_by_filter);
     info!("Rejected by chance:     {}", stats.rejected_by_chance);
+    info!(
+        "Rejected by excl-group: {}",
+        stats.rejected_by_exclusive_group
+    );
 
     let file: PatchFile = sink.finalize();
 

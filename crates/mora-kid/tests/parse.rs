@@ -29,8 +29,10 @@ ExclusiveGroup = MaterialGroup|WeapMaterialIron,WeapMaterialSteel
 NoTypeHere =
 ";
 
-    let rules = parse_ini_content(content, "test.ini");
+    let parsed = parse_ini_content(content, "test.ini");
+    let rules = &parsed.rules;
     assert_eq!(rules.len(), 4); // the 4 well-formed rules
+    assert_eq!(parsed.exclusive_groups.len(), 1);
 
     assert!(matches!(rules[0].record_type, RecordType::Weapon));
     assert_eq!(rules[0].chance, 100);

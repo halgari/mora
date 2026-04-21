@@ -54,10 +54,6 @@ impl FilterBuckets {
     pub fn is_empty(&self) -> bool {
         self.match_.is_empty() && self.not.is_empty() && self.all.is_empty() && self.any.is_empty()
     }
-
-    pub fn has_unsupported(&self) -> bool {
-        !self.all.is_empty() || !self.any.is_empty()
-    }
 }
 
 /// A parsed KID rule.
@@ -89,4 +85,15 @@ impl SourceLocation {
         file: String::new(),
         line_number: 0,
     };
+}
+
+/// A parsed `ExclusiveGroup = Name|kw1,kw2,...` line.
+///
+/// Group members are kept as raw `Reference`s (unresolved); the
+/// distributor resolves them against the EspWorld at setup time.
+#[derive(Debug, Clone)]
+pub struct ExclusiveGroup {
+    pub name: String,
+    pub members: Vec<Reference>,
+    pub source: SourceLocation,
 }
