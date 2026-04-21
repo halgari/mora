@@ -16,6 +16,7 @@ categories = ["external-ffi-bindings", "game-development"]
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
+crc32fast = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = [
