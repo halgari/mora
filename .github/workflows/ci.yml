@@ -60,6 +60,23 @@ jobs:
       - name: Cross-compile check
         run: cargo xwin check --target x86_64-pc-windows-msvc --workspace
 
+  integration-gate:
+    name: Integration gate check
+    runs-on: ubuntu-latest
+    outputs:
+      has_rust_ready: ${{ steps.check.outputs.has_rust_ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          # True if any tests/integration/<case>/rust-ready.marker exists.
+          if compgen -G "tests/integration/**/rust-ready.marker" > /dev/null; then
+              echo "has_rust_ready=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "has_rust_ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
   skyrim-integration:
     # Gated until M5 wires a Rust harness into tests/integration/.
     # Flip `if: false` to a real condition (e.g. a gate-check job that
@@ -68,8 +85,8 @@ jobs:
     # lands.
     name: Skyrim integration (self-hosted)
     runs-on: [self-hosted, linux, unraid, skyrim]
-    if: false
-    needs: [test, windows-cross]
+    if: needs.integration-gate.outputs.has_rust_ready == 'true'
+    needs: [test, windows-cross, integration-gate]
     steps:
       - uses: actions/checkout@v4
       - name: Build Linux artifacts
