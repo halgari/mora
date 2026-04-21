@@ -15,7 +15,7 @@ pub mod patch;
 pub mod patch_sink;
 
 pub use chance::DeterministicChance;
-pub use distributor::{Distributor, DistributorStats, EspWorld};
+pub use distributor::{Distributor, DistributorStats};
 pub use form_id::{FormId, FullFormId};
 pub use patch::{PATCH_FILE_MAGIC, PATCH_FILE_VERSION, Patch, PatchFile};
 pub use patch_sink::PatchSink;
