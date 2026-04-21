@@ -269,16 +269,16 @@ pub fn evaluate_armor_traits(
         }
     }
 
-    if let Some(must_enchanted) = traits.require_enchanted {
-        if armor.enchantment.is_some() != must_enchanted {
-            return false;
-        }
+    if let Some(must_enchanted) = traits.require_enchanted
+        && armor.enchantment.is_some() != must_enchanted
+    {
+        return false;
     }
 
-    if let Some(must_template) = traits.require_template {
-        if armor.template_armor.is_some() != must_template {
-            return false;
-        }
+    if let Some(must_template) = traits.require_template
+        && armor.template_armor.is_some() != must_template
+    {
+        return false;
     }
 
     if let Some((min, max)) = traits.ar_range {

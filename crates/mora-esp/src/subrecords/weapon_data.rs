@@ -19,7 +19,11 @@ pub fn parse(data: &[u8]) -> Result<WeaponData, ReadError> {
     let (value, o) = le_u32(data, 0)?;
     let (weight, o) = le_f32(data, o)?;
     let (damage, _) = le_u16(data, o)?;
-    Ok(WeaponData { value, weight, damage })
+    Ok(WeaponData {
+        value,
+        weight,
+        damage,
+    })
 }
 
 #[cfg(test)]

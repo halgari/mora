@@ -140,10 +140,7 @@ fn armo_record(
 fn open_world(suffix: &str, bytes: Vec<u8>) -> EspWorld {
     let path = write_tmp(&format!("{suffix}.esm"), &bytes);
     let plugin = EspPlugin::open(&path).unwrap();
-    let plugins_txt = path
-        .parent()
-        .unwrap()
-        .join(format!("plugins-{suffix}.txt"));
+    let plugins_txt = path.parent().unwrap().join(format!("plugins-{suffix}.txt"));
     std::fs::write(&plugins_txt, format!("*{}\n", plugin.filename)).unwrap();
     EspWorld::open(path.parent().unwrap(), &plugins_txt).unwrap()
 }
@@ -201,7 +198,14 @@ fn weapon_enchanted_predicate() {
     // Weapon A is enchanted (EITM = 0x0001_9999), Weapon B is not.
     // 0x0001_9999: top byte 0x00 == masters.len() (0 masters) → self-reference → resolves OK.
     let mut weapons = Vec::new();
-    weapons.extend_from_slice(&weap_record(0x0001_1400, "Ench", 1, 10, 5.0, Some(0x0001_9999)));
+    weapons.extend_from_slice(&weap_record(
+        0x0001_1400,
+        "Ench",
+        1,
+        10,
+        5.0,
+        Some(0x0001_9999),
+    ));
     weapons.extend_from_slice(&weap_record(0x0001_1401, "Plain", 1, 10, 5.0, None));
     bytes.extend_from_slice(&group(b"WEAP", &weapons));
     let mut keywords = Vec::new();
@@ -220,9 +224,33 @@ fn armor_type_filter() {
     let mut bytes = tes4_esm_bytes();
     let mut armors = Vec::new();
     // Light (type=0), Heavy (type=1), Clothing (type=2)
-    armors.extend_from_slice(&armo_record(0x0001_2100, "LightBoots", 0, 0x80, 1.0, 800, None));
-    armors.extend_from_slice(&armo_record(0x0001_2101, "HeavyBoots", 1, 0x80, 2.0, 1200, None));
-    armors.extend_from_slice(&armo_record(0x0001_2102, "ClothBoots", 2, 0x80, 0.5, 0, None));
+    armors.extend_from_slice(&armo_record(
+        0x0001_2100,
+        "LightBoots",
+        0,
+        0x80,
+        1.0,
+        800,
+        None,
+    ));
+    armors.extend_from_slice(&armo_record(
+        0x0001_2101,
+        "HeavyBoots",
+        1,
+        0x80,
+        2.0,
+        1200,
+        None,
+    ));
+    armors.extend_from_slice(&armo_record(
+        0x0001_2102,
+        "ClothBoots",
+        2,
+        0x80,
+        0.5,
+        0,
+        None,
+    ));
     bytes.extend_from_slice(&group(b"ARMO", &armors));
     let mut keywords = Vec::new();
     keywords.extend_from_slice(&rec(b"KYWD", 0x0001_2200, &sub(b"EDID", &nul("Target"))));
