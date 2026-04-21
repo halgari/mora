@@ -3,7 +3,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-mod capture_kid_goldens;
+use xtask::capture_kid_goldens;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Mora dev-workflow orchestration")]
