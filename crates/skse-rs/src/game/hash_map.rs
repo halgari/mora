@@ -75,65 +75,54 @@ impl FormHashMap {
 }
 
 /// Iterator over every `(form_id, *mut TESForm)` pair in a
-/// `FormHashMap`. Walks every bucket in `entries`; for each non-empty
-/// bucket follows the `next` chain until hitting the `SENTINEL`
-/// terminator.
+/// `FormHashMap`. Walks the `entries` bucket array linearly, yielding
+/// each used slot (where `next != null`) exactly once.
 ///
-/// The `current: *mut HashMapEntry` field makes `FormHashMapIter`
-/// `!Send + !Sync`. This is intentional — the iterator must stay on
-/// the thread that holds the read lock (see `iter()`'s safety
-/// contract), and raw-pointer auto-non-Send enforces that
-/// structurally.
+/// Chain `next` pointers are intentionally not followed — see the
+/// note on `Iterator::next` below. That means iteration visits every
+/// used slot in bucket-index order, regardless of which chain it
+/// belongs to.
 pub struct FormHashMapIter<'a> {
     map: &'a FormHashMap,
-    /// Index of the bucket currently being walked.
+    /// Next bucket index to visit.
     bucket: u32,
-    /// The next entry to yield. `null_mut` means "start a new bucket
-    /// at `self.bucket`".
-    current: *mut HashMapEntry,
-}
-
-impl<'a> FormHashMapIter<'a> {
-    fn advance_to_next_bucket(&mut self) {
-        while self.bucket < self.map.capacity {
-            let b = unsafe { self.map.entries.add(self.bucket as usize) };
-            let b_ref = unsafe { &*b };
-            // Empty buckets have next == null (Bethesda convention).
-            if !b_ref.next.is_null() {
-                self.current = b;
-                self.bucket += 1;
-                return;
-            }
-            self.bucket += 1;
-        }
-        // No more buckets.
-        self.current = core::ptr::null_mut();
-    }
+    /// Unused marker that keeps the iterator `!Send + !Sync` — the
+    /// caller must hold the map's read lock for the duration of
+    /// iteration, and a raw pointer field structurally enforces
+    /// thread confinement.
+    _not_send: core::marker::PhantomData<*mut HashMapEntry>,
 }
 
 impl<'a> Iterator for FormHashMapIter<'a> {
     type Item = (u32, *mut TESForm);
 
+    /// Iteration strategy: walk every slot in `entries[0..capacity]`.
+    /// Each *used* slot (where `next != null`) yields its
+    /// `(key, value)`.
+    ///
+    /// We deliberately do NOT follow `next` pointers here: Bethesda's
+    /// `BSTScatterTable` stores chain continuations IN the same
+    /// `entries` array (chained via `next`), which means every chain
+    /// element is ALSO reachable via its own bucket index. Following
+    /// chains during iteration would yield each non-bucket-home entry
+    /// twice — once via its chain predecessor, once when the outer
+    /// walk reaches its own slot. `next`-following is correct for
+    /// `lookup`, wrong for iteration.
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current.is_null() {
-            self.advance_to_next_bucket();
-            if self.current.is_null() {
-                return None;
+        if self.map.entries.is_null() || self.map.capacity == 0 {
+            return None;
+        }
+        while self.bucket < self.map.capacity {
+            let b = unsafe { self.map.entries.add(self.bucket as usize) };
+            let b_ref = unsafe { &*b };
+            self.bucket += 1;
+            // Empty slots have `next == null` (Bethesda convention).
+            if b_ref.next.is_null() {
+                continue;
             }
+            return Some((b_ref.key, b_ref.value));
         }
-        let entry = unsafe { &*self.current };
-        let out = (entry.key, entry.value);
-        // Advance to next entry in the chain.
-        if (entry.next as *const ()) == self.map.sentinel {
-            // End of chain (Bethesda stores the address of the module-
-            // global `BSTScatterTableSentinel` in `_sentinel` and points
-            // end-of-chain entries here). Force next call to advance the
-            // bucket index.
-            self.current = core::ptr::null_mut();
-        } else {
-            self.current = entry.next;
-        }
-        Some(out)
+        None
     }
 }
 
@@ -156,7 +145,7 @@ impl FormHashMap {
         FormHashMapIter {
             map: self,
             bucket: 0,
-            current: core::ptr::null_mut(),
+            _not_send: core::marker::PhantomData,
         }
     }
 }
@@ -191,21 +180,22 @@ mod tests {
     }
 
     #[test]
-    fn iter_walks_synthetic_chain() {
-        // Build a 4-bucket table with two entries in bucket 0 (chain) and
-        // one entry in bucket 2; buckets 1 and 3 empty.
+    fn iter_visits_every_used_slot_exactly_once() {
+        // Build a 4-bucket table representing a map where:
+        //   - bucket 0 holds entry A (key=0x100, natural home)
+        //   - bucket 1 holds entry B (key=0x200, displaced into a
+        //     neighboring slot because its natural home is taken)
+        //   - bucket 2 holds entry C (key=0x300)
+        //   - bucket 3 is empty
+        //
+        // Bucket 0's chain terminates by pointing at bucket 1 (entry B),
+        // which in turn points at SENTINEL. Iteration must yield each
+        // used slot EXACTLY ONCE in bucket-index order (A, B, C) — it
+        // must NOT re-yield B via the bucket walk after already seeing
+        // it via bucket 0's chain (which would duplicate).
         let fake_a = 0xAAAA_AAAAusize as *mut TESForm;
         let fake_b = 0xBBBB_BBBBusize as *mut TESForm;
         let fake_c = 0xCCCC_CCCCusize as *mut TESForm;
-
-        // The "extra" entry in bucket 0's chain lives outside the bucket
-        // array; allocate it on the heap so we can link to it.
-        let mut tail = Box::new(HashMapEntry {
-            key: 0x200,
-            _pad: 0,
-            value: fake_b,
-            next: SENTINEL as *mut HashMapEntry,
-        });
 
         let mut buckets: Vec<HashMapEntry> = (0..4)
             .map(|_| HashMapEntry {
@@ -215,11 +205,15 @@ mod tests {
                 next: core::ptr::null_mut(),
             })
             .collect();
-        // Bucket 0: entry A with next -> tail (entry B, end-of-chain).
+        // Bucket 0: entry A. Chain pointer → bucket 1 (entry B).
         buckets[0].key = 0x100;
         buckets[0].value = fake_a;
-        buckets[0].next = tail.as_mut();
-        // Bucket 1: empty (next == null).
+        // Bucket 1: entry B, end-of-chain.
+        buckets[1].key = 0x200;
+        buckets[1].value = fake_b;
+        buckets[1].next = SENTINEL as *mut HashMapEntry;
+        // After buckets[1] is filled, wire buckets[0].next to point at it.
+        buckets[0].next = &mut buckets[1] as *mut HashMapEntry;
         // Bucket 2: entry C, end-of-chain.
         buckets[2].key = 0x300;
         buckets[2].value = fake_c;
@@ -241,8 +235,9 @@ mod tests {
         assert_eq!(
             seen,
             vec![(0x100, fake_a), (0x200, fake_b), (0x300, fake_c)],
-            "iteration must visit bucket 0 first (entry A then B via chain), \
-             then bucket 2 (entry C). Any other order indicates a bug."
+            "iteration must visit each used slot once in bucket-index order. \
+             Duplicate yields indicate the iterator is following `next` \
+             pointers as well as walking buckets (wrong — see docs)."
         );
     }
 
